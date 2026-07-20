@@ -10,5 +10,6 @@
 | Tiptap 许可 | 使用开源等价实现 | 避免将首版绑定到 Pro 许可 |
 | AI | 用户配置的 OpenAI-compatible provider | 兼容多种服务且不需要应用方托管密钥 |
 | 首版排除 | 协作、账号、云同步、评论与权限 | 优先交付可用的单机 Web 笔记体验 |
+| Markdown 导入导出 | Tiptap 官方 `@tiptap/markdown` 扩展 | 官方开源方案，解析经编辑器扩展白名单，避免引入 marked/turndown 双库 |
 
 任何会改变以上结论的需求，应先更新本文件及受影响的需求、架构和测试文档。

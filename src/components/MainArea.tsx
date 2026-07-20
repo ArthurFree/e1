@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Editor } from "@tiptap/core";
 import type { DocumentContent } from "../domain/types";
+import { jsonToMarkdown } from "../editor/markdown";
 import { contentRepository } from "../infrastructure/repositories";
 import { useApp } from "../state/AppState";
 import { TitleEditor } from "./TitleEditor";
+import { TagPicker } from "./TagPicker";
 import { DocumentEditor } from "./editor/DocumentEditor";
 import { EmojiPicker } from "./editor/EmojiPicker";
 import { TocPanel } from "./editor/TocPanel";
@@ -52,6 +54,19 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
     void setTheme(preferences.theme === "dark" ? "light" : "dark");
   };
 
+  const exportMarkdown = () => {
+    if (!editor || !page) return;
+    const markdown = jsonToMarkdown(editor.getJSON());
+    const url = URL.createObjectURL(
+      new Blob([markdown], { type: "text/markdown;charset=utf-8" }),
+    );
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${page.title || "无标题"}.md`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
   const isDocument = page?.kind === "document";
 
   return (
@@ -89,6 +104,16 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
         <button
           type="button"
           className="icon-button"
+          aria-label="导出 Markdown"
+          title="导出 Markdown"
+          disabled={!editor}
+          onClick={exportMarkdown}
+        >
+          📤
+        </button>
+        <button
+          type="button"
+          className="icon-button"
           aria-label="目录"
           aria-pressed={tocOpen}
           disabled={!editor}
@@ -120,6 +145,7 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
                 title={page.title}
                 onSave={(id, title) => void renamePage(id, title || "无标题")}
               />
+              <TagPicker pageId={page.id} />
             </div>
             <div className="doc-body">
               {content ? (

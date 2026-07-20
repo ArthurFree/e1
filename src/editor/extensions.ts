@@ -25,17 +25,16 @@ export interface EditorExtensionsOptions {
 }
 
 /**
- * 编辑器扩展组合。只含开源扩展；
- * TableOfContents 与 UniqueID 为 Pro 能力，目录由 src/editor/toc.ts 自行实现。
+ * 文档结构扩展（无交互部件）。主编辑器与 Markdown 转换器共用，
+ * 保证导出/导入的 schema 与编辑器一致。
  */
-export function buildEditorExtensions(options: EditorExtensionsOptions): AnyExtension[] {
+export function buildDocumentExtensions(): AnyExtension[] {
   return [
     StarterKit.configure({
       heading: { levels: [1, 2, 3] },
       link: { openOnClick: false, autolink: true },
       codeBlock: { defaultLanguage: null },
     }),
-    Placeholder.configure({ placeholder: "输入正文，键入 / 打开命令菜单" }),
     TextStyleKit,
     Highlight.configure({ multicolor: true }),
     TextAlign.configure({ types: ["heading", "paragraph"] }),
@@ -47,6 +46,17 @@ export function buildEditorExtensions(options: EditorExtensionsOptions): AnyExte
     TaskItem.configure({ nested: true }),
     TableKit.configure({ table: { resizable: false } }),
     Mathematics,
+  ];
+}
+
+/**
+ * 编辑器扩展组合。只含开源扩展；
+ * TableOfContents 与 UniqueID 为 Pro 能力，目录由 src/editor/toc.ts 自行实现。
+ */
+export function buildEditorExtensions(options: EditorExtensionsOptions): AnyExtension[] {
+  return [
+    ...buildDocumentExtensions(),
+    Placeholder.configure({ placeholder: "输入正文，键入 / 打开命令菜单" }),
     Mention.configure({
       HTMLAttributes: { class: "mention" },
       suggestion: createMentionSuggestion(() => options.mentionPages, options.getEditor),

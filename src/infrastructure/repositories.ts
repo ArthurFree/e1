@@ -3,10 +3,13 @@ import type {
   CreatePageInput,
   PageRepository,
   PreferencesRepository,
+  TagRepository,
   WorkspaceRepository,
 } from "../domain/repositories";
 import {
+  childrenOf,
   collectSubtreeIds,
+  movePage,
   nextPosition,
   wouldCreateCycle,
 } from "../domain/pageTree";
@@ -14,10 +17,12 @@ import {
   DEFAULT_PREFERENCES,
   type DocumentContent,
   type Page,
+  type PageTag,
   type Preferences,
+  type Tag,
   type Workspace,
 } from "../domain/types";
-import { getDB, STORE_CONTENTS, STORE_PAGES, STORE_PREFERENCES, STORE_TRASH, STORE_WORKSPACES } from "./db";
+import { getDB, STORE_CONTENTS, STORE_PAGES, STORE_PAGE_TAGS, STORE_PREFERENCES, STORE_TAGS, STORE_TRASH, STORE_WORKSPACES } from "./db";
 import { ensureSeeded } from "./seed";
 import { createId } from "./id";
 
@@ -129,7 +134,7 @@ export const pageRepository: PageRepository = {
     await db.put(STORE_PAGES, { ...page, title, updatedAt: Date.now() });
   },
 
-  async move(id, newParentId) {
+  async move(id, newParentId, index) {
     const db = await getDB();
     const all = ((await db.getAll(STORE_PAGES)) as unknown[]).filter(isValidPage);
     const page = all.find((p) => p.id === id);
@@ -138,12 +143,19 @@ export const pageRepository: PageRepository = {
       throw new Error("不能移动到自身或其子页面下");
     }
     const workspacePages = all.filter((p) => p.workspaceId === page.workspaceId);
-    await db.put(STORE_PAGES, {
-      ...page,
-      parentId: newParentId,
-      position: nextPosition(workspacePages, newParentId),
-      updatedAt: Date.now(),
+    const targetIndex =
+      index ?? childrenOf(workspacePages, newParentId).filter((p) => p.id !== id).length;
+    const next = movePage(workspacePages, id, newParentId, targetIndex);
+    const now = Date.now();
+    const changed = next.filter((p) => {
+      const before = workspacePages.find((w) => w.id === p.id);
+      return before && (before.parentId !== p.parentId || before.position !== p.position);
     });
+    const tx = db.transaction(STORE_PAGES, "readwrite");
+    for (const p of changed) {
+      await tx.store.put({ ...p, updatedAt: now });
+    }
+    await tx.done;
   },
 
   async remove(id) {
@@ -204,6 +216,44 @@ export const pageRepository: PageRepository = {
     }
     await tx.done;
   },
+
+  async purge(id) {
+    const db = await getDB();
+    const all = ((await db.getAll(STORE_PAGES)) as unknown[]).filter(isValidPage);
+    const page = all.find((p) => p.id === id);
+    if (!page) throw new Error(`页面不存在或数据损坏: ${id}`);
+    const ids = collectSubtreeIds(all, id);
+    const tx = db.transaction(
+      [STORE_PAGES, STORE_CONTENTS, STORE_PAGE_TAGS, STORE_TRASH],
+      "readwrite",
+    );
+    for (const pageId of ids) {
+      await tx.objectStore(STORE_PAGES).delete(pageId);
+      await tx.objectStore(STORE_CONTENTS).delete(pageId);
+      await tx.objectStore(STORE_TRASH).delete(pageId);
+      const tagKeys = await tx
+        .objectStore(STORE_PAGE_TAGS)
+        .index("pageId")
+        .getAllKeys(pageId);
+      for (const key of tagKeys) {
+        await tx.objectStore(STORE_PAGE_TAGS).delete(key);
+      }
+    }
+    await tx.done;
+  },
+
+  async purgeTrashed(workspaceId) {
+    const pages = await pageRepository.listByWorkspace(workspaceId);
+    const trashed = pages.filter((p) => p.deletedAt !== null);
+    const trashedIds = new Set(trashed.map((p) => p.id));
+    // 只从回收站的“根”开始清，避免同一子树被重复 purge。
+    const roots = trashed.filter(
+      (p) => p.parentId === null || !trashedIds.has(p.parentId),
+    );
+    for (const root of roots) {
+      await pageRepository.purge(root.id);
+    }
+  },
 };
 
 export const contentRepository: ContentRepository = {
@@ -223,6 +273,90 @@ export const contentRepository: ContentRepository = {
       updatedAt: Date.now(),
     };
     await db.put(STORE_CONTENTS, content);
+  },
+
+  async listAll() {
+    const db = await getDB();
+    const all = (await db.getAll(STORE_CONTENTS)) as unknown[];
+    return all.filter(
+      (c): c is DocumentContent =>
+        !!c &&
+        typeof (c as DocumentContent).pageId === "string" &&
+        typeof (c as DocumentContent).textSnapshot === "string",
+    );
+  },
+};
+
+function isValidTag(record: unknown): record is Tag {
+  const t = record as Tag;
+  return (
+    !!t &&
+    typeof t.id === "string" &&
+    typeof t.workspaceId === "string" &&
+    typeof t.name === "string" &&
+    typeof t.color === "string"
+  );
+}
+
+export const tagRepository: TagRepository = {
+  async listByWorkspace(workspaceId) {
+    const db = await getDB();
+    const all = (await db.getAll(STORE_TAGS)) as unknown[];
+    return all.filter(
+      (t): t is Tag => isValidTag(t) && t.workspaceId === workspaceId,
+    );
+  },
+
+  async create(workspaceId, name, color) {
+    const db = await getDB();
+    const tag: Tag = { id: createId(), workspaceId, name, color };
+    await db.put(STORE_TAGS, tag);
+    return tag;
+  },
+
+  async remove(id) {
+    const db = await getDB();
+    const tx = db.transaction([STORE_TAGS, STORE_PAGE_TAGS], "readwrite");
+    await tx.objectStore(STORE_TAGS).delete(id);
+    const keys = await tx.objectStore(STORE_PAGE_TAGS).index("tagId").getAllKeys(id);
+    for (const key of keys) {
+      await tx.objectStore(STORE_PAGE_TAGS).delete(key);
+    }
+    await tx.done;
+  },
+
+  async listPageTagIds(pageId) {
+    const db = await getDB();
+    const rows = (await db.getAllFromIndex(STORE_PAGE_TAGS, "pageId", pageId)) as {
+      tagId: string;
+    }[];
+    return rows.map((r) => r.tagId);
+  },
+
+  async listWorkspacePageTags(workspaceId) {
+    const db = await getDB();
+    const pageIds = new Set(
+      ((await db.getAll(STORE_PAGES)) as unknown[])
+        .filter((p): p is Page => isValidPage(p) && p.workspaceId === workspaceId)
+        .map((p) => p.id),
+    );
+    const rows = (await db.getAll(STORE_PAGE_TAGS)) as PageTag[];
+    return rows.filter(
+      (r) => r && typeof r.pageId === "string" && pageIds.has(r.pageId),
+    );
+  },
+
+  async setPageTags(pageId, tagIds) {
+    const db = await getDB();
+    const tx = db.transaction(STORE_PAGE_TAGS, "readwrite");
+    const existing = await tx.store.index("pageId").getAllKeys(pageId);
+    for (const key of existing) {
+      await tx.store.delete(key);
+    }
+    for (const tagId of new Set(tagIds)) {
+      await tx.store.put({ pageId, tagId });
+    }
+    await tx.done;
   },
 };
 

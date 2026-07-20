@@ -1,10 +1,14 @@
 import { useState } from "react";
 import { useApp } from "../state/AppState";
+import { SearchPanel } from "./SearchPanel";
+import { TrashPanel } from "./TrashPanel";
 
-/** 最左侧工作区轨道：知识库切换 + 搜索/设置/回收站入口（后三者为占位）。 */
+/** 最左侧工作区轨道：知识库切换 + 搜索/回收站/设置入口（设置为占位）。 */
 export function WorkspaceRail() {
   const { workspaces, workspace, switchWorkspace, createWorkspace } = useApp();
   const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [trashOpen, setTrashOpen] = useState(false);
 
   return (
     <nav className="rail" aria-label="工作区">
@@ -21,18 +25,33 @@ export function WorkspaceRail() {
         <span className="rail__workspace-name">{workspace?.name ?? ""}</span>
       </div>
 
-      <button type="button" className="icon-button" aria-label="搜索" disabled title="搜索（后续阶段提供）">
+      <button
+        type="button"
+        className="icon-button"
+        aria-label="搜索"
+        title="搜索"
+        onClick={() => setSearchOpen(true)}
+      >
         🔍
       </button>
 
       <div className="rail__spacer" />
 
-      <button type="button" className="icon-button" aria-label="回收站" disabled title="回收站（后续阶段提供）">
+      <button
+        type="button"
+        className="icon-button"
+        aria-label="回收站"
+        title="回收站"
+        onClick={() => setTrashOpen(true)}
+      >
         🗑️
       </button>
       <button type="button" className="icon-button" aria-label="设置" disabled title="设置（后续阶段提供）">
         ⚙️
       </button>
+
+      {searchOpen && <SearchPanel onClose={() => setSearchOpen(false)} />}
+      {trashOpen && <TrashPanel onClose={() => setTrashOpen(false)} />}
 
       {switcherOpen && (
         <div

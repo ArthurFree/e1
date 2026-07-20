@@ -6,22 +6,22 @@
 
 `notion-like-web` 是一个独立的 Web 笔记应用：以 Tiptap 的 Notion-like 模板为交互和视觉参考，提供本地优先（离线可用）的知识库、页面树和块编辑能力。面向简体中文个人用户。
 
-**当前状态：第 1、2、3 阶段已完成。** 工程、IndexedDB 仓储、页面树、标题自动保存、主题持久化；编辑器核心（Tiptap 3 开源扩展、`/` 命令、浮动工具栏、Emoji、目录、公式）；高级块交互：自实现块把手（悬停 + 原生拖拽移动 + 复制/删除/转换/清除格式菜单，DragHandle 的 Pro 能力未使用）、表格工具条（行列增删、表头、合并/拆分、行列移动、按列排序）、顶栏撤销/重做实时状态、模板字级行高与浮层动画对齐。常用命令：`npm run dev`、`npm run build`、`npm test`、`npm run typecheck`。
+**当前状态：第 1、2、3、4 阶段已完成。** 工程、IndexedDB 仓储、页面树、标题自动保存、主题持久化；编辑器核心（Tiptap 3 开源扩展、`/` 命令、浮动工具栏、Emoji、目录、公式）；高级块交互：自实现块把手（悬停 + 原生拖拽移动 + 复制/删除/转换/清除格式菜单，DragHandle 的 Pro 能力未使用）、表格工具条（行列增删、表头、合并/拆分、行列移动、按列排序）、顶栏撤销/重做实时状态、模板字级行高与浮层动画对齐；笔记管理：页面树拖放（含同级排序）、标签（添加/移除/筛选）、全局搜索（标题 + 正文快照）、回收站（恢复/彻底删除/清空）、Markdown 导入导出（官方 `@tiptap/markdown` 扩展，解析经编辑器白名单）、加载失败错误态。常用命令：`npm run dev`、`npm run build`、`npm test`、`npm run typecheck`。
 
 ## 源码结构
 
-- `src/domain/`：实体类型（`types.ts`）、页面树纯逻辑（`pageTree.ts`）、仓储接口（`repositories.ts`）。
-- `src/infrastructure/`：IndexedDB 实现——`db.ts`（schema/迁移）、`repositories.ts`（接口实现，含损坏数据降级）、`seed.ts`（预置知识库与中文欢迎文档 JSON）。
-- `src/editor/`：编辑器内核——`extensions.ts`（Tiptap 扩展组合）、`commands.ts`（统一命令注册表）、`slashSuggestion.ts` / `mentionSuggestion.ts` / `popupRenderer.ts`（`/` 与 `@` 浮层）、`toc.ts`（目录提取与跳转）、`blockActions.ts`（块移动/复制/删除/转换/清格式）、`tableUtils.ts`（表格行列移动与排序）。
-- `src/state/AppState.tsx`：应用状态 Provider，UI 只通过它和仓储接口取数。
-- `src/components/`：`AppShell`、`WorkspaceRail`、`PageTreeSidebar`、`MainArea`、`TitleEditor`；`src/components/editor/`：`DocumentEditor`（宿主 + 保存适配器）、`BubbleToolbar`、`TableToolbar`、`BlockHandle`、`CommandList`、`EmojiPicker`、`TocPanel`。
+- `src/domain/`：实体类型（`types.ts`）、页面树纯逻辑（`pageTree.ts`，含拖放判定 `dropZoneAt`/`resolveDrop` 与移动重排 `movePage`）、全局搜索纯逻辑（`search.ts`）、仓储接口（`repositories.ts`）。
+- `src/infrastructure/`：IndexedDB 实现——`db.ts`（schema/迁移）、`repositories.ts`（接口实现，含损坏数据降级、软删/恢复/永久删除、标签仓储）、`seed.ts`（预置知识库与中文欢迎文档 JSON）。
+- `src/editor/`：编辑器内核——`extensions.ts`（Tiptap 扩展组合，`buildDocumentExtensions` 为编辑器与 Markdown 转换共用）、`markdown.ts`（Markdown 导入导出，模块级 headless 转换器）、`commands.ts`（统一命令注册表）、`slashSuggestion.ts` / `mentionSuggestion.ts` / `popupRenderer.ts`（`/` 与 `@` 浮层）、`toc.ts`（目录提取与跳转）、`blockActions.ts`（块移动/复制/删除/转换/清格式）、`tableUtils.ts`（表格行列移动与排序）。
+- `src/state/AppState.tsx`：应用状态 Provider（含标签、回收站、搜索 action 与加载错误态），UI 只通过它和仓储接口取数。
+- `src/components/`：`AppShell`、`WorkspaceRail`（搜索/回收站入口）、`PageTreeSidebar`（树拖放、标签筛选、Markdown 导入）、`MainArea`（Markdown 导出）、`SearchPanel`、`TrashPanel`、`TagPicker`、`TitleEditor`；`src/components/editor/`：`DocumentEditor`（宿主 + 保存适配器）、`BubbleToolbar`、`TableToolbar`、`BlockHandle`、`CommandList`、`EmojiPicker`、`TocPanel`。
 - `src/hooks/useDebouncedCallback.ts`：防抖保存 hook（beforeunload/卸载时 flush）。
 - `src/styles/global.css`：主题令牌（`data-theme` 切换浅/深）与全部组件样式、响应式规则。
 
-## 技术栈（已确认的决策，尚未落地）
+## 技术栈（已确认的决策）
 
 - React + Vite + TypeScript：单页 Web 应用。
-- Tiptap 3：富文本编辑内核，只使用开源扩展，不引入 Tiptap Pro 专有能力。
+- Tiptap 3：富文本编辑内核，只使用开源扩展，不引入 Tiptap Pro 专有能力；Markdown 导入导出用官方 `@tiptap/markdown`。
 - IndexedDB：本地数据与二进制资源持久化，封装为仓储层。
 - CSS variables + 模块化样式：主题令牌与组件样式。
 - Vitest + Testing Library：单元与组件测试；Playwright：端到端与截图回归。

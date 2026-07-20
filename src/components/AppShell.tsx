@@ -6,7 +6,7 @@ import { MainArea } from "./MainArea";
 
 /** 应用壳：工作区轨道 + 文档树侧栏（窄屏抽屉化）+ 主栏。 */
 export function AppShell() {
-  const { ready, preferences } = useApp();
+  const { ready, error, retryLoad, preferences } = useApp();
   const [treeOpen, setTreeOpen] = useState(false);
 
   useEffect(() => {
@@ -14,6 +14,18 @@ export function AppShell() {
   }, [preferences.theme]);
 
   if (!ready) {
+    if (error) {
+      return (
+        <div className="loading">
+          <div className="app-error" role="alert">
+            <p>{error}</p>
+            <button type="button" className="app-error__retry" onClick={retryLoad}>
+              重试
+            </button>
+          </div>
+        </div>
+      );
+    }
     return <div className="loading">正在加载本地知识库…</div>;
   }
 

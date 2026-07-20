@@ -60,6 +60,13 @@ export interface TrashRecord {
   originalParentId: string | null;
 }
 
+export interface SearchResult {
+  pageId: string;
+  title: string;
+  /** 正文命中时的上下文片段；仅标题命中时为空字符串。 */
+  snippet: string;
+}
+
 export const DEFAULT_SIDEBAR_WIDTH = 280;
 
 export const DEFAULT_PREFERENCES: Preferences = {
