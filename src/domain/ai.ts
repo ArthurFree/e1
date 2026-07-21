@@ -5,7 +5,7 @@ import type { AIConfig } from "./types";
  * 纯函数，无 DOM / fetch 依赖，provider 实现在基础设施层。
  */
 
-export type AIMode = "ask" | "polish" | "rewrite" | "summarize";
+export type AIMode = "ask" | "polish" | "rewrite" | "summarize" | "draft";
 
 export interface AIRequest {
   prompt: string;
@@ -15,6 +15,8 @@ export interface AIRequest {
   documentContext?: string;
   /** 请求模式，缺省为 ask。 */
   mode?: AIMode;
+  /** 起草模式下的文档类型提示（如：周报、会议纪要）。 */
+  draftType?: string;
 }
 
 export interface AIProvider {
@@ -71,7 +73,16 @@ export function buildPrompt(
     polish: "你是一个文字润色助手。请润色用户提供的文字，保持原意不变，只改进表达与流畅度。请使用简体中文，以 Markdown 格式返回，只返回润色后的内容本身，不要附加解释。",
     rewrite: "你是一个文字改写助手。请改写用户提供的文字，保持核心信息不变，可以调整结构与措辞。请使用简体中文，以 Markdown 格式返回，只返回改写后的内容本身，不要附加解释。",
     summarize: "你是一个内容总结助手。请总结用户提供的选区或文档内容，提炼要点。请使用简体中文，以 Markdown 格式返回，只返回总结内容本身，不要附加解释。",
+    draft: "你是一个中文写作助手。请围绕用户给出的主题撰写一篇结构完整、内容具体的文档；如果指定了文档类型，遵循该类型的常见结构。请使用简体中文，以 Markdown 格式返回，只返回文档正文本身，不要附加解释。",
   };
+
+  if (mode === "draft") {
+    const parts = [`主题：${request.prompt}`];
+    if (request.draftType && request.draftType.trim() !== "") {
+      parts.push(`文档类型：${request.draftType}`);
+    }
+    return { system: systemByMode.draft, user: parts.join("\n\n") };
+  }
 
   const parts: string[] = [];
   if (request.prompt.trim() !== "") {

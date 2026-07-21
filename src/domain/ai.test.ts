@@ -184,3 +184,21 @@ describe("mapAIError", () => {
     expect(mapAIError("字符串错误")).toBe("AI 请求失败，请稍后再试");
   });
 });
+
+describe("buildPrompt - draft 模式", () => {
+  it("包含主题与文档类型", () => {
+    const { system, user } = buildPrompt("draft", {
+      prompt: "Q3 复盘",
+      draftType: "周报",
+    });
+    expect(system).toContain("撰写");
+    expect(user).toContain("主题：Q3 复盘");
+    expect(user).toContain("文档类型：周报");
+  });
+
+  it("无文档类型时只含主题", () => {
+    const { user } = buildPrompt("draft", { prompt: "随手记" });
+    expect(user).toContain("主题：随手记");
+    expect(user).not.toContain("文档类型");
+  });
+});

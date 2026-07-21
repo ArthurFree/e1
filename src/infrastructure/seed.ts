@@ -124,6 +124,11 @@ export async function ensureSeeded(db: IDBPDatabase): Promise<void> {
   const workspace: Workspace = {
     id: createId(),
     name: "我的知识库",
+    icon: "📚",
+    description: "",
+    homePageId: null,
+    favoriteAt: null,
+    lastOpenedAt: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -137,6 +142,8 @@ export async function ensureSeeded(db: IDBPDatabase): Promise<void> {
       title: "欢迎使用 Notion-like Web",
       icon: "👋",
       position: 0,
+      favoriteAt: null,
+      lastOpenedAt: null,
       deletedAt: null,
       createdAt: now,
       updatedAt: now,
@@ -153,6 +160,8 @@ export async function ensureSeeded(db: IDBPDatabase): Promise<void> {
       title: "任务清单",
       icon: "✅",
       position: 1,
+      favoriteAt: null,
+      lastOpenedAt: null,
       deletedAt: null,
       createdAt: now,
       updatedAt: now,
@@ -173,15 +182,17 @@ export async function ensureSeeded(db: IDBPDatabase): Promise<void> {
     },
     text: "任务清单 熟悉页面树的新建与重命名 试试深浅色主题切换 拖动侧栏调整宽度",
   };
-  const folder: SeedPage = {
+  const group: SeedPage = {
     page: {
       id: createId(),
       workspaceId: workspace.id,
       parentId: null,
-      kind: "folder",
+      kind: "group",
       title: "产品资料",
       icon: "📁",
       position: 2,
+      favoriteAt: null,
+      lastOpenedAt: null,
       deletedAt: null,
       createdAt: now,
       updatedAt: now,
@@ -193,11 +204,13 @@ export async function ensureSeeded(db: IDBPDatabase): Promise<void> {
     page: {
       id: createId(),
       workspaceId: workspace.id,
-      parentId: folder.page.id,
+      parentId: group.page.id,
       kind: "document",
       title: "会议纪要示例",
       icon: null,
       position: 0,
+      favoriteAt: null,
+      lastOpenedAt: null,
       deletedAt: null,
       createdAt: now,
       updatedAt: now,
@@ -206,15 +219,15 @@ export async function ensureSeeded(db: IDBPDatabase): Promise<void> {
       type: "doc",
       content: [
         heading(1, "会议纪要示例"),
-        paragraph(text("这里是一个文件夹内的文档，用于演示树形结构。")),
+        paragraph(text("这里是一个分组内的文档，用于演示树形结构。")),
       ],
     },
-    text: "会议纪要示例 这里是一个文件夹内的文档，用于演示树形结构。",
+    text: "会议纪要示例 这里是一个分组内的文档，用于演示树形结构。",
   };
 
   const tx = db.transaction([STORE_WORKSPACES, STORE_PAGES, STORE_CONTENTS], "readwrite");
   await tx.objectStore(STORE_WORKSPACES).put(workspace);
-  for (const { page, contentJson, text: snapshot } of [welcome, todo, folder, meeting]) {
+  for (const { page, contentJson, text: snapshot } of [welcome, todo, group, meeting]) {
     await tx.objectStore(STORE_PAGES).put(page);
     if (page.kind === "document") {
       const content: DocumentContent = {

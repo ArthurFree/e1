@@ -22,7 +22,9 @@ export function PageTreeSidebar({ open, onClose }: PageTreeSidebarProps) {
   const {
     pages,
     selectedPageId,
+    view,
     selectPage,
+    showWorkspaceHome,
     createPage,
     renamePage,
     deletePage,
@@ -146,7 +148,7 @@ export function PageTreeSidebar({ open, onClose }: PageTreeSidebarProps) {
 
   const renderRow = (page: Page, children: Page[]) => {
     const isCollapsed = collapsed.has(page.id);
-    const isFolder = page.kind === "folder";
+    const isGroup = page.kind === "group";
     return (
       <div
         className={`tree-row${page.id === selectedPageId ? " tree-row--selected" : ""}${dropClass(page)}`}
@@ -168,7 +170,7 @@ export function PageTreeSidebar({ open, onClose }: PageTreeSidebarProps) {
         onDragLeave={() => setDropHint((hint) => (hint?.id === page.id ? null : hint))}
         onDrop={(event) => onDropRow(event, page)}
         onClick={() => {
-          if (isFolder) toggleCollapse(page.id);
+          if (isGroup) toggleCollapse(page.id);
           else {
             selectPage(page.id);
             onClose();
@@ -177,7 +179,7 @@ export function PageTreeSidebar({ open, onClose }: PageTreeSidebarProps) {
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
-            if (isFolder) toggleCollapse(page.id);
+            if (isGroup) toggleCollapse(page.id);
             else selectPage(page.id);
           }
         }}
@@ -198,7 +200,7 @@ export function PageTreeSidebar({ open, onClose }: PageTreeSidebarProps) {
           <span className="tree-row__toggle" aria-hidden="true" />
         )}
         <span className="tree-row__icon" aria-hidden="true">
-          {page.icon ?? (isFolder ? "📁" : "📄")}
+          {page.icon ?? (isGroup ? "📁" : "📄")}
         </span>
         {renamingId === page.id ? (
           <input
@@ -306,8 +308,19 @@ export function PageTreeSidebar({ open, onClose }: PageTreeSidebarProps) {
       aria-label="文档树"
       style={{ width: preferences.sidebarWidth }}
     >
+      <button
+        type="button"
+        className={`tree-nav${view === "workspace" ? " tree-nav--active" : ""}`}
+        aria-current={view === "workspace" ? "page" : undefined}
+        onClick={() => {
+          showWorkspaceHome();
+          onClose();
+        }}
+      >
+        <span aria-hidden="true">🏠</span> 首页
+      </button>
       <div className="tree-sidebar__header">
-        <span>页面</span>
+        <span>目录</span>
         <span className="tree-sidebar__actions">
           <button
             type="button"
@@ -330,9 +343,14 @@ export function PageTreeSidebar({ open, onClose }: PageTreeSidebarProps) {
           <button
             type="button"
             className="icon-button"
-            aria-label="新建文件夹"
-            title="新建文件夹"
-            onClick={() => void createPage("folder", null)}
+            aria-label="新建分组"
+            title="新建分组"
+            onClick={() => {
+              // 创建后立即进入重命名状态。
+              void createPage("group", null).then((page) => {
+                if (page) startRename(page);
+              });
+            }}
           >
             📁
           </button>

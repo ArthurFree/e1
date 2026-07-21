@@ -567,7 +567,8 @@ export const tagRepository: TagRepository = {
     const db = await getDB();
     const pageIds = new Set(
       ((await db.getAll(STORE_PAGES)) as unknown[])
-        .filter((p): p is Page => isValidPage(p) && p.workspaceId === workspaceId)
+        .map(normalizePage)
+        .filter((p): p is Page => p !== null && p.workspaceId === workspaceId)
         .map((p) => p.id),
     );
     const rows = (await db.getAll(STORE_PAGE_TAGS)) as PageTag[];
@@ -614,6 +615,7 @@ export const preferencesRepository: PreferencesRepository = {
       id: "preferences",
       theme: stored.theme === "dark" ? "dark" : "light",
       aiConfig,
+      lastRoute: typeof stored.lastRoute === "string" ? stored.lastRoute : null,
     };
   },
 

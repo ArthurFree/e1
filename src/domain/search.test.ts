@@ -10,6 +10,8 @@ function makePage(partial: Partial<Page> & { id: string }): Page {
     title: partial.id,
     icon: null,
     position: 0,
+    favoriteAt: null,
+    lastOpenedAt: null,
     deletedAt: null,
     createdAt: 0,
     updatedAt: 0,
@@ -26,7 +28,7 @@ describe("searchPages", () => {
     makePage({ id: "a", title: "产品路线图" }),
     makePage({ id: "b", title: "会议纪要" }),
     makePage({ id: "c", title: "随手记", deletedAt: 123 }),
-    makePage({ id: "d", title: "资料夹", kind: "folder" }),
+    makePage({ id: "d", title: "资料夹", kind: "group" }),
   ];
   const contents = [
     makeContent("a", "包含季度目标与里程碑"),

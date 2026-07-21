@@ -14,6 +14,9 @@ import Mention from "@tiptap/extension-mention";
 import Mathematics from "@tiptap/extension-mathematics";
 import type { AnyExtension, Editor } from "@tiptap/core";
 import type { Page } from "../domain/types";
+import { Attachment } from "./attachment";
+import { CodeBlockWithLanguage } from "./codeBlock";
+import { Indent } from "./indent";
 import { createMentionSuggestion } from "./mentionSuggestion";
 import { createSlashSuggestion } from "./slashSuggestion";
 
@@ -31,10 +34,12 @@ export interface EditorExtensionsOptions {
 export function buildDocumentExtensions(): AnyExtension[] {
   return [
     StarterKit.configure({
-      heading: { levels: [1, 2, 3] },
+      heading: { levels: [1, 2, 3, 4, 5, 6] },
       link: { openOnClick: false, autolink: true },
-      codeBlock: { defaultLanguage: null },
+      // 代码块由 CodeBlockWithLanguage（lowlight 高亮 + 语言菜单）提供。
+      codeBlock: false,
     }),
+    CodeBlockWithLanguage,
     TextStyleKit,
     Highlight.configure({ multicolor: true }),
     TextAlign.configure({ types: ["heading", "paragraph"] }),
@@ -46,6 +51,8 @@ export function buildDocumentExtensions(): AnyExtension[] {
     TaskItem.configure({ nested: true }),
     TableKit.configure({ table: { resizable: false } }),
     Mathematics,
+    Indent,
+    Attachment,
   ];
 }
 

@@ -3,32 +3,12 @@ import { BubbleMenu } from "@tiptap/react/menus";
 import type { Editor } from "@tiptap/core";
 import { openAIAssistant } from "../../editor/aiBridge";
 import type { AIMode } from "../../domain/ai";
-
-const TEXT_COLORS = [
-  { name: "默认", value: null },
-  { name: "灰色", value: "#787774" },
-  { name: "棕色", value: "#9F6B53" },
-  { name: "橙色", value: "#D9730D" },
-  { name: "黄色", value: "#CB912F" },
-  { name: "绿色", value: "#448361" },
-  { name: "蓝色", value: "#337EA9" },
-  { name: "紫色", value: "#9065B0" },
-  { name: "粉色", value: "#C14C8A" },
-  { name: "红色", value: "#D44C47" },
-];
-
-const HIGHLIGHT_COLORS = [
-  { name: "默认", value: null },
-  { name: "灰底", value: "#F1F1EF" },
-  { name: "棕底", value: "#F3EEEE" },
-  { name: "橙底", value: "#FAEBDD" },
-  { name: "黄底", value: "#FBF3DB" },
-  { name: "绿底", value: "#EDF3EC" },
-  { name: "蓝底", value: "#E7F3F8" },
-  { name: "紫底", value: "#F6F3F9" },
-  { name: "粉底", value: "#FAF1F5" },
-  { name: "红底", value: "#FDEBEC" },
-];
+import {
+  HIGHLIGHT_COLORS,
+  TEXT_COLORS,
+  applyHighlight,
+  applyTextColor,
+} from "../../editor/format";
 
 interface BubbleToolbarProps {
   editor: Editor;
@@ -195,8 +175,7 @@ export function BubbleToolbar({ editor }: BubbleToolbarProps) {
                 className="bubble-toolbar__swatch"
                 aria-label={`文本颜色：${c.name}`}
                 onClick={() => {
-                  if (c.value) editor.chain().focus().setColor(c.value).run();
-                  else editor.chain().focus().unsetColor().run();
+                  applyTextColor(editor, c.value);
                   setPanel("none");
                 }}
               >
@@ -217,9 +196,7 @@ export function BubbleToolbar({ editor }: BubbleToolbarProps) {
                 className="bubble-toolbar__swatch"
                 aria-label={`高亮：${c.name}`}
                 onClick={() => {
-                  if (c.value)
-                    editor.chain().focus().setHighlight({ color: c.value }).run();
-                  else editor.chain().focus().unsetHighlight().run();
+                  applyHighlight(editor, c.value);
                   setPanel("none");
                 }}
               >

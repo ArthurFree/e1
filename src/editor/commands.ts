@@ -1,5 +1,6 @@
 import type { Editor, Range } from "@tiptap/core";
 import { openAIAssistant } from "./aiBridge";
+import { pickAndInsertAttachment } from "./attachment";
 
 /** 统一命令定义：驱动 / 命令菜单，后续浮动工具栏与块菜单复用同一注册表。 */
 export interface EditorCommand {
@@ -59,6 +60,27 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     keywords: ["h3", "biaoti", "heading"],
     group: "基础",
     run: (e, r) => apply(e, r, () => e.chain().focus().setNode("heading", { level: 3 }).run()),
+  },
+  {
+    id: "heading4",
+    title: "标题 4",
+    keywords: ["h4", "biaoti", "heading"],
+    group: "基础",
+    run: (e, r) => apply(e, r, () => e.chain().focus().setNode("heading", { level: 4 }).run()),
+  },
+  {
+    id: "heading5",
+    title: "标题 5",
+    keywords: ["h5", "biaoti", "heading"],
+    group: "基础",
+    run: (e, r) => apply(e, r, () => e.chain().focus().setNode("heading", { level: 5 }).run()),
+  },
+  {
+    id: "heading6",
+    title: "标题 6",
+    keywords: ["h6", "biaoti", "heading"],
+    group: "基础",
+    run: (e, r) => apply(e, r, () => e.chain().focus().setNode("heading", { level: 6 }).run()),
   },
   {
     id: "paragraph",
@@ -132,6 +154,20 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     keywords: ["image", "tupian", "img", "pic"],
     group: "媒体",
     run: (e, r) => apply(e, r, () => pickAndInsertImage(e)),
+  },
+  {
+    id: "attachment",
+    title: "附件",
+    keywords: ["attachment", "fujian", "file", "wenjian"],
+    group: "媒体",
+    run: (e, r) =>
+      apply(e, r, () => {
+        // pageId 由编辑器宿主写入 storage；缺失时安全跳过。
+        const pageId = (e.storage as unknown as Record<string, unknown>).attachmentPageId as
+          | string
+          | undefined;
+        if (pageId) pickAndInsertAttachment(e, pageId);
+      }),
   },
   {
     id: "inlineMath",

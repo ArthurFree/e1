@@ -18,6 +18,8 @@ function makePage(partial: Partial<Page> & { id: string }): Page {
     title: partial.id,
     icon: null,
     position: 0,
+    favoriteAt: null,
+    lastOpenedAt: null,
     deletedAt: null,
     createdAt: 0,
     updatedAt: 0,
@@ -99,7 +101,7 @@ describe("resolveDrop", () => {
     makePage({ id: "a", position: 0 }),
     makePage({ id: "b", position: 1 }),
     makePage({ id: "c", position: 2 }),
-    makePage({ id: "f", kind: "folder", position: 3 }),
+    makePage({ id: "f", kind: "group", position: 3 }),
     makePage({ id: "f-child", parentId: "f", position: 0 }),
   ];
 
@@ -132,7 +134,7 @@ describe("movePage", () => {
     makePage({ id: "a", position: 0 }),
     makePage({ id: "b", position: 1 }),
     makePage({ id: "c", position: 2 }),
-    makePage({ id: "f", kind: "folder", position: 3 }),
+    makePage({ id: "f", kind: "group", position: 3 }),
     makePage({ id: "f-child", parentId: "f", position: 0 }),
   ];
 

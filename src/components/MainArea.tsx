@@ -6,8 +6,12 @@ import { contentRepository } from "../infrastructure/repositories";
 import { useApp } from "../state/AppState";
 import { TitleEditor } from "./TitleEditor";
 import { TagPicker } from "./TagPicker";
+import { StartPage } from "./StartPage";
+import { RecentPage } from "./RecentPage";
+import { FavoritesPage } from "./FavoritesPage";
+import { WorkspaceHome } from "./WorkspaceHome";
 import { DocumentEditor } from "./editor/DocumentEditor";
-import { EmojiPicker } from "./editor/EmojiPicker";
+import { FormatToolbar } from "./editor/FormatToolbar";
 import { TocPanel } from "./editor/TocPanel";
 
 interface MainAreaProps {
@@ -24,29 +28,29 @@ function emptyContent(pageId: string): DocumentContent {
   };
 }
 
-/** 主栏：顶部控制条 + 文档头（图标、标题）+ 编辑器画布。 */
+/** 主栏：按视图渲染开始首页 / 知识库首页 / 文档编辑区。 */
 export function MainArea({ onOpenTree }: MainAreaProps) {
-  const { pages, selectedPageId, renamePage, preferences, setTheme } = useApp();
+  const {
+    pages,
+    selectedPageId,
+    view,
+    renamePage,
+    preferences,
+    setTheme,
+    markOpened,
+    togglePageFavorite,
+    titleFocusPageId,
+    clearTitleFocus,
+  } = useApp();
   const page = pages.find((p) => p.id === selectedPageId) ?? null;
   const [content, setContent] = useState<DocumentContent | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
   const [tocOpen, setTocOpen] = useState(false);
-  const [, setHistoryTick] = useState(0);
-
-  // 跟踪编辑历史变化，实时更新撤销/重做可用状态。
-  useEffect(() => {
-    if (!editor) return;
-    const refresh = () => setHistoryTick((t) => t + 1);
-    editor.on("transaction", refresh);
-    return () => {
-      editor.off("transaction", refresh);
-    };
-  }, [editor]);
 
   useEffect(() => {
     let cancelled = false;
     setContent(null);
-    if (page?.kind === "document") {
+    if (view === "document" && page?.kind === "document") {
       void contentRepository.get(page.id).then((result) => {
         // 新建文档尚无内容行：以空文档作为初始内容，首次编辑即落盘。
         if (!cancelled) setContent(result ?? emptyContent(page.id));
@@ -55,11 +59,19 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
     return () => {
       cancelled = true;
     };
-  }, [page?.id, page?.kind]);
+  }, [view, page?.id, page?.kind]);
 
   const onEditorReady = useCallback((instance: Editor | null) => {
     setEditor(instance);
   }, []);
+
+  // 文档在主区域完成渲染后记录最近浏览时间（仅打开，不含搜索预览）。
+  useEffect(() => {
+    if (view === "document" && page?.kind === "document" && content) {
+      void markOpened(page.id);
+    }
+    // content 随页面加载一次性落地，用 pageId 标识即可。
+  }, [view, page?.id, page?.kind, content?.pageId, markOpened]);
 
   // 切换/新建文档时旧编辑器先销毁、onEditorReady(null) 后落地，
   // 期间状态里仍是已销毁实例，调用其 API 会抛错，需以 isDestroyed 兜底。
@@ -84,6 +96,35 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
 
   const isDocument = page?.kind === "document";
 
+  if (view === "start") {
+    return (
+      <main className="main">
+        <StartPage onOpenTree={onOpenTree} />
+      </main>
+    );
+  }
+  if (view === "recent") {
+    return (
+      <main className="main">
+        <RecentPage onOpenTree={onOpenTree} />
+      </main>
+    );
+  }
+  if (view === "favorites") {
+    return (
+      <main className="main">
+        <FavoritesPage onOpenTree={onOpenTree} />
+      </main>
+    );
+  }
+  if (view === "workspace") {
+    return (
+      <main className="main">
+        <WorkspaceHome onOpenTree={onOpenTree} />
+      </main>
+    );
+  }
+
   return (
     <main className="main">
       <header className="topbar">
@@ -97,25 +138,18 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
         </button>
         <span className="topbar__title">{page?.title || "无标题"}</span>
         <div className="topbar__spacer" />
-        <button
-          type="button"
-          className="icon-button"
-          aria-label="撤销"
-          disabled={!liveEditor?.can().undo()}
-          onClick={() => liveEditor?.chain().focus().undo().run()}
-        >
-          ↩
-        </button>
-        <button
-          type="button"
-          className="icon-button"
-          aria-label="重做"
-          disabled={!liveEditor?.can().redo()}
-          onClick={() => liveEditor?.chain().focus().redo().run()}
-        >
-          ↪
-        </button>
-        {liveEditor && <EmojiPicker editor={liveEditor} />}
+        {isDocument && (
+          <button
+            type="button"
+            className="icon-button"
+            aria-label={page.favoriteAt === null ? "收藏文档" : "取消收藏文档"}
+            aria-pressed={page.favoriteAt !== null}
+            title={page.favoriteAt === null ? "收藏" : "取消收藏"}
+            onClick={() => void togglePageFavorite(page.id)}
+          >
+            {page.favoriteAt === null ? "☆" : "★"}
+          </button>
+        )}
         <button
           type="button"
           className="icon-button"
@@ -148,6 +182,7 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
 
       {isDocument ? (
         <div className="doc-layout">
+          {liveEditor && <FormatToolbar editor={liveEditor} />}
           <div className="doc-scroll">
             <div className="doc-header">
               {page.icon && (
@@ -158,6 +193,8 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
               <TitleEditor
                 pageId={page.id}
                 title={page.title}
+                autoFocus={page.id === titleFocusPageId}
+                onFocused={clearTitleFocus}
                 onSave={(id, title) => void renamePage(id, title || "无标题")}
               />
               <TagPicker pageId={page.id} />

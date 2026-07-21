@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef } from "react";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
-import { contentRepository } from "../../infrastructure/repositories";
+import { attachmentRepository, contentRepository } from "../../infrastructure/repositories";
 import { useApp } from "../../state/AppState";
 import { useDebouncedCallback } from "../../hooks/useDebouncedCallback";
+import { collectAttachmentIds } from "../../editor/attachment";
 import { buildEditorExtensions } from "../../editor/extensions";
 import { BubbleToolbar } from "./BubbleToolbar";
 import { BlockHandle } from "./BlockHandle";
@@ -29,7 +30,13 @@ export function DocumentEditor({
 
   const { debounced, flush } = useDebouncedCallback(
     (json: unknown, text: string) => {
-      void contentRepository.save(pageId, json, text);
+      void contentRepository
+        .save(pageId, json, text)
+        // 保存完成后清理不再被引用的孤儿附件。
+        .then(() =>
+          attachmentRepository.removeOrphans(pageId, collectAttachmentIds(json)),
+        )
+        .catch(() => undefined);
     },
     800,
   );
@@ -65,11 +72,15 @@ export function DocumentEditor({
 
   useEffect(() => {
     editorRef.current = editor;
+    // 供附件类命令读取当前文档 ID（附件记录归属页面）。
+    if (editor) {
+      (editor.storage as unknown as Record<string, unknown>).attachmentPageId = pageId;
+    }
     onEditorReady(editor);
     return () => {
       onEditorReady(null);
     };
-  }, [editor, onEditorReady]);
+  }, [editor, pageId, onEditorReady]);
 
   if (!editor) return null;
 

@@ -13,7 +13,7 @@ function makeSnippet(text: string, query: string): string {
 
 /**
  * 全局搜索：大小写不敏感匹配标题与正文快照，排除回收站。
- * 文件夹只参与标题匹配；标题命中的结果排在前面。
+ * 分组只参与标题匹配；标题命中的结果排在前面。
  */
 export function searchPages(
   pages: Page[],

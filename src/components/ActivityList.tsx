@@ -1,0 +1,186 @@
+import { useEffect, useMemo, useState } from "react";
+import type { Page } from "../domain/types";
+import {
+  ACTIVITY_PAGE_SIZE,
+  buildActivityRows,
+  formatRelativeTime,
+  type ActivityTab,
+} from "../domain/activity";
+import { pageRepository } from "../infrastructure/repositories";
+import { useApp } from "../state/AppState";
+
+/**
+ * 跨知识库文档活动列表：编辑过/浏览过页签、归属筛选、分页与空态。
+ * 开始首页与“最近”视图共用。
+ */
+export function ActivityList() {
+  const { workspaces, openDocument, locatePage, togglePageFavorite } = useApp();
+  const [allPages, setAllPages] = useState<Page[]>([]);
+  const [tab, setTab] = useState<ActivityTab>("edited");
+  const [filterWorkspaceId, setFilterWorkspaceId] = useState<string | null>(null);
+  const [limit, setLimit] = useState(ACTIVITY_PAGE_SIZE);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    let cancelled = false;
+    void pageRepository
+      .listAll()
+      .then((pages) => {
+        if (!cancelled) {
+          setAllPages(pages);
+          setNow(Date.now());
+        }
+      })
+      // 组件卸载或测试重置数据库期间的失败可安全忽略。
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const rows = useMemo(
+    () =>
+      buildActivityRows({
+        pages: allPages,
+        workspaces,
+        tab,
+        workspaceId: filterWorkspaceId,
+      }),
+    [allPages, workspaces, tab, filterWorkspaceId],
+  );
+  const visibleRows = rows.slice(0, limit);
+
+  const onToggleFavorite = (page: Page) => {
+    void togglePageFavorite(page.id).then(() => {
+      const next = page.favoriteAt === null ? Date.now() : null;
+      setAllPages((prev) =>
+        prev.map((p) => (p.id === page.id ? { ...p, favoriteAt: next } : p)),
+      );
+    });
+  };
+
+  const emptyText =
+    rows.length === 0 && filterWorkspaceId
+      ? "筛选后无结果"
+      : tab === "edited"
+        ? "尚未编辑文档"
+        : "尚未浏览文档";
+
+  return (
+    <section className="activity" aria-label="文档活动">
+      <div className="activity__bar">
+        <div className="activity__tabs" role="tablist" aria-label="活动类型">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "edited"}
+            className={`activity__tab${tab === "edited" ? " activity__tab--active" : ""}`}
+            onClick={() => {
+              setTab("edited");
+              setLimit(ACTIVITY_PAGE_SIZE);
+            }}
+          >
+            编辑过
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "viewed"}
+            className={`activity__tab${tab === "viewed" ? " activity__tab--active" : ""}`}
+            onClick={() => {
+              setTab("viewed");
+              setLimit(ACTIVITY_PAGE_SIZE);
+            }}
+          >
+            浏览过
+          </button>
+        </div>
+        <select
+          className="activity__filter"
+          aria-label="按知识库筛选"
+          value={filterWorkspaceId ?? ""}
+          onChange={(event) => {
+            setFilterWorkspaceId(event.target.value || null);
+            setLimit(ACTIVITY_PAGE_SIZE);
+          }}
+        >
+          <option value="">全部知识库</option>
+          {workspaces.map((ws) => (
+            <option key={ws.id} value={ws.id}>
+              {ws.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {visibleRows.length === 0 ? (
+        <div className="activity__empty">{emptyText}</div>
+      ) : (
+        <table className="activity-table">
+          <thead>
+            <tr>
+              <th scope="col">标题</th>
+              <th scope="col" className="activity-table__type">类型</th>
+              <th scope="col">归属</th>
+              <th scope="col">时间</th>
+              <th scope="col" className="activity-table__fav">
+                <span className="sr-only">收藏</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleRows.map((row) => (
+              <tr key={row.page.id}>
+                <td>
+                  <button
+                    type="button"
+                    className="activity-table__title"
+                    onClick={() => void openDocument(row.page.id)}
+                  >
+                    <span aria-hidden="true">{row.page.icon ?? "📄"}</span>
+                    {row.page.title || "无标题"}
+                  </button>
+                </td>
+                <td className="activity-table__type">文档</td>
+                <td>
+                  <button
+                    type="button"
+                    className="activity-table__path"
+                    title="进入所属知识库并定位"
+                    onClick={() => void locatePage(row.page.id)}
+                  >
+                    {row.path}
+                  </button>
+                </td>
+                <td className="activity-table__time">
+                  {formatRelativeTime(now, row.time)}
+                </td>
+                <td className="activity-table__fav">
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label={row.page.favoriteAt === null ? "收藏文档" : "取消收藏文档"}
+                    aria-pressed={row.page.favoriteAt !== null}
+                    title={row.page.favoriteAt === null ? "收藏" : "取消收藏"}
+                    onClick={() => onToggleFavorite(row.page)}
+                  >
+                    {row.page.favoriteAt === null ? "☆" : "★"}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {rows.length > limit && (
+        <button
+          type="button"
+          className="activity__more"
+          onClick={() => setLimit((n) => n + ACTIVITY_PAGE_SIZE)}
+        >
+          查看更多（还有 {rows.length - limit} 条）
+        </button>
+      )}
+    </section>
+  );
+}

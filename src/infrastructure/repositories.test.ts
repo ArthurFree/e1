@@ -20,7 +20,7 @@ describe("种子初始化", () => {
 
     const pages = await pageRepository.listByWorkspace(workspaces[0].id);
     expect(pages.length).toBeGreaterThanOrEqual(4);
-    expect(pages.some((p) => p.kind === "folder")).toBe(true);
+    expect(pages.some((p) => p.kind === "group")).toBe(true);
 
     const welcome = pages.find((p) => p.title.includes("欢迎"));
     expect(welcome).toBeDefined();
@@ -59,11 +59,11 @@ describe("页面仓储", () => {
 
   it("移动页面更新父级，循环父级被拒绝", async () => {
     const ws = await seedWorkspace();
-    const folder = await pageRepository.create({
+    const group = await pageRepository.create({
       workspaceId: ws.id,
       parentId: null,
-      kind: "folder",
-      title: "文件夹",
+      kind: "group",
+      title: "分组",
     });
     const doc = await pageRepository.create({
       workspaceId: ws.id,
@@ -71,12 +71,12 @@ describe("页面仓储", () => {
       kind: "document",
       title: "文档",
     });
-    await pageRepository.move(doc.id, folder.id);
+    await pageRepository.move(doc.id, group.id);
     let pages = await pageRepository.listByWorkspace(ws.id);
-    expect(pages.find((p) => p.id === doc.id)?.parentId).toBe(folder.id);
+    expect(pages.find((p) => p.id === doc.id)?.parentId).toBe(group.id);
 
-    await expect(pageRepository.move(folder.id, folder.id)).rejects.toThrow();
-    await pageRepository.move(doc.id, folder.id);
+    await expect(pageRepository.move(group.id, group.id)).rejects.toThrow();
+    await pageRepository.move(doc.id, group.id);
     const childDoc = await pageRepository.create({
       workspaceId: ws.id,
       parentId: doc.id,
@@ -85,35 +85,35 @@ describe("页面仓储", () => {
     });
     await expect(pageRepository.move(doc.id, childDoc.id)).rejects.toThrow();
     pages = await pageRepository.listByWorkspace(ws.id);
-    expect(pages.find((p) => p.id === doc.id)?.parentId).toBe(folder.id);
+    expect(pages.find((p) => p.id === doc.id)?.parentId).toBe(group.id);
   });
 
   it("删除进回收站，恢复回到原父级", async () => {
     const ws = await seedWorkspace();
-    const folder = await pageRepository.create({
+    const group = await pageRepository.create({
       workspaceId: ws.id,
       parentId: null,
-      kind: "folder",
-      title: "文件夹",
+      kind: "group",
+      title: "分组",
     });
     const doc = await pageRepository.create({
       workspaceId: ws.id,
-      parentId: folder.id,
+      parentId: group.id,
       kind: "document",
       title: "文档",
     });
 
-    await pageRepository.remove(folder.id);
+    await pageRepository.remove(group.id);
     let pages = await pageRepository.listByWorkspace(ws.id);
-    expect(pages.find((p) => p.id === folder.id)?.deletedAt).not.toBeNull();
+    expect(pages.find((p) => p.id === group.id)?.deletedAt).not.toBeNull();
     expect(pages.find((p) => p.id === doc.id)?.deletedAt).not.toBeNull();
 
-    await pageRepository.restore(folder.id);
+    await pageRepository.restore(group.id);
     pages = await pageRepository.listByWorkspace(ws.id);
-    expect(pages.find((p) => p.id === folder.id)?.deletedAt).toBeNull();
+    expect(pages.find((p) => p.id === group.id)?.deletedAt).toBeNull();
     const restored = pages.find((p) => p.id === doc.id);
     expect(restored?.deletedAt).toBeNull();
-    expect(restored?.parentId).toBe(folder.id);
+    expect(restored?.parentId).toBe(group.id);
   });
 
   it("损坏的页面记录被跳过而不是抛错", async () => {
@@ -155,20 +155,20 @@ describe("页面仓储", () => {
 
   it("purge 永久删除整棵子树及其正文与标签关联", async () => {
     const ws = await seedWorkspace();
-    const folder = await pageRepository.create({
-      workspaceId: ws.id, parentId: null, kind: "folder", title: "文件夹",
+    const group = await pageRepository.create({
+      workspaceId: ws.id, parentId: null, kind: "group", title: "分组",
     });
     const doc = await pageRepository.create({
-      workspaceId: ws.id, parentId: folder.id, kind: "document", title: "文档",
+      workspaceId: ws.id, parentId: group.id, kind: "document", title: "文档",
     });
     const tag = await tagRepository.create(ws.id, "标签", "#e16259");
     await tagRepository.setPageTags(doc.id, [tag.id]);
 
-    await pageRepository.remove(folder.id);
-    await pageRepository.purge(folder.id);
+    await pageRepository.remove(group.id);
+    await pageRepository.purge(group.id);
 
     const pages = await pageRepository.listByWorkspace(ws.id);
-    expect(pages.some((p) => p.id === folder.id || p.id === doc.id)).toBe(false);
+    expect(pages.some((p) => p.id === group.id || p.id === doc.id)).toBe(false);
     expect(await contentRepository.get(doc.id)).toBeUndefined();
     expect(await tagRepository.listPageTagIds(doc.id)).toEqual([]);
     // 标签本身保留。

@@ -20,6 +20,7 @@ const MODE_TITLE: Record<AIMode, string> = {
   polish: "润色选区",
   rewrite: "改写选区",
   summarize: "总结选区",
+  draft: "AI 写作",
 };
 
 /** ask / summarize 把结果插到目标位置之后；polish / rewrite 替换原选区。 */

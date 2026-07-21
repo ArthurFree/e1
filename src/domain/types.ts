@@ -81,6 +81,8 @@ export interface Preferences {
   theme: ThemeName;
   sidebarWidth: number;
   aiConfig: AIConfig | null;
+  /** 上次路由（AppRoute 的 JSON 序列化）；null 表示首次安装，进入开始首页。 */
+  lastRoute: string | null;
 }
 
 export interface TrashRecord {
@@ -103,4 +105,5 @@ export const DEFAULT_PREFERENCES: Preferences = {
   theme: "light",
   sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
   aiConfig: null,
+  lastRoute: null,
 };

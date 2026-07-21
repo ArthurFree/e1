@@ -3,7 +3,7 @@
 | 项目 | 内容 |
 | --- | --- |
 | 版本 | 1.1 |
-| 状态 | 实现中 |
+| 状态 | 实现中（阶段 0–5 已完成，阶段 6–7 未开始） |
 | 创建日期 | 2026-07-21 |
 | 最后更新 | 2026-07-21 |
 | 参考产品 | 本机语雀桌面端 |
@@ -450,7 +450,7 @@ interface Attachment {
 
 ### 阶段 1：领域模型与数据迁移
 
-状态：`实现中（中断于 2026-07-21，从此处续做）`
+状态：`已完成`（2026-07-21：123 项单元/组件测试、typecheck、生产构建全部通过）
 
 **中断进度记录（续做入口）：**
 
@@ -461,15 +461,17 @@ interface Attachment {
 - `src/infrastructure/db.ts`：`DB_VERSION` 升到 2；upgrade 改为按 `oldVersion` 分支；导出 `createV1Schema`（供 v1 fixture 迁移测试）；新增 `revisions`（pageId、[pageId+createdAt] 索引）与 `attachments`（pageId 索引）store；v1→v2 迁移：folder→group 原地改写 + 新字段补默认值（upgrade 事务内）
 - `src/infrastructure/repositories.ts`：`isValidPage/isValidWorkspace` 已删除，改为 `normalizePage/normalizeWorkspace`（核心字段非法跳过、新字段缺失补默认值）；workspace/page 新接口已实现；`purge` 已级联删除 revisions/attachments；`revisionRepository`、`attachmentRepository` 已实现
 
-未完成（**当前工作区不能编译**，续做从这里开始）：
-1. `src/infrastructure/repositories.ts`：`tagRepository.listWorkspacePageTags` 仍引用已删除的 `isValidPage`，改为 `normalizePage`
-2. `src/infrastructure/seed.ts`：`folder` kind 改 `group`，seed 的 workspace 补新字段，「文件夹」文案改「分组」
-3. `src/state/AppState.tsx:157`：`kind === "folder"` 判断与「新建文件夹」文案改分组
-4. `src/components/PageTreeSidebar.tsx`（149/333-335 行）、`TrashPanel.tsx:63`、`SearchPanel.tsx:50`：`"folder"` 引用与文案改分组；`src/domain/search.ts:16` 注释同步
-5. 既有测试改用 `group`：`src/infrastructure/repositories.test.ts`、`src/domain/pageTree.test.ts`、`src/domain/search.test.ts`
-6. 新增 `src/infrastructure/migration.test.ts`：用 `createV1Schema` 建真实 v1 库写入旧结构 fixture（folder 页面、旧 workspace、tags/trash/preferences），再以 v2 打开验证：数量/层级/正文/标签/回收站保留、folder→group、新字段默认值、重复打开不重复迁移
-7. 新增 revision/attachment 仓储测试（去重、prune、孤儿清理、purge 级联）
-8. 全部测试 + typecheck 通过后，把阶段 1 标记「已完成」并回写本节偏差
+续做完成（2026-07-21）：
+- `tagRepository.listWorkspacePageTags` 改用 `normalizePage`；seed、AppState、PageTreeSidebar/TrashPanel/SearchPanel、`search.ts` 注释的 `folder`/「文件夹」全部改为 `group`/「分组」；seed 的 workspace 与页面补齐新字段
+- 既有测试改用 `group` 并补齐 fixture 新字段：`repositories.test.ts`、`pageTree.test.ts`、`search.test.ts`
+- 新增 `src/infrastructure/migration.test.ts`（4 例）：用 `createV1Schema` 建真实 v1 库写入旧结构 fixture（folder 页面、旧 workspace、tags/trash/preferences），以 v2 打开验证数量/层级/正文/标签/回收站/偏好保留、folder→group、新字段默认值、重复打开不重复迁移
+- 新增 `src/infrastructure/revisions-attachments.test.ts`（8 例）：版本倒序、相邻内容去重、pruneInterval 只裁 interval、损坏记录跳过；附件增删列、removeOrphans 幂等、损坏记录跳过；purge 级联删除版本与附件（回收站内保留）
+
+**实际偏差：**
+
+- 版本倒序测试改用直接写入可控 `createdAt` 的记录：同一毫秒内连续 `add` 时间戳相同，排序不稳定，属测试构造问题而非实现缺陷。
+- fake-indexeddb + jsdom 无法结构化克隆 Blob（读出为空对象），附件测试只验证元数据与记录读写；Blob 内容往返留待阶段 5 的 Playwright 真实浏览器端到端覆盖。
+- 重复打开验证用同版本第二连接实现：仓储层 `getDB` 缓存连接，测试不应关闭缓存连接后再用仓储（会拿到已关闭连接）。
 
 交付内容：
 
@@ -482,53 +484,87 @@ interface Attachment {
 
 ### 阶段 2：全局开始首页与知识库首页
 
-状态：`未开始`
+状态：`已完成`（2026-07-21：140 项单元/组件测试、typecheck、生产构建全部通过）
 
-交付内容：
+交付内容（均已实现）：
 
-- 添加全局“开始”路由、快速操作卡片和文档活动区。
-- 实现编辑过/浏览过页签、归属筛选、列表分页与开始入口预览。
-- 添加知识库头部、统计、收藏、首页和目录入口。
-- 实现知识库首页完整目录概览和空状态。
+- 全局“开始”路由：`AppState.view`（start/workspace/document）+ `preferences.lastRoute` 持久化，首次安装进入开始首页，后续启动恢复上次路由；路由指向的文档失效时回退对应知识库首页（`src/domain/route.ts`）。
+- 快速操作卡片：新建文档（主区域在最近使用知识库根目录创建，无最近记录时先选目标；下拉可选任意知识库/分组）、新建知识库（弹窗：名称必填、图标/描述可选，创建后进入知识库首页）；模板中心与 AI 帮你写卡片已渲染，模板中心禁用待阶段 3，AI 未配置时点击打开设置面板。
+- 文档活动区：编辑过/浏览过页签、知识库归属筛选、30 条分页“查看更多”、归属路径（知识库 / 分组链）点击定位、三种空态、<768px 隐藏类型列；纯逻辑在 `src/domain/activity.ts`（含 `formatRelativeTime`、`workspaceDocStats`）。
+- 开始入口预览：悬停/聚焦侧栏“开始”展开，编辑过/浏览过切换，最多 5 条，Escape/移开关闭，点击直接打开（`StartPreview`）。
+- 知识库首页：图标/名称/描述（空描述显示引导）、收藏切换、文档数与正文总字数、新建文档/新建分组、完整目录概览（分组为分段标题、可展开收起、不拖拽）、空知识库引导。
+- 知识库侧栏顶部“首页”入口，“页面”更名“目录”；Rail 增加“开始”入口，知识库图标使用 `workspace.icon`。
+- 删除/永久删除当前文档后主区域返回知识库首页；切换知识库改为进入知识库首页。
+
+**实际偏差：**
+
+- 切换知识库与启动恢复的默认落点从“首篇文档”变为知识库首页/上次路由：既有 E2E（假定启动即编辑器）需在阶段 7 改写。
+- 本阶段未跑 Playwright：node_modules 缺少 playwright 可执行文件（devDependencies 未完整安装），阶段 7 重装后统一更新端到端与视觉基线。
+- 知识库首页内新建分组不自动进入重命名（重命名交互仍在侧栏目录树）。
+- 活动区与预览数据在挂载时经 `pageRepository.listAll()` 加载，无跨视图实时订阅；同会话内其他知识库的变更在下次进入视图时刷新。
+- `switchWorkspace`/`createWorkspace`/路由恢复会写入 `Workspace.lastOpenedAt` 作为“最近使用”依据。
 
 完成标准：用户启动后可从全局首页快速创建或打开文档；知识库首页正确显示统计和目录。
 
 ### 阶段 3：分组、收藏、模板与 AI 快速创建
 
-状态：`未开始`
+状态：`已完成`（2026-07-21：157 项单元/组件测试、typecheck、生产构建全部通过）
 
-交付内容：
+交付内容（均已实现）：
 
-- 将文件夹 UI 与操作统一为分组，保持树拖拽、回收站和 Markdown 导入行为。
-- 记录 `lastOpenedAt`，实现独立最近视图。
-- 实现知识库/文档收藏、取消收藏和收藏页。
-- 实现六个内置模板和 AI 新建文档流程。
-- 增加空态、排序和永久删除后的清理。
+- 分组 UI 统一：侧栏新建分组后立即进入重命名；新建文档立即选中并聚焦标题（`titleFocusPageId` + `TitleEditor.autoFocus`）；树拖拽、回收站、Markdown 导入行为不变。
+- 最近视图：独立“最近”页（Rail 🕘 入口，路由持久化），与开始首页共用抽取的 `ActivityList`（编辑过/浏览过页签、归属筛选、分页、空态、行内收藏切换）；`lastOpenedAt` 在文档渲染后记录（阶段 2 已接入）。
+- 收藏：知识库收藏（首页）与文档收藏（顶栏 ☆/★、活动列表行内、收藏页）；全局收藏页（Rail ⭐ 入口）先知识库后文档，均按收藏时间倒序，可取消；空态齐备；软删保留收藏时间、永久删除随记录清理。
+- 模板中心：六个内置模板（空白/会议纪要/周报/项目计划/技术方案/读书笔记，静态 Tiptap JSON 在 `src/editor/templates.ts`）；选模板 → 选位置（共用 `TargetPicker`/`buildPickerTargets`）→ 创建副本并打开；取消不创建；无知识库时可浏览不可创建。
+- AI 帮你写：未配置时打开设置面板；已配置时进入 `AIDraftModal`（主题 + 五种文档类型 + 创建位置 → 生成预览 → 确认创建/重新生成/取消）；AI 返回 Markdown 经 `markdownToJson` 白名单解析后落盘；确认前不创建任何文档；`ai.ts` 新增 `draft` 模式与 `draftType`。
+
+**实际偏差：**
+
+- “分组操作通过端到端测试”延期到阶段 7：本机 node_modules 缺 playwright 可执行文件，E2E 与视觉基线统一在阶段 7 重写。
+- 收藏的文档在收藏页按列表行展示（含归属路径与取消按钮），未复用活动表的四列表格。
+- AI 生成预览支持手动编辑后再确认（超出需求的最低要求，但沿用预览确认语义）。
+- 修复了一个测试暴露的清理竞态：`ActivityList`/`FavoritesPage`/`TargetPicker`/`StartPreview` 的异步 `listAll` 在组件卸载或数据库重置后不再产生未处理拒绝。
 
 完成标准：最近和收藏排序正确，模板与 AI 只在确认后创建文档，分组操作通过端到端测试。
 
 ### 阶段 4：常驻编辑工具栏
 
-状态：`未开始`
+状态：`已完成`（2026-07-21：174 项单元/组件测试、typecheck、生产构建全部通过）
 
-交付内容：
+交付内容（均已实现）：
 
-- 扩展统一命令模型。
-- 实现桌面完整工具栏和响应式“更多”。
-- 增加标题 4–6、字号、缩进、对齐、清除格式。
-- 保持 `/`、选区工具栏和块菜单行为一致。
+- 扩展命令模型：新增 `src/editor/format.ts` 共享格式化助手（段落样式/字号/颜色/高亮/清理），常驻工具栏与选区工具栏（BubbleToolbar 已改为复用）经同一组函数执行；`/` 命令注册表补齐标题 4–6。
+- 常驻工具栏 `FormatToolbar`：插入（分隔线/图片/表格/行内公式/公式块/AI 助手，附件项禁用待阶段 5）、Emoji、撤销/重做（实时禁用态）、段落样式（正文/标题 1–6/引用/代码块）、字号（默认 + 12–32px，存 textStyle 属性）、行内七项（含上标/下标）、链接（新建/编辑/留空移除）、颜色与高亮（含恢复默认）、对齐四项、列表三项、缩进两项、清理两项（清除行内格式/重置为正文）；下拉支持 Escape、方向键、选择后自动关闭。
+- 响应式：≥1024px 完整工具栏；<1024px 对齐/缩进/清理收进“更多”下拉；<768px 工具栏横向滚动不压缩正文。
+- 标题 1–6 schema（既有 1–3 内容不变），h4–h6 样式补齐。
+- 缩进：新增 `src/editor/indent.ts` 扩展——列表项 sink/lift，段落/标题 indent 属性（最大 8 级，渲染 margin-left）；Tab/Shift+Tab 仅在列表内生效，非列表不拦截默认行为。
+- 顶栏撤销/重做/Emoji 移入工具栏，顶栏保留收藏/导出/目录/主题。
+
+**实际偏差：**
+
+- 插入菜单中的“附件”项暂为禁用占位，由阶段 5 实现。
+- Emoji 以独立按钮呈现（复用现有 EmojiPicker），未作为插入菜单子项；“任务列表”并入列表组而非独立分组。
+- 响应式收拢按 1024px 断点静态划分低频组（对齐/缩进/清理），非按实际溢出动态测量。
+- 块菜单（BlockHandle）暂未接入 format.ts，其行为保持不变；统一执行层覆盖常驻工具栏、`/` 菜单与选区工具栏。
 
 完成标准：第 7.2 节必做命令全部可用；键盘和可访问性测试通过。
 
 ### 阶段 5：代码块与附件
 
-状态：`未开始`
+状态：`已完成`（2026-07-21：189 项单元/组件测试、typecheck、生产构建全部通过）
 
-交付内容：
+交付内容（均已实现）：
 
-- 增加代码语言属性、语言菜单、主题高亮和复制。
-- 实现附件节点、文件选择、IndexedDB Blob、下载与孤儿清理。
-- 完成回收站、永久删除和存储不足场景测试。
+- 代码块：新增 `src/editor/codeBlock.ts`（CodeBlockLowlight + lowlight common 离线语法集），语言存节点 `language` 属性；节点视图提供语言选择（纯文本/JS/TS/JSON/HTML/CSS/Shell/Python/C/C++/Rust/Java，HTML 走 xml 语法）与复制按钮（只写剪贴板）；未知语言回退纯文本不破坏正文；hljs 令牌配色浅/深双主题。
+- 附件块：新增 `src/editor/attachment.ts`——单文件 20MB 上限（超限立即提示且不写 IndexedDB）、Blob 存 `attachments` store、节点只存 ID/名称/类型/大小；附件块显示文件名、类型、大小、下载（Blob URL 用后释放）、移除；Blob 缺失/损坏显示“附件不可用”且节点可移除；写入失败（如存储不足）提示并中止。
+- 清理：删除附件块仅删文档引用，保存（防抖落盘）完成后经 `collectAttachmentIds` 执行孤儿清理；永久删除级联（阶段 1 已覆盖）、回收站保留；`/` 命令与常驻工具栏插入菜单均提供附件入口，pageId 经 `editor.storage` 传递。
+- 新增依赖：`@tiptap/extension-code-block-lowlight@3.28.0` 与 `lowlight`（与现有 Tiptap 版本对齐，纯开源、运行时离线）。
+
+**实际偏差：**
+
+- 附件下载的 Blob 内容往返在 fake-indexeddb + jsdom 下不可验证（结构化克隆为空对象），已由阶段 1 记录；离线下载端到端验证并入阶段 7 Playwright 基线。
+- 附件块不提供重命名/预览，仅需求要求的展示与下载/移除。
+- “保存失败状态机”属阶段 6 范围，本阶段附件写入失败以即时弹窗提示。
 
 完成标准：支持的代码语言正确高亮；20MB 边界、离线下载和级联清理通过测试。
 

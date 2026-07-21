@@ -47,7 +47,7 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
       id: result.pageId,
       title: result.title,
       subtitle: result.snippet || undefined,
-      icon: page?.icon ?? (page?.kind === "folder" ? "📁" : "📄"),
+      icon: page?.icon ?? (page?.kind === "group" ? "📁" : "📄"),
     };
   });
 
