@@ -1,8 +1,14 @@
-export type PageKind = "document" | "folder";
+export type PageKind = "document" | "group";
 
 export interface Workspace {
   id: string;
   name: string;
+  icon: string | null;
+  description: string;
+  /** 预留：自定义首页文档；R001 使用系统生成的知识库首页。 */
+  homePageId: string | null;
+  favoriteAt: number | null;
+  lastOpenedAt: number | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -15,6 +21,8 @@ export interface Page {
   title: string;
   icon: string | null;
   position: number;
+  favoriteAt: number | null;
+  lastOpenedAt: number | null;
   deletedAt: number | null;
   createdAt: number;
   updatedAt: number;
@@ -25,6 +33,27 @@ export interface DocumentContent {
   contentJson: unknown;
   textSnapshot: string;
   updatedAt: number;
+}
+
+export type RevisionReason = "interval" | "before-restore" | "manual";
+
+export interface DocumentRevision {
+  id: string;
+  pageId: string;
+  contentJson: unknown;
+  textSnapshot: string;
+  createdAt: number;
+  reason: RevisionReason;
+}
+
+export interface Attachment {
+  id: string;
+  pageId: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  blob: Blob;
+  createdAt: number;
 }
 
 export interface Tag {

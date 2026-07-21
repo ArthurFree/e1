@@ -1,5 +1,7 @@
 # 产品需求
 
+> 本文是产品长期基线。基于产品对比和用户反馈形成的具体迭代，统一记录在 [`requirements/`](./requirements/) 目录；当前第一份增量需求为 [R001：语雀式知识库结构与编辑区增强](./requirements/R001-yuque-knowledgebase-editor-alignment.md)。
+
 ## 目标
 
 实现一个可离线使用的 Web 笔记应用。编辑体验和视觉层级参考 Tiptap Notion-like 模板，应用层补充知识库、页面树、搜索、标签、回收站和 Markdown 导入导出。
