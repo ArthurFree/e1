@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import type {
+  AIConfig,
   Page,
   PageKind,
   PageTag,
@@ -18,6 +19,7 @@ import type {
 } from "../domain/types";
 import { DEFAULT_PREFERENCES } from "../domain/types";
 import { searchPages } from "../domain/search";
+import { childrenOf } from "../domain/pageTree";
 import {
   contentRepository,
   pageRepository,
@@ -59,6 +61,12 @@ interface AppState {
   switchWorkspace(id: string): Promise<void>;
   setTheme(theme: Preferences["theme"]): Promise<void>;
   setSidebarWidth(width: number): Promise<void>;
+  /** 保存或清除 AI 配置（传 null 清除）。 */
+  setAIConfig(config: AIConfig | null): Promise<void>;
+  /** 设置面板开关状态（SettingsPanel 与 AI 面板共用）。 */
+  settingsOpen: boolean;
+  openSettings(): void;
+  closeSettings(): void;
 }
 
 const AppContext = createContext<AppState | null>(null);
@@ -74,6 +82,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [preferences, setPreferences] = useState<Preferences>(DEFAULT_PREFERENCES);
   const [tags, setTags] = useState<Tag[]>([]);
   const [pageTags, setPageTagList] = useState<PageTag[]>([]);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const loadPages = useCallback(async (wsId: string) => {
     const list = await pageRepository.listByWorkspace(wsId);
@@ -110,8 +119,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
             loadTags(first.id),
           ]);
           if (cancelled) return;
-          const firstDoc = pageList.find(
-            (p) => p.kind === "document" && p.deletedAt === null,
+          // getAll 按主键（随机 ID）返回，顺序不稳定；按页面树 position 取首篇文档。
+          const firstDoc = childrenOf(pageList, null).find(
+            (p) => p.kind === "document",
           );
           setSelectedPageId(firstDoc?.id ?? null);
         }
@@ -265,6 +275,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setPreferences(next);
   }, []);
 
+  const setAIConfig = useCallback(async (config: AIConfig | null) => {
+    const next = await preferencesRepository.update({ aiConfig: config });
+    setPreferences(next);
+  }, []);
+
+  const openSettings = useCallback(() => {
+    setSettingsOpen(true);
+  }, []);
+
+  const closeSettings = useCallback(() => {
+    setSettingsOpen(false);
+  }, []);
+
   const value = useMemo<AppState>(
     () => ({
       ready,
@@ -294,6 +317,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       switchWorkspace,
       setTheme,
       setSidebarWidth,
+      setAIConfig,
+      settingsOpen,
+      openSettings,
+      closeSettings,
     }),
     [
       ready,
@@ -323,6 +350,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       switchWorkspace,
       setTheme,
       setSidebarWidth,
+      setAIConfig,
+      settingsOpen,
+      openSettings,
+      closeSettings,
     ],
   );
 

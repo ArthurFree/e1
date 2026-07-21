@@ -368,11 +368,22 @@ export const preferencesRepository: PreferencesRepository = {
       | undefined;
     // 损坏或缺失时回退默认值。
     if (!stored || typeof stored !== "object") return DEFAULT_PREFERENCES;
+    // aiConfig 形状校验：三个字段均为字符串才保留，否则回退 null。
+    const ai = stored.aiConfig;
+    const aiConfig =
+      ai !== null &&
+      typeof ai === "object" &&
+      typeof ai.endpoint === "string" &&
+      typeof ai.model === "string" &&
+      typeof ai.apiKey === "string"
+        ? { endpoint: ai.endpoint, model: ai.model, apiKey: ai.apiKey }
+        : null;
     return {
       ...DEFAULT_PREFERENCES,
       ...stored,
       id: "preferences",
       theme: stored.theme === "dark" ? "dark" : "light",
+      aiConfig,
     };
   },
 

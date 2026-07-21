@@ -7,6 +7,7 @@ import { buildEditorExtensions } from "../../editor/extensions";
 import { BubbleToolbar } from "./BubbleToolbar";
 import { BlockHandle } from "./BlockHandle";
 import { TableToolbar } from "./TableToolbar";
+import { AIAssistantPanel } from "./AIAssistantPanel";
 
 interface DocumentEditorProps {
   pageId: string;
@@ -77,6 +78,7 @@ export function DocumentEditor({
       <BubbleToolbar editor={editor} />
       <TableToolbar editor={editor} />
       <BlockHandle editor={editor} />
+      <AIAssistantPanel editor={editor} />
       <EditorContent editor={editor} className="editor__content" />
     </div>
   );

@@ -251,4 +251,29 @@ describe("偏好设置", () => {
     const prefs = await preferencesRepository.get();
     expect(prefs.theme).toBe("light");
   });
+
+  it("aiConfig 保存后能读回", async () => {
+    const aiConfig = {
+      endpoint: "https://api.example.com/v1",
+      model: "test-model",
+      apiKey: "sk-test",
+    };
+    await preferencesRepository.update({ aiConfig });
+    const prefs = await preferencesRepository.get();
+    expect(prefs.aiConfig).toEqual(aiConfig);
+  });
+
+  it("损坏的 aiConfig 回退 null", async () => {
+    const db = await getDB();
+    await db.put("preferences", {
+      id: "preferences",
+      aiConfig: { endpoint: 123 },
+    });
+    const prefs = await preferencesRepository.get();
+    expect(prefs.aiConfig).toBeNull();
+
+    await db.put("preferences", { id: "preferences", aiConfig: "broken" });
+    const prefs2 = await preferencesRepository.get();
+    expect(prefs2.aiConfig).toBeNull();
+  });
 });

@@ -1,11 +1,12 @@
 import type { Editor, Range } from "@tiptap/core";
+import { openAIAssistant } from "./aiBridge";
 
 /** 统一命令定义：驱动 / 命令菜单，后续浮动工具栏与块菜单复用同一注册表。 */
 export interface EditorCommand {
   id: string;
   title: string;
   keywords: string[];
-  group: "基础" | "列表" | "插入" | "媒体";
+  group: "基础" | "列表" | "插入" | "媒体" | "AI";
   run(editor: Editor, range?: Range): void;
 }
 
@@ -138,6 +139,17 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     keywords: ["math", "gongshi", "katex", "latex"],
     group: "插入",
     run: (e, r) => apply(e, r, () => e.chain().focus().insertInlineMath({ latex: "" }).run()),
+  },
+  {
+    id: "askAI",
+    title: "AI 助手",
+    keywords: ["ai", "ask", "gpt", "zhushou"],
+    group: "AI",
+    run: (e, r) =>
+      apply(e, r, () => {
+        const pos = e.state.selection.from;
+        openAIAssistant({ mode: "ask", from: pos, to: pos });
+      }),
   },
 ];
 

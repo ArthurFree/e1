@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import type { Editor } from "@tiptap/core";
+import { openAIAssistant } from "../../editor/aiBridge";
+import type { AIMode } from "../../domain/ai";
 
 const TEXT_COLORS = [
   { name: "默认", value: null },
@@ -32,10 +34,28 @@ interface BubbleToolbarProps {
   editor: Editor;
 }
 
-/** 文本选区浮动工具栏：行内格式、链接、颜色、高亮。 */
+/** 文本选区浮动工具栏：行内格式、链接、颜色、高亮、AI 选区操作。 */
 export function BubbleToolbar({ editor }: BubbleToolbarProps) {
-  const [panel, setPanel] = useState<"none" | "link" | "color" | "highlight">("none");
+  const [panel, setPanel] = useState<"none" | "link" | "color" | "highlight" | "ai">("none");
   const [linkUrl, setLinkUrl] = useState("");
+
+  const openAI = (mode: AIMode) => {
+    const { from, to, empty } = editor.state.selection;
+    if (empty) return;
+    openAIAssistant({
+      mode,
+      selection: editor.state.doc.textBetween(from, to, "\n"),
+      from,
+      to,
+    });
+    setPanel("none");
+  };
+
+  const aiActions: { mode: AIMode; label: string }[] = [
+    { mode: "polish", label: "润色" },
+    { mode: "rewrite", label: "改写" },
+    { mode: "summarize", label: "总结" },
+  ];
 
   const applyLink = () => {
     const url = linkUrl.trim();
@@ -121,6 +141,32 @@ export function BubbleToolbar({ editor }: BubbleToolbarProps) {
         >
           🖊
         </button>
+
+        <button
+          type="button"
+          aria-label="AI"
+          title="AI（润色 / 改写 / 总结）"
+          className="bubble-toolbar__button"
+          onClick={() => setPanel(panel === "ai" ? "none" : "ai")}
+        >
+          ✨
+        </button>
+
+        {panel === "ai" && (
+          <div className="bubble-toolbar__panel" role="menu" aria-label="AI 选区操作">
+            {aiActions.map((action) => (
+              <button
+                key={action.mode}
+                type="button"
+                role="menuitem"
+                className="bubble-toolbar__swatch"
+                onClick={() => openAI(action.mode)}
+              >
+                {action.label}选区
+              </button>
+            ))}
+          </div>
+        )}
 
         {panel === "link" && (
           <div className="bubble-toolbar__panel">

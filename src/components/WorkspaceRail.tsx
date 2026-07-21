@@ -2,10 +2,12 @@ import { useState } from "react";
 import { useApp } from "../state/AppState";
 import { SearchPanel } from "./SearchPanel";
 import { TrashPanel } from "./TrashPanel";
+import { SettingsPanel } from "./SettingsPanel";
 
-/** 最左侧工作区轨道：知识库切换 + 搜索/回收站/设置入口（设置为占位）。 */
+/** 最左侧工作区轨道：知识库切换 + 搜索/回收站/设置入口。 */
 export function WorkspaceRail() {
-  const { workspaces, workspace, switchWorkspace, createWorkspace } = useApp();
+  const { workspaces, workspace, switchWorkspace, createWorkspace, settingsOpen, openSettings } =
+    useApp();
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
@@ -46,12 +48,19 @@ export function WorkspaceRail() {
       >
         🗑️
       </button>
-      <button type="button" className="icon-button" aria-label="设置" disabled title="设置（后续阶段提供）">
+      <button
+        type="button"
+        className="icon-button"
+        aria-label="设置"
+        title="设置"
+        onClick={openSettings}
+      >
         ⚙️
       </button>
 
       {searchOpen && <SearchPanel onClose={() => setSearchOpen(false)} />}
       {trashOpen && <TrashPanel onClose={() => setTrashOpen(false)} />}
+      {settingsOpen && <SettingsPanel />}
 
       {switcherOpen && (
         <div

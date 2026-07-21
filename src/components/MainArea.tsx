@@ -14,6 +14,16 @@ interface MainAreaProps {
   onOpenTree(): void;
 }
 
+/** 新建文档的初始空内容（尚无 IndexedDB 内容行时使用）。 */
+function emptyContent(pageId: string): DocumentContent {
+  return {
+    pageId,
+    contentJson: { type: "doc", content: [{ type: "paragraph" }] },
+    textSnapshot: "",
+    updatedAt: Date.now(),
+  };
+}
+
 /** 主栏：顶部控制条 + 文档头（图标、标题）+ 编辑器画布。 */
 export function MainArea({ onOpenTree }: MainAreaProps) {
   const { pages, selectedPageId, renamePage, preferences, setTheme } = useApp();
@@ -38,7 +48,8 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
     setContent(null);
     if (page?.kind === "document") {
       void contentRepository.get(page.id).then((result) => {
-        if (!cancelled) setContent(result ?? null);
+        // 新建文档尚无内容行：以空文档作为初始内容，首次编辑即落盘。
+        if (!cancelled) setContent(result ?? emptyContent(page.id));
       });
     }
     return () => {
@@ -49,6 +60,10 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
   const onEditorReady = useCallback((instance: Editor | null) => {
     setEditor(instance);
   }, []);
+
+  // 切换/新建文档时旧编辑器先销毁、onEditorReady(null) 后落地，
+  // 期间状态里仍是已销毁实例，调用其 API 会抛错，需以 isDestroyed 兜底。
+  const liveEditor = editor !== null && !editor.isDestroyed ? editor : null;
 
   const toggleTheme = () => {
     void setTheme(preferences.theme === "dark" ? "light" : "dark");
@@ -86,8 +101,8 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
           type="button"
           className="icon-button"
           aria-label="撤销"
-          disabled={!editor?.can().undo()}
-          onClick={() => editor?.chain().focus().undo().run()}
+          disabled={!liveEditor?.can().undo()}
+          onClick={() => liveEditor?.chain().focus().undo().run()}
         >
           ↩
         </button>
@@ -95,18 +110,18 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
           type="button"
           className="icon-button"
           aria-label="重做"
-          disabled={!editor?.can().redo()}
-          onClick={() => editor?.chain().focus().redo().run()}
+          disabled={!liveEditor?.can().redo()}
+          onClick={() => liveEditor?.chain().focus().redo().run()}
         >
           ↪
         </button>
-        {editor && <EmojiPicker editor={editor} />}
+        {liveEditor && <EmojiPicker editor={liveEditor} />}
         <button
           type="button"
           className="icon-button"
           aria-label="导出 Markdown"
           title="导出 Markdown"
-          disabled={!editor}
+          disabled={!liveEditor}
           onClick={exportMarkdown}
         >
           📤
@@ -116,7 +131,7 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
           className="icon-button"
           aria-label="目录"
           aria-pressed={tocOpen}
-          disabled={!editor}
+          disabled={!liveEditor}
           onClick={() => setTocOpen((v) => !v)}
         >
           ☰
@@ -159,7 +174,7 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
               )}
             </div>
           </div>
-          {tocOpen && editor && <TocPanel editor={editor} />}
+          {tocOpen && liveEditor && <TocPanel editor={liveEditor} />}
         </div>
       ) : (
         <div className="main-empty">从左侧选择或新建一篇文档。</div>
