@@ -24,9 +24,9 @@ export function TocPanel({ editor }: TocPanelProps) {
       {items.length === 0 ? (
         <div className="toc__empty">添加标题后自动生成目录。</div>
       ) : (
-        items.map((item, index) => (
+        items.map((item) => (
           <button
-            key={`${item.pos}-${index}`}
+            key={item.pos}
             type="button"
             className="toc__item"
             style={{ paddingLeft: 8 + (item.level - 1) * 14 }}

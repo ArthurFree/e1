@@ -34,6 +34,12 @@ interface BubbleToolbarProps {
   editor: Editor;
 }
 
+const AI_ACTIONS: { mode: AIMode; label: string }[] = [
+  { mode: "polish", label: "润色" },
+  { mode: "rewrite", label: "改写" },
+  { mode: "summarize", label: "总结" },
+];
+
 /** 文本选区浮动工具栏：行内格式、链接、颜色、高亮、AI 选区操作。 */
 export function BubbleToolbar({ editor }: BubbleToolbarProps) {
   const [panel, setPanel] = useState<"none" | "link" | "color" | "highlight" | "ai">("none");
@@ -50,12 +56,6 @@ export function BubbleToolbar({ editor }: BubbleToolbarProps) {
     });
     setPanel("none");
   };
-
-  const aiActions: { mode: AIMode; label: string }[] = [
-    { mode: "polish", label: "润色" },
-    { mode: "rewrite", label: "改写" },
-    { mode: "summarize", label: "总结" },
-  ];
 
   const applyLink = () => {
     const url = linkUrl.trim();
@@ -154,7 +154,7 @@ export function BubbleToolbar({ editor }: BubbleToolbarProps) {
 
         {panel === "ai" && (
           <div className="bubble-toolbar__panel" role="menu" aria-label="AI 选区操作">
-            {aiActions.map((action) => (
+            {AI_ACTIONS.map((action) => (
               <button
                 key={action.mode}
                 type="button"

@@ -41,7 +41,9 @@ export function BlockHandle({ editor }: BlockHandleProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const dragPosRef = useRef<number | null>(null);
   const menuOpenRef = useRef(false);
-  menuOpenRef.current = menuOpen;
+  useEffect(() => {
+    menuOpenRef.current = menuOpen;
+  }, [menuOpen]);
 
   const locateBlock = useCallback(
     (clientX: number, clientY: number): HandleState | null => {

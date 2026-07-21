@@ -12,7 +12,6 @@ import {
   type VirtualElement,
 } from "@floating-ui/dom";
 import {
-  CommandList,
   type CommandListItem,
   type CommandListRef,
 } from "../components/editor/CommandList";
@@ -75,5 +74,4 @@ export function createPopupRenderer(
   };
 }
 
-export { CommandList };
 export type { CommandListItem, CommandListRef };
