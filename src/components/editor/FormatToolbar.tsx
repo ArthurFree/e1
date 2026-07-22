@@ -1,3 +1,13 @@
+/**
+ * 常驻格式工具栏（R002 编辑器外框：42px 常驻工具栏）。
+ *
+ * 覆盖插入、撤销/重做、段落样式、字号、行内格式、链接、颜色/高亮、
+ * 对齐、列表、缩进与清理。窄屏（1024px 以下）时对齐/缩进/清理经
+ * ft-group--collapsible 收进「更多」下拉，保持单行不溢出。
+ *
+ * 所有命令与 `/` 命令菜单、选区浮动工具栏共享 editor/format.ts 与
+ * editor/commands.ts 的统一命令定义，避免三处功能分叉（AGENTS.md 架构约束）。
+ */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Editor } from "@tiptap/core";
 import { EDITOR_COMMANDS } from "../../editor/commands";
@@ -18,7 +28,9 @@ import {
 } from "../../editor/format";
 import { EmojiPicker } from "./EmojiPicker";
 
+/** FormatToolbar 入参。 */
 interface FormatToolbarProps {
+  /** 目标编辑器实例；按钮状态经 transaction 事件跟随其变化。 */
   editor: Editor;
 }
 
@@ -183,6 +195,7 @@ function CleanupButtons({ editor }: { editor: Editor }) {
  * 对齐、列表、缩进、清理。命令执行与 / 菜单、选区工具栏共享 format.ts / commands.ts。
  */
 export function FormatToolbar({ editor }: FormatToolbarProps) {
+  // 只取递增计数用于强制重渲染：transaction 后按钮 active/disabled 需刷新。
   const [, setTick] = useState(0);
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
@@ -196,6 +209,7 @@ export function FormatToolbar({ editor }: FormatToolbarProps) {
   }, [editor]);
 
   const runSlashCommand = (id: string) => {
+    // 「插入」菜单复用 / 命令注册表，保证两个入口行为一致。
     EDITOR_COMMANDS.find((c) => c.id === id)?.run(editor);
   };
 
@@ -229,6 +243,7 @@ export function FormatToolbar({ editor }: FormatToolbarProps) {
 
   const applyLink = () => {
     const url = linkUrl.trim();
+    // 留空即移除链接；extendMarkRange 把光标所在的整段已有链接纳入替换范围。
     if (!url) editor.chain().focus().unsetLink().run();
     else editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
     setLinkOpen(false);

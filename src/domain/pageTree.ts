@@ -1,5 +1,12 @@
+/**
+ * 页面树纯逻辑（R001 知识库结构）：同级排序、拖拽落点解析、移动与环检测。
+ * 全部为纯函数，不接触存储；输入输出都是 Page 数组，由仓储层负责持久化结果。
+ * position 约定：同级内的排序序号，移动后新父级下重编为 0..n-1。
+ */
+
 import type { Page } from "./types";
 
+/** 拖拽落点区域：目标行之前 / 作为目标子级 / 目标行之后。 */
 export type DropZone = "before" | "inside" | "after";
 
 /** 根据指针在行内的相对高度（0..1）判定放置区域：上/下各 1/4 为前/后，中间作为子级。 */
@@ -9,6 +16,7 @@ export function dropZoneAt(ratio: number): DropZone {
   return "inside";
 }
 
+/** 落点解析结果：新父级与插入下标。 */
 export interface DropTarget {
   parentId: string | null;
   index: number;
@@ -16,7 +24,8 @@ export interface DropTarget {
 
 /**
  * 计算页面树拖拽放置的目标父级与插入位置（index 基于不含被拖页的同级列表）。
- * 目标不存在、拖到自身或会形成环时返回 null。
+ * 目标不存在、拖到自身或会形成环时返回 null（由调用方忽略此次拖拽）。
+ * inside 表示追加到目标子级末尾；before/after 相对目标位置插入。
  */
 export function resolveDrop(
   pages: Page[],
@@ -35,6 +44,7 @@ export function resolveDrop(
     };
   }
   if (wouldCreateCycle(pages, draggedId, target.parentId)) return null;
+  // 先排除被拖页再定位下标，保证同父级内拖动时 index 语义一致。
   const siblings = childrenOf(pages, target.parentId).filter(
     (p) => p.id !== draggedId,
   );
@@ -63,6 +73,7 @@ export function wouldCreateCycle(
   pageId: string,
   newParentId: string | null,
 ): boolean {
+  // 沿 newParentId 的祖先链向上走，命中 pageId 即成环；parentId 悬空时链自然终止。
   let cursor: string | null = newParentId;
   while (cursor !== null) {
     if (cursor === pageId) return true;
@@ -90,6 +101,7 @@ export function collectSubtreeIds(pages: Page[], pageId: string): string[] {
  * 把 pageId 移动到 newParentId 下的 index 位置，返回重排后的完整页面数组。
  * 新父级下的未删除同级 position 重编为 0..n-1；index 超出范围时收敛到两端；
  * 形成环时抛错。不修改 updatedAt（由调用方/仓储负责）。
+ * 不改动入参数组，返回新数组（不可变更新，配合 React 状态）。
  */
 export function movePage(
   pages: Page[],
@@ -105,6 +117,7 @@ export function movePage(
   const siblings = childrenOf(pages, newParentId).filter((p) => p.id !== id);
   const clamped = Math.max(0, Math.min(index, siblings.length));
   siblings.splice(clamped, 0, target);
+  // order 只含新父级下的同级，其余页面（含旧同级）原样保留，不重编 position。
   const order = new Map(siblings.map((p, i) => [p.id, i]));
   return pages.map((p) =>
     order.has(p.id)

@@ -1,10 +1,13 @@
 /**
- * 内置本地模板：静态 Tiptap JSON 随应用发布，不访问网络。
+ * 内置本地模板（模板中心的数据源，R001 阶段 3「分组、收藏、模板与 AI 快速创建」）。
+ * 静态 Tiptap JSON 随应用发布，不访问网络。
  * 从模板创建即复制该 JSON 为普通文档正文，创建后与原模板无关联。
  */
 
 export interface DocTemplate {
+  /** 稳定标识，模板卡片与测试引用用。 */
   id: string;
+  /** 模板名，展示在模板卡片标题。 */
   name: string;
   /** 用途说明，展示在模板卡片上。 */
   purpose: string;
@@ -16,6 +19,8 @@ export interface DocTemplate {
 
 type Json = Record<string, unknown>;
 
+/** 以下 doc/heading/paragraph/bulletList/taskList 是模板 JSON 的构造助手，
+ * 只为让下方模板声明保持紧凑可读，不对外导出。 */
 const doc = (...content: Json[]): Json => ({ type: "doc", content });
 const heading = (level: number, text: string): Json => ({
   type: "heading",

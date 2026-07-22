@@ -1,6 +1,13 @@
+/**
+ * 块级缩进扩展（对应 R001 §7.4 标题、字号与缩进）。
+ * 文本块（paragraph/heading）携带 indent 属性实现缩进；
+ * 列表项复用 ProseMirror 原生 sink/lift 语义。
+ */
 import { Extension } from "@tiptap/core";
 
+/** 缩进级数上限：margin-left 按 2em/级渲染，8 级已接近可用宽度极限（R001 §7.4）。 */
 export const MAX_INDENT = 8;
+/** 支持 indent 属性的文本块类型；列表项走 sink/lift，不在此列。 */
 const INDENT_TYPES = ["paragraph", "heading"];
 
 declare module "@tiptap/core" {
@@ -29,6 +36,7 @@ export const Indent = Extension.create({
         attributes: {
           indent: {
             default: 0,
+            // 解析外部 HTML 时容错：非数字、负数一律归零，超上限截断。
             parseHTML: (element) => {
               const value = Number(element.getAttribute("data-indent"));
               return Number.isFinite(value) && value > 0
@@ -55,6 +63,7 @@ export const Indent = Extension.create({
         () =>
         ({ state, commands }) => {
           const { $from } = state.selection;
+          // 选区在列表项内时优先走列表降级（sink），体现列表自身的层级语义。
           for (let depth = $from.depth; depth > 0; depth -= 1) {
             const name = $from.node(depth).type.name;
             if (name === "listItem") return commands.sinkListItem("listItem");
@@ -70,6 +79,7 @@ export const Indent = Extension.create({
         () =>
         ({ state, commands }) => {
           const { $from } = state.selection;
+          // 与 indent 对称：列表项内优先升级（lift）。
           for (let depth = $from.depth; depth > 0; depth -= 1) {
             const name = $from.node(depth).type.name;
             if (name === "listItem") return commands.liftListItem("listItem");

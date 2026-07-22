@@ -1,15 +1,20 @@
 import type { ReactNode } from "react";
 
 /**
- * 系统图标（R002 §6）：Lucide 风格线性 SVG，16px、1.75 描边、
- * 继承 currentColor；Emoji 仅用于用户自定义知识库/文档图标。
+ * @file 系统图标集（R002 §6）：Lucide 风格线性 SVG。
+ * 统一 16px 默认尺寸、24 视窗、1.75 描边、stroke="currentColor" 继承文字颜色，
+ * aria-hidden（可访问名称由所在按钮的 aria-label 提供）。
+ * 系统 UI 一律使用本文件的 SVG 图标；Emoji 仅允许出现在用户自定义的
+ * 知识库 / 文档图标上（见 PageIcon）。
  */
 
 interface IconProps {
+  /** 图标边长（px），默认 16。 */
   size?: number;
   className?: string;
 }
 
+/** 所有图标共用的 SVG 外壳：统一描边与继承色，具体图形由各图标提供 path。 */
 function Svg({ size = 16, className, children }: IconProps & { children: ReactNode }) {
   return (
     <svg
@@ -173,14 +178,16 @@ export const IconTemplate = (p: IconProps) => (
 
 /**
  * 页面/知识库图标：用户自定义 Emoji 原样展示（R002 §6 允许），
- * 未设置时使用统一的 SVG 默认图标。
+ * 未设置时按 kind 回退到统一的 SVG 默认图标（文档 / 分组 / 知识库）。
  */
 export function PageIcon({
   icon,
   kind,
   size = 16,
 }: {
+  /** 用户自定义图标（通常为 Emoji）；为空时回退默认 SVG。 */
   icon?: string | null;
+  /** 节点类型，决定回退用哪个默认图标。 */
   kind: "document" | "group" | "workspace";
   size?: number;
 }) {

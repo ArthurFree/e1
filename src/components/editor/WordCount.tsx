@@ -1,12 +1,18 @@
+/**
+ * 字数统计（R001 §8.2）：顶栏紧凑显示词数，点击展开字符/词/段落详情。
+ * 统计基于编辑器内存中的当前文档（含未保存变更），随事务节流刷新，
+ * 与已保存快照无关；统计口径由 domain/wordCount 统一提供。
+ */
 import { useEffect, useState } from "react";
 import type { Editor } from "@tiptap/core";
 import { countWords, formatWordCount } from "../../domain/wordCount";
 
+/** WordCount 入参。 */
 interface WordCountProps {
   editor: Editor;
 }
 
-/** 统计编辑器当前文档的字符数、词数和段落数。 */
+/** 统计编辑器当前文档的字符数、词数和段落数（段落数只计非空文本块）。 */
 function computeStats(editor: Editor) {
   const { characters, words } = countWords(editor.getText());
   let paragraphs = 0;

@@ -1,3 +1,11 @@
+/**
+ * @file 知识库首页：选中知识库时的落地视图（view === "workspace"）。
+ * 含知识库头部（图标 / 名称 / 描述 / 收藏）、文档数与总字数统计、
+ * 新建文档 / 分组主操作，以及完整目录概览（可折叠分组，仅浏览不支持拖拽；
+ * 统计聚合逻辑在 domain/activity.ts 的 workspaceDocStats）。
+ * R002 规格：内容区最大宽度 960px。
+ */
+
 import { useEffect, useMemo, useState } from "react";
 import type { DocumentContent, Page } from "../domain/types";
 import { formatRelativeTime, workspaceDocStats } from "../domain/activity";
@@ -7,6 +15,7 @@ import { useApp } from "../state/AppState";
 import { PageIcon } from "./ui/icons";
 
 interface WorkspaceHomeProps {
+  /** 打开窄屏抽屉式文档树的回调，由 MainArea 透传。 */
   onOpenTree(): void;
 }
 
@@ -23,6 +32,7 @@ export function WorkspaceHome({ onOpenTree }: WorkspaceHomeProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [now] = useState(() => Date.now());
 
+  // 总字数统计需要正文快照，页面元数据里没有，只能额外取内容行
   useEffect(() => {
     let cancelled = false;
     void contentRepository.listAll().then((list) => {
@@ -68,6 +78,7 @@ export function WorkspaceHome({ onOpenTree }: WorkspaceHomeProps) {
   );
 
   const renderNodes = (parentId: string | null, depth: number) => {
+    // 概览只展示当前知识库的节点；childrenOf 保证同级的 sortOrder 排序
     const nodes = childrenOf(pages, parentId).filter(
       (p) => p.workspaceId === workspace.id,
     );
@@ -79,6 +90,7 @@ export function WorkspaceHome({ onOpenTree }: WorkspaceHomeProps) {
         <section
           key={page.id}
           className="ws-home__group"
+          // 分组按层级缩进，分组内的子节点从 depth 0 重新起排
           style={{ marginLeft: depth * 16 }}
           aria-label={page.title || "未命名分组"}
         >

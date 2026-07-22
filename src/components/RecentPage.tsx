@@ -1,6 +1,13 @@
+/**
+ * @file 「最近」视图：跨知识库的最近编辑 / 最近浏览列表。
+ * 布局与 StartPage 共用 start-page 系列样式，正文直接复用 ActivityList，
+ * 本身只提供页头与容器。
+ */
+
 import { ActivityList } from "./ActivityList";
 
 interface RecentPageProps {
+  /** 打开窄屏抽屉式文档树的回调，由 MainArea 透传。 */
   onOpenTree(): void;
 }
 

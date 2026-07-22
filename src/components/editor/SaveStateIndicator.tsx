@@ -1,10 +1,19 @@
+/**
+ * 保存状态指示器（R001 §8.1）：顶栏展示当前文档的保存状态。
+ * 纯展示组件，状态由 DocumentEditor 的保存状态机驱动；
+ * 失败时提供「重试」按钮，重试动作由父级经 onRegisterRetry 注册后传入。
+ */
 import type { SaveState } from "./DocumentEditor";
 
+/** SaveStateIndicator 入参。 */
 interface SaveStateIndicatorProps {
+  /** 保存状态机当前状态，见 DocumentEditor 的 SaveState。 */
   state: SaveState;
+  /** 「重试」按钮回调：以当前编辑器内容立即重新保存。 */
   onRetry(): void;
 }
 
+/** 把时间戳格式化为本地 HH:MM:SS（保存时刻只关心当天时分秒）。 */
 function formatSavedAt(at: number): string {
   const d = new Date(at);
   const pad = (n: number) => String(n).padStart(2, "0");

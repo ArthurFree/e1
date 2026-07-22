@@ -1,3 +1,12 @@
+/**
+ * AI 助手面板（对话框）。
+ *
+ * 由 `/` 菜单「AI 助手」或选区浮动工具栏触发（经 editor/aiBridge 事件桥），
+ * 支持 ask（自由提问）、polish / rewrite / summarize（选区操作）等模式。
+ * 未配置 AI 时只展示引导并跳转设置，不发起任何外部请求；
+ * 生成结果先预览，用户点「应用」后经 Markdown 白名单解析才写入文档
+ * （AGENTS.md 安全要求：AI 输出须经用户确认后才写入文档）。
+ */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Editor, JSONContent } from "@tiptap/core";
 import { useApp } from "../../state/AppState";
@@ -10,12 +19,16 @@ import {
   type AIAssistantOpen,
 } from "../../editor/aiBridge";
 
+/** AIAssistantPanel 入参。 */
 interface AIAssistantPanelProps {
+  /** 目标编辑器；「应用」时向其写入解析后的内容，ask 模式从其读取上下文。 */
   editor: Editor;
 }
 
+/** 面板状态机：input 等待输入/自动请求前 → loading 请求中 → done 待确认 / error 失败。 */
 type Status = "input" | "loading" | "done" | "error";
 
+/** 各模式对话框标题。 */
 const MODE_TITLE: Record<AIMode, string> = {
   ask: "AI 助手",
   polish: "润色选区",
@@ -56,6 +69,7 @@ export function AIAssistantPanel({ editor }: AIAssistantPanelProps) {
           mode: req.mode,
           prompt: userPrompt,
           selection: req.selection,
+          // ask 模式附带全文前 2000 字作上下文，兼顾效果与请求体大小。
           documentContext:
             req.mode === "ask" ? editor.getText().slice(0, 2000) : undefined,
         });
@@ -108,6 +122,7 @@ export function AIAssistantPanel({ editor }: AIAssistantPanelProps) {
       return;
     }
     const size = editor.state.doc.content.size;
+    // 请求期间文档可能已被编辑，把目标位置钳制到当前文档范围内，避免越界。
     const from = Math.min(request.from, size);
     const to = Math.min(request.to, size);
     if (REPLACE_MODES.has(request.mode)) {

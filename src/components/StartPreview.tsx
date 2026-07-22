@@ -1,3 +1,9 @@
+/**
+ * @file 侧栏「开始」入口的悬停 / 聚焦预览浮层（GlobalSidebar 内使用）。
+ * 复用 domain/activity 的活动行逻辑，只截前 PREVIEW_LIMIT 条用于快速打开，
+ * 不含筛选与分页；Escape 关闭，点击条目后先关预览再打开文档。
+ */
+
 import { useEffect, useMemo, useState } from "react";
 import type { Page } from "../domain/types";
 import {
@@ -10,9 +16,11 @@ import { useApp } from "../state/AppState";
 import { PageIcon } from "./ui/icons";
 
 interface StartPreviewProps {
+  /** 关闭预览浮层（Escape 或点击条目时触发）。 */
   onClose(): void;
 }
 
+/** 预览只展示最近的几条，完整列表入口在开始首页 / 最近视图。 */
 const PREVIEW_LIMIT = 5;
 
 /** 侧栏“开始”入口的悬停/聚焦预览：最多 5 条最近文档，只用于快速打开。 */

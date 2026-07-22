@@ -1,3 +1,10 @@
+/**
+ * @file 跨知识库文档活动列表组件。
+ * 提供「编辑过 / 浏览过」页签、按知识库筛选与分页加载，开始首页（StartPage）
+ * 与「最近浏览」视图（RecentPage）共用。排序、归属路径与相对时间格式等
+ * 纯逻辑在 domain/activity.ts，本组件只负责取数与渲染。
+ */
+
 import { useEffect, useMemo, useState } from "react";
 import type { Page } from "../domain/types";
 import {
@@ -22,6 +29,8 @@ export function ActivityList() {
   const [limit, setLimit] = useState(ACTIVITY_PAGE_SIZE);
   const [now, setNow] = useState(() => Date.now());
 
+  // 直接经仓储取全量页面而非走 AppState：活动列表需要跨知识库的软删排除全集，
+  // AppState 只持有当前知识库的页面子集
   useEffect(() => {
     let cancelled = false;
     void pageRepository
@@ -52,6 +61,8 @@ export function ActivityList() {
   const visibleRows = rows.slice(0, limit);
 
   const onToggleFavorite = (page: Page) => {
+    // 本地 allPages 是仓储数据的快照，收藏成功后需同步修补，
+    // 否则行内星标不会即时翻转（不触发整表重取以保留滚动位置）
     void togglePageFavorite(page.id).then(() => {
       const next = page.favoriteAt === null ? Date.now() : null;
       setAllPages((prev) =>

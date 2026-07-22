@@ -1,3 +1,9 @@
+/**
+ * 表格行列操作工具（TableToolbar 的能力实现）。
+ * 定位当前选区所在表格，支持移动行/列与按列排序；
+ * 通过整体重建表格节点（replaceWith）提交变更，保证 transaction 原子性。
+ * 已知简化：按行内直接子单元格下标操作，含跨列合并单元格的表格下标可能与可视列不一致。
+ */
 import type { Editor } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 
@@ -9,6 +15,7 @@ interface TableLocation {
 /** 当前选区所在的表格。 */
 export function findTable(editor: Editor): TableLocation | null {
   const { $from } = editor.state.selection;
+  // 自内向外逐层向上找 table 节点；pos 取表格起始位置（before）。
   for (let depth = $from.depth; depth > 0; depth--) {
     const node = $from.node(depth);
     if (node.type.name === "table") {
@@ -117,6 +124,7 @@ export function sortByColumn(
     (rowCells(row)[column]?.textContent ?? "").trim();
 
   const sorted = [...body].sort((a, b) => {
+    // zh-Hans-CN + numeric：中文按拼音、数字串按数值比较，符合中文用户直觉。
     const cmp = cellText(a).localeCompare(cellText(b), "zh-Hans-CN", { numeric: true });
     return direction === "asc" ? cmp : -cmp;
   });

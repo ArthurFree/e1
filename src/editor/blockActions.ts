@@ -1,10 +1,19 @@
+/**
+ * 顶层块操作工具（块菜单/块手柄的能力实现）。
+ * 提供块的定位、移动、复制、删除、类型转换与清除格式，
+ * 全部直接构造 ProseMirror transaction，不经过 React 状态。
+ */
 import { TextSelection } from "@tiptap/pm/state";
 import type { Editor } from "@tiptap/core";
 
-/** 顶层块信息：pos 为块起始位置，node 为块节点。兼容传入块起点的情况。 */
+/**
+ * 顶层块信息：pos 为块起始位置，node 为块节点。兼容传入块起点的情况。
+ * @returns 文档为空等无法定位到顶层块时返回 null。
+ */
 export function getTopLevelBlock(editor: Editor, pos: number) {
   const size = editor.state.doc.content.size;
   let $pos = editor.state.doc.resolve(Math.min(pos, size));
+  // 传入块起点时 resolve 落在 depth 0，向后移一位进入块内部再解析。
   if ($pos.depth < 1 && pos < size) {
     $pos = editor.state.doc.resolve(pos + 1);
   }
@@ -19,10 +28,12 @@ export function getTopLevelBlock(editor: Editor, pos: number) {
 export function moveBlock(editor: Editor, fromPos: number, insertPos: number) {
   const node = editor.state.doc.nodeAt(fromPos);
   if (!node) return false;
+  // 目标落在块自身区间内视为无效移动（原地不动）。
   if (insertPos >= fromPos && insertPos <= fromPos + node.nodeSize) return false;
   const { tr } = editor.state;
   let target = insertPos;
   tr.delete(fromPos, fromPos + node.nodeSize);
+  // 删除使后续位置前移：目标在原块之后时要扣除被删长度。
   if (target > fromPos) target -= node.nodeSize;
   tr.insert(target, node);
   editor.view.dispatch(tr);
@@ -46,6 +57,7 @@ export function deleteBlock(editor: Editor, pos: number) {
   return true;
 }
 
+/** 块菜单「转换为」支持的目标类型。 */
 export type ConvertTarget =
   | "paragraph"
   | "heading1"
@@ -57,6 +69,7 @@ export type ConvertTarget =
   | "orderedList"
   | "taskList";
 
+/** 把选区移到指定块内并聚焦，让后续的 chain 命令作用于该块。 */
 function selectBlock(editor: Editor, pos: number) {
   const $pos = editor.state.doc.resolve(pos + 1);
   editor.view.dispatch(

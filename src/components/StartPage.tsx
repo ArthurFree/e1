@@ -1,3 +1,10 @@
+/**
+ * @file 开始首页组件：应用默认落地页（view === "start"）。
+ * 上半区为四个快速操作卡片（新建文档 / 新建知识库 / 模板中心 / AI 帮你写，
+ * R002 的 64px 快捷卡片规格），下半区复用 ActivityList 展示跨知识库文档活动。
+ * 「新建文档」默认落在最近使用的知识库，无最近记录时降级为打开 TargetPicker 选择目标。
+ */
+
 import { useMemo, useState } from "react";
 import { isAIConfigured } from "../domain/ai";
 import { useApp } from "../state/AppState";
@@ -9,6 +16,7 @@ import { AIDraftModal } from "./AIDraftModal";
 import { IconBook, IconFile, IconSparkle, IconTemplate } from "./ui/icons";
 
 interface StartPageProps {
+  /** 打开窄屏抽屉式文档树的回调，由 MainArea 透传。 */
   onOpenTree(): void;
 }
 
@@ -20,6 +28,7 @@ export function StartPage({ onOpenTree }: StartPageProps) {
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [aiDraftOpen, setAiDraftOpen] = useState(false);
 
+  // 最近打开过的知识库作为「新建文档」的默认落点；从未打开过任何知识库时为 null
   const recentWorkspace = useMemo(
     () =>
       workspaces

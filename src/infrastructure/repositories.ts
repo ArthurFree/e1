@@ -44,6 +44,22 @@ import {
 import { ensureSeeded } from "./seed";
 import { createId } from "./id";
 
+/**
+ * repositories.ts —— 领域仓储接口的 IndexedDB 实现。
+ *
+ * 架构位置：实现 `domain/repositories.ts` 定义的全部接口，是 UI/状态层
+ * 与 IndexedDB 之间的唯一数据通道；页面树的纯逻辑（排序、子树收集、成环检测）
+ * 全部委托给 `domain/pageTree.ts`，本文件只做持久化与多 store 事务编排。
+ *
+ * 横切策略：
+ * - 损坏数据降级：读路径一律经 normalize* / isValid* 校验，核心字段非法的记录
+ *   跳过（返回 null/过滤掉），旧版本缺失的新字段按默认值补齐（对应 R001 §6.3）；
+ *   写路径遇目标记录损坏则抛错，避免在脏数据上继续写。
+ * - 多步写入一律包在单个 IndexedDB 事务里（页面+正文、回收站、级联删除），
+ *   保证要么全部落库要么整体回滚，不留中间态。
+ * - 列表接口先 `ensureSeeded`：首次启动惰性写入预置知识库，UI 无需感知。
+ */
+
 /** 核心字段缺失/非法时返回 null；新增字段按默认值补齐（旧数据降级）。 */
 function normalizePage(record: unknown): Page | null {
   const p = record as Page;
@@ -67,6 +83,7 @@ function normalizePage(record: unknown): Page | null {
   };
 }
 
+/** 与 normalizePage 同策略：id/name 非法则丢弃记录，其余字段补默认值。 */
 function normalizeWorkspace(record: unknown): Workspace | null {
   const w = record as Workspace;
   if (!w || typeof w.id !== "string" || typeof w.name !== "string") return null;
@@ -80,6 +97,10 @@ function normalizeWorkspace(record: unknown): Workspace | null {
   };
 }
 
+/**
+ * 读取页面并要求其存在且完好；记录缺失或损坏时抛错。
+ * 用于写路径（重命名、收藏等）——写操作不能接受降级跳过，必须显式失败。
+ */
 async function getRequiredPage(id: string): Promise<Page> {
   const db = await getDB();
   const page = normalizePage(await db.get(STORE_PAGES, id));
@@ -89,6 +110,10 @@ async function getRequiredPage(id: string): Promise<Page> {
   return page;
 }
 
+/**
+ * 知识库仓储。除 `setLastOpened` 外，写操作在目标不存在/损坏时抛错；
+ * `setLastOpened` 只是「最近打开」的打点，静默跳过以免干扰导航。
+ */
 export const workspaceRepository: WorkspaceRepository = {
   async list() {
     const db = await getDB();
@@ -152,6 +177,11 @@ export const workspaceRepository: WorkspaceRepository = {
   },
 };
 
+/**
+ * 页面仓储。树形操作（移动、软删、恢复、永久删除）都以整棵子树为单位，
+ * 子树收集/成环检测/位置重排复用 `domain/pageTree.ts` 的纯函数，
+ * 这里负责把结果在一个事务里落库。
+ */
 export const pageRepository: PageRepository = {
   async listByWorkspace(workspaceId) {
     const db = await getDB();
@@ -172,6 +202,7 @@ export const pageRepository: PageRepository = {
 
   async create(input: CreatePageInput) {
     const db = await getDB();
+    // position 取同父级兄弟的下一个空位（追加到末尾），由 pageTree 纯函数计算。
     const siblings = (await db.getAll(STORE_PAGES)) as unknown[];
     const pages = siblings
       .map(normalizePage)
@@ -193,6 +224,7 @@ export const pageRepository: PageRepository = {
     };
     const tx = db.transaction([STORE_PAGES, STORE_CONTENTS], "readwrite");
     await tx.objectStore(STORE_PAGES).put(page);
+    // 文档页同事务写入空正文，保证「有文档必有 contents 记录」这一不变量。
     if (page.kind === "document") {
       const content: DocumentContent = {
         pageId: page.id,
@@ -239,6 +271,8 @@ export const pageRepository: PageRepository = {
       index ?? childrenOf(workspacePages, newParentId).filter((p) => p.id !== id).length;
     const next = movePage(workspacePages, id, newParentId, targetIndex);
     const now = Date.now();
+    // movePage 会重排受影响兄弟的 position，但只有真正变化的行才回写，
+    // 避免无关页面的 updatedAt 被刷新（会影响最近浏览等活动列表排序）。
     const changed = next.filter((p) => {
       const before = workspacePages.find((w) => w.id === p.id);
       return before && (before.parentId !== p.parentId || before.position !== p.position);
@@ -262,6 +296,7 @@ export const pageRepository: PageRepository = {
     const tx = db.transaction([STORE_PAGES, STORE_TRASH], "readwrite");
     for (const pageId of ids) {
       const target = all.find((p) => p.id === pageId);
+      // 已在回收站的跳过：子树与祖先可能先后被删，避免覆盖首次删除时记录的 originalParentId。
       if (!target || target.deletedAt !== null) continue;
       await tx.objectStore(STORE_PAGES).put({ ...target, deletedAt: now, updatedAt: now });
       await tx.objectStore(STORE_TRASH).put({
@@ -290,6 +325,7 @@ export const pageRepository: PageRepository = {
     const tx = db.transaction([STORE_PAGES, STORE_TRASH], "readwrite");
     for (const pageId of ids) {
       const target = all.find((p) => p.id === pageId);
+      // 未删除的成员（例如子树中只有部分被删）原样保留，不参与恢复。
       if (!target || target.deletedAt === null) continue;
       const record = trash.find((t) => t.pageId === pageId);
       let parentId = record?.originalParentId ?? null;
@@ -369,10 +405,15 @@ export const pageRepository: PageRepository = {
   },
 };
 
+/**
+ * 文档正文仓储。contents 以 pageId 为主键，与 pages 一一对应；
+ * `contentJson` 是唯一编辑真相，`textSnapshot` 仅供搜索与 Markdown 导出（见 AGENTS.md 架构约束）。
+ */
 export const contentRepository: ContentRepository = {
   async get(pageId) {
     const db = await getDB();
     const content = (await db.get(STORE_CONTENTS, pageId)) as DocumentContent | undefined;
+    // 损坏记录按「无正文」处理，由上层走空文档逻辑，而不是把脏 JSON 塞进编辑器。
     if (!content || typeof content.pageId !== "string") return undefined;
     return content;
   },
@@ -416,6 +457,10 @@ function revisionContentKey(contentJson: unknown): string {
   return JSON.stringify(contentJson ?? null);
 }
 
+/**
+ * 版本历史仓储（R001 §8.3）。版本按 pageId 索引存储；
+ * 自动（interval）版本有数量上限并由 `pruneInterval` 清理，手动与恢复前版本永久保留。
+ */
 export const revisionRepository: RevisionRepository = {
   async listByPage(pageId) {
     const db = await getDB();
@@ -426,6 +471,7 @@ export const revisionRepository: RevisionRepository = {
 
   async add(pageId, contentJson, textSnapshot, reason: RevisionReason) {
     const db = await getDB();
+    // 与最新版本内容一致时不重复落库：防抖保存与间隔自动版本可能在没有实际编辑时触发。
     const latest = (await revisionRepository.listByPage(pageId))[0];
     if (latest && revisionContentKey(latest.contentJson) === revisionContentKey(contentJson)) {
       return null;
@@ -469,6 +515,10 @@ function isValidAttachment(record: unknown): record is Attachment {
   );
 }
 
+/**
+ * 附件仓储（R001 §7.6）。Blob 直接存 IndexedDB，随页面 purge 级联删除；
+ * `removeOrphans` 在保存后清理文档不再引用的附件，防止存储只增不减。
+ */
 export const attachmentRepository: AttachmentRepository = {
   async get(id) {
     const db = await getDB();
@@ -528,6 +578,10 @@ function isValidTag(record: unknown): record is Tag {
   );
 }
 
+/**
+ * 标签仓储。标签与页面的关联存放在独立的 pageTags store（复合主键 [pageId, tagId]），
+ * 删除标签或覆盖页面标签时都需同步维护该 store。
+ */
 export const tagRepository: TagRepository = {
   async listByWorkspace(workspaceId) {
     const db = await getDB();
@@ -580,6 +634,7 @@ export const tagRepository: TagRepository = {
   async setPageTags(pageId, tagIds) {
     const db = await getDB();
     const tx = db.transaction(STORE_PAGE_TAGS, "readwrite");
+    // 覆盖式语义：先清后写；入参去重避免复合主键冲突。
     const existing = await tx.store.index("pageId").getAllKeys(pageId);
     for (const key of existing) {
       await tx.store.delete(key);
@@ -591,6 +646,11 @@ export const tagRepository: TagRepository = {
   },
 };
 
+/**
+ * 偏好设置仓储。整库只有一条固定 id 为 "preferences" 的记录；
+ * 读取时逐字段校验并回退默认值，保证旧版本或损坏数据不会污染运行时配置。
+ * 注意 aiConfig 含 API Key，仅存于本地 IndexedDB，不进入日志与上报（见 AGENTS.md 安全约定）。
+ */
 export const preferencesRepository: PreferencesRepository = {
   async get() {
     const db = await getDB();

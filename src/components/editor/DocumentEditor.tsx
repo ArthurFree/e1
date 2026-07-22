@@ -1,3 +1,14 @@
+/**
+ * 文档编辑器宿主组件（编辑器装配层）。
+ *
+ * 职责：创建 Tiptap 编辑器实例、装配浮动 UI（选区工具栏、表格操作条、
+ * 块把手、AI 面板），并把编辑器变更接入持久化——800ms 防抖保存到
+ * IndexedDB、切换文档或卸载时强制落盘、保存成功后按间隔生成自动版本。
+ *
+ * 架构位置：UI 只依赖仓储接口（infrastructure/repositories）与领域策略
+ * （domain/revisions），文档 JSON 是唯一编辑真相（AGENTS.md 架构约束）。
+ * 保存状态机见 R001 §8.1，状态展示由顶栏的 SaveStateIndicator 承担。
+ */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import {
@@ -20,14 +31,19 @@ import { AIAssistantPanel } from "./AIAssistantPanel";
 
 /** 保存状态机（R001 §8.1）：saved → dirty → saving → saved / error。 */
 export interface SaveState {
+  /** saved 已落盘；dirty 有未保存变更；saving 写入中；error 写入失败（保留内容，可重试）。 */
   status: "saved" | "dirty" | "saving" | "error";
   /** 最近一次保存成功时间。 */
   savedAt: number | null;
 }
 
+/** DocumentEditor 入参。 */
 interface DocumentEditorProps {
+  /** 当前文档页面 ID；变化时编辑器实例重建，保证切换文档后状态干净。 */
   pageId: string;
+  /** 文档内容 JSON（Tiptap doc），来自仓储；为兼容历史数据保持 unknown。 */
   initialContent: unknown;
+  /** 编辑器实例就绪/销毁回调（null 表示已销毁），供父级持有并转发命令。 */
   onEditorReady(editor: Editor | null): void;
   /** 保存状态变化通知（顶栏展示）。 */
   onSaveStateChange?(state: SaveState): void;
@@ -114,6 +130,7 @@ export function DocumentEditor({
     }
   }, [pageId, flush]);
 
+  // @ 提及候选只含文档页：知识库节点不可被提及链接。
   const mentionPages = useMemo(
     () => pages.filter((p) => p.kind === "document"),
     [pages],
@@ -125,6 +142,7 @@ export function DocumentEditor({
         mentionPages,
         getEditor: () => editorRef.current as Editor,
       }),
+      // Tiptap content 类型不含 unknown；历史数据均为合法 doc JSON，仅断言不校验。
       content: initialContent as never,
       autofocus: "end",
       onUpdate: ({ editor: e }) => {
@@ -132,6 +150,7 @@ export function DocumentEditor({
         debounced(e.getJSON(), e.getText());
       },
     },
+    // pageId 变化时重建编辑器实例，切换文档后内容与扩展状态从头装配。
     [pageId],
   );
 

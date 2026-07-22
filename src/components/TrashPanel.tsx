@@ -1,3 +1,10 @@
+/**
+ * @file 回收站面板：列出软删除的页面，支持恢复、彻底删除与清空。
+ * 只展示回收站「根」节点（父级不在回收站中的页面），子页面随父级一并
+ * 恢复 / 级联删除，避免重复操作。彻底删除与清空都需二次点击确认
+ * （首次点击进入确认态，失焦自动退出）。
+ */
+
 import { useState } from "react";
 import { useApp } from "../state/AppState";
 import { Dialog } from "./ui/Dialog";
@@ -5,6 +12,7 @@ import { EmptyState } from "./ui/EmptyState";
 import { IconTrash, PageIcon } from "./ui/icons";
 
 interface TrashPanelProps {
+  /** 关闭面板（Escape、点击遮罩时触发）。 */
   onClose(): void;
 }
 

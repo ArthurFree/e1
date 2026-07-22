@@ -1,3 +1,10 @@
+/**
+ * 仓储接口：UI 与状态层访问持久化数据的唯一入口。
+ * 架构约束：界面只依赖仓储接口和领域状态，不直接触碰 IndexedDB；
+ * 当前实现为 src/infrastructure/repositories.ts（IndexedDB），
+ * 未来接入云同步或协作时可整体替换实现而不重写界面（见 docs/architecture.md）。
+ */
+
 import type {
   Attachment,
   DocumentContent,
@@ -11,6 +18,7 @@ import type {
   Workspace,
 } from "./types";
 
+/** 创建页面入参；position 由实现按 nextPosition 追加到同级末尾。 */
 export interface CreatePageInput {
   workspaceId: string;
   parentId: string | null;
@@ -19,21 +27,26 @@ export interface CreatePageInput {
   icon?: string | null;
 }
 
+/** 知识库部分更新入参；缺省字段保持不变。 */
 export interface UpdateWorkspaceInput {
   name?: string;
   icon?: string | null;
   description?: string;
 }
 
+/** 知识库仓储。 */
 export interface WorkspaceRepository {
   list(): Promise<Workspace[]>;
   create(name: string, extra?: { icon?: string | null; description?: string }): Promise<Workspace>;
   rename(id: string, name: string): Promise<void>;
   update(id: string, patch: UpdateWorkspaceInput): Promise<void>;
+  /** 收藏/取消收藏（时间戳或 null）。 */
   setFavorite(id: string, favoriteAt: number | null): Promise<void>;
+  /** 记录最近打开时间。 */
   setLastOpened(id: string, at: number): Promise<void>;
 }
 
+/** 页面仓储：树结构维护、收藏/浏览记录与回收站生命周期。 */
 export interface PageRepository {
   /** 工作区全部页面（含回收站内的）。 */
   listByWorkspace(workspaceId: string): Promise<Page[]>;
@@ -57,13 +70,17 @@ export interface PageRepository {
   purgeTrashed(workspaceId: string): Promise<void>;
 }
 
+/** 文档正文仓储。 */
 export interface ContentRepository {
+  /** 按 pageId 取正文；不存在时返回 undefined。 */
   get(pageId: string): Promise<DocumentContent | undefined>;
+  /** 覆盖式保存（upsert）：contentJson 为唯一编辑真相，textSnapshot 同步更新。 */
   save(pageId: string, contentJson: unknown, textSnapshot: string): Promise<void>;
   /** 全部文档正文（全局搜索用）。 */
   listAll(): Promise<DocumentContent[]>;
 }
 
+/** 本地版本历史仓储（策略常量见 revisions.ts）。 */
 export interface RevisionRepository {
   /** 按创建时间倒序；损坏记录跳过。 */
   listByPage(pageId: string): Promise<DocumentRevision[]>;
@@ -78,6 +95,7 @@ export interface RevisionRepository {
   pruneInterval(pageId: string, keep: number): Promise<void>;
 }
 
+/** 创建附件入参。 */
 export interface CreateAttachmentInput {
   pageId: string;
   name: string;
@@ -86,7 +104,9 @@ export interface CreateAttachmentInput {
   blob: Blob;
 }
 
+/** 附件仓储：二进制直接存 IndexedDB。 */
 export interface AttachmentRepository {
+  /** 按 id 取附件；不存在时返回 undefined。 */
   get(id: string): Promise<Attachment | undefined>;
   listByPage(pageId: string): Promise<Attachment[]>;
   add(input: CreateAttachmentInput): Promise<Attachment>;
@@ -95,6 +115,7 @@ export interface AttachmentRepository {
   removeOrphans(pageId: string, referencedIds: string[]): Promise<number>;
 }
 
+/** 标签与页面-标签关联仓储。 */
 export interface TagRepository {
   listByWorkspace(workspaceId: string): Promise<Tag[]>;
   create(workspaceId: string, name: string, color: string): Promise<Tag>;
@@ -107,7 +128,10 @@ export interface TagRepository {
   setPageTags(pageId: string, tagIds: string[]): Promise<void>;
 }
 
+/** 浏览器本地偏好仓储（单例记录）。 */
 export interface PreferencesRepository {
+  /** 读取偏好；记录缺失或数据损坏时回退 DEFAULT_PREFERENCES。 */
   get(): Promise<Preferences>;
+  /** 部分更新（id 不可改），返回合并后的完整偏好。 */
   update(patch: Partial<Omit<Preferences, "id">>): Promise<Preferences>;
 }

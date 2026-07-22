@@ -1,3 +1,10 @@
+/**
+ * @file 模板中心弹窗：本地内置模板（editor/templates.ts），全程不访问网络。
+ * 两步流程：选择模板 → 用 TargetPicker 选择目标知识库 / 分组 →
+ * 以模板内容为初稿创建一篇普通文档并打开；取消或关闭不产生任何文档。
+ * 创建出的文档与模板无关联，后续修改不影响模板本身。
+ */
+
 import { useState } from "react";
 import { jsonToText } from "../editor/markdown";
 import { DOC_TEMPLATES, type DocTemplate } from "../editor/templates";
@@ -8,6 +15,7 @@ import { Dialog } from "./ui/Dialog";
 import { TargetPicker } from "./TargetPicker";
 
 interface TemplateCenterProps {
+  /** 关闭弹窗（取消、创建完成后均触发）。 */
   onClose(): void;
 }
 

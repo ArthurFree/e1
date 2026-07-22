@@ -1,3 +1,11 @@
+/**
+ * 块把手（Tiptap Pro DragHandle 的开源等价实现，AGENTS.md：不引入 Pro 能力）。
+ *
+ * 鼠标悬停块时在左侧浮出「拖动 + 菜单」把手：拖动把手经 HTML5 DnD
+ * 移动块，菜单提供复制/删除/清除格式/块类型转换。
+ * 定位基于 editor.view.posAtCoords 坐标反查；块级操作均委托给
+ * editor/blockActions 的纯函数实现。
+ */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Editor } from "@tiptap/core";
 import {
@@ -22,12 +30,16 @@ const CONVERT_OPTIONS: { target: ConvertTarget; label: string }[] = [
   { target: "taskList", label: "待办列表" },
 ];
 
+/** BlockHandle 入参。 */
 interface BlockHandleProps {
   editor: Editor;
 }
 
+/** 当前悬停块的把手定位信息。 */
 interface HandleState {
+  /** 把手相对编辑器容器的垂直偏移（px）。 */
   top: number;
+  /** 目标顶层块在文档中的起始位置，供块操作与拖拽定位。 */
   blockPos: number;
 }
 
@@ -39,13 +51,16 @@ export function BlockHandle({ editor }: BlockHandleProps) {
   const [handle, setHandle] = useState<HandleState | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  // 拖拽中的源块位置；非 null 时暂停悬停定位，避免把手跟随鼠标跳动。
   const dragPosRef = useRef<number | null>(null);
+  // 事件监听挂在 editor.view.dom 上（非 React 渲染），经 ref 读取最新菜单状态。
   const menuOpenRef = useRef(false);
   useEffect(() => {
     menuOpenRef.current = menuOpen;
   }, [menuOpen]);
 
   const locateBlock = useCallback(
+    // 由鼠标坐标反查所在顶层块；坐标落空、块无 DOM 或容器不可用时返回 null（把手隐藏）。
     (clientX: number, clientY: number): HandleState | null => {
       const coords = editor.view.posAtCoords({ left: clientX, top: clientY });
       if (!coords) return null;
@@ -86,6 +101,7 @@ export function BlockHandle({ editor }: BlockHandleProps) {
       const domBlock = editor.view.nodeDOM(block.pos);
       let insertPos = block.end;
       if (domBlock instanceof HTMLElement) {
+        // 落点在目标块上半区插到块前，下半区插到块后。
         const rect = domBlock.getBoundingClientRect();
         insertPos =
           event.clientY < rect.top + rect.height / 2 ? block.pos : block.end;
@@ -124,6 +140,7 @@ export function BlockHandle({ editor }: BlockHandleProps) {
   }, [menuOpen]);
 
   if (!handle) {
+    // 无悬停块时仍渲染隐藏容器：rootRef 需始终存在，供父级矩形计算与外部点击判断。
     return <div ref={rootRef} className="block-handle" style={{ display: "none" }} />;
   }
 

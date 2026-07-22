@@ -1,3 +1,11 @@
+/**
+ * 文本选区浮动工具栏（基于 Tiptap BubbleMenu）。
+ *
+ * 仅在存在非空文本选区时浮出（图片、表格选区除外，分别由附件交互与
+ * TableToolbar 接管），提供行内格式、链接、文本颜色/高亮与 AI 选区操作。
+ * AI 操作不直接改文档，而是经 editor/aiBridge 打开 AIAssistantPanel，
+ * 生成结果须用户确认后才写入（AGENTS.md 安全要求）。
+ */
 import { useState } from "react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import type { Editor } from "@tiptap/core";
@@ -11,10 +19,12 @@ import {
   applyTextColor,
 } from "../../editor/format";
 
+/** BubbleToolbar 入参。 */
 interface BubbleToolbarProps {
   editor: Editor;
 }
 
+/** AI 选区操作入口：点击后经 aiBridge 打开 AI 面板并携带选区内容。 */
 const AI_ACTIONS: { mode: AIMode; label: string }[] = [
   { mode: "polish", label: "润色" },
   { mode: "rewrite", label: "改写" },
@@ -29,6 +39,7 @@ export function BubbleToolbar({ editor }: BubbleToolbarProps) {
   const openAI = (mode: AIMode) => {
     const { from, to, empty } = editor.state.selection;
     if (empty) return;
+    // 选区纯文本以换行连接块，作为 AI 的上下文输入。
     openAIAssistant({
       mode,
       selection: editor.state.doc.textBetween(from, to, "\n"),
@@ -40,6 +51,7 @@ export function BubbleToolbar({ editor }: BubbleToolbarProps) {
 
   const applyLink = () => {
     const url = linkUrl.trim();
+    // 留空即移除链接；extendMarkRange 把整段已有链接纳入替换范围。
     if (!url) {
       editor.chain().focus().unsetLink().run();
     } else {
@@ -72,6 +84,7 @@ export function BubbleToolbar({ editor }: BubbleToolbarProps) {
     <BubbleMenu
       editor={editor}
       options={{ placement: "top", offset: 8 }}
+      // 仅文本选区弹出；图片/表格选区交给各自的交互，避免工具条叠在一起。
       shouldShow={({ editor: e, state }) =>
         !state.selection.empty && !e.isActive("image") && !e.isActive("table")
       }

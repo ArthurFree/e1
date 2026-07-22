@@ -1,6 +1,13 @@
+/**
+ * @file 统一按钮原语（R002 §7.9）。
+ * 只提供视觉变体与默认 type="button"（避免在表单里误触发提交），
+ * 样式实现在 styles/components/buttons.css。
+ */
+
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  /** 视觉变体：主要 / 次要（默认）/ 幽灵 / 危险（仅用于确认阶段）。 */
   variant?: "primary" | "secondary" | "ghost" | "danger";
   children: ReactNode;
 }

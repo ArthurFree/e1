@@ -4,12 +4,17 @@ import Mention from "@tiptap/extension-mention";
 import { buildDocumentExtensions } from "./extensions";
 
 /**
- * Markdown 导入导出。使用与主编辑器相同的文档扩展组合，
+ * Markdown 导入导出（编辑器内核的格式转换层）。
+ * 使用与主编辑器相同的文档扩展组合，
  * 解析经编辑器白名单 schema（不注入原始 HTML）。
  * 转换器为懒加载的模块级 headless 编辑器，避免影响主编辑器行为。
  */
 let converter: Editor | null = null;
 
+/**
+ * 惰性创建并复用模块级 headless 编辑器作为转换器：
+ * 与主编辑器共用文档扩展，保证导入导出的 schema 一致，且互不干扰。
+ */
 function getConverter(): Editor {
   if (!converter) {
     converter = new Editor({
@@ -53,5 +58,6 @@ export function jsonToText(contentJson: unknown): string {
     for (const child of node.content ?? []) walk(child);
   };
   walk(contentJson as JSONContent);
+  // 文本片段以空格连接并折叠连续空白，得到单行快照，适合搜索索引。
   return parts.join(" ").replace(/\s+/g, " ").trim();
 }

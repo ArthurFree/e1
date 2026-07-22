@@ -1,10 +1,18 @@
+/**
+ * 活动与收藏列表纯逻辑：开始首页「最近动态」、最近浏览页、收藏页与知识库统计。
+ * 只依赖 Page / Workspace / DocumentContent 数组，排序、归属路径与相对时间
+ * 的展示规则全部集中在此，UI 不做二次加工。
+ */
+
 import type { DocumentContent, Page, Workspace } from "./types";
 
 /** 活动区页签：编辑过（updatedAt）/ 浏览过（lastOpenedAt）。 */
 export type ActivityTab = "edited" | "viewed";
 
+/** 活动列表每页条数（前端分页）。 */
 export const ACTIVITY_PAGE_SIZE = 30;
 
+/** 活动列表的一行：页面本体加上渲染所需的派生字段。 */
 export interface ActivityRow {
   page: Page;
   workspaceId: string;
@@ -22,6 +30,7 @@ export function belongingPath(
   workspaceName: string,
 ): string {
   const groups: string[] = [];
+  // guard 防御损坏数据中的父级环（A 的父级是 B、B 的父级又是 A），避免死循环。
   const guard = new Set<string>([page.id]);
   let current = page.parentId;
   while (current && !guard.has(current)) {
@@ -37,6 +46,7 @@ export function belongingPath(
 /**
  * 跨知识库活动列表：只含未删除文档；“浏览过”排除无浏览时间的文档；
  * 按页签时间倒序，可按知识库筛选。
+ * 页面所属知识库缺失时降级显示「未知知识库」，不丢弃该行。
  */
 export function buildActivityRows(input: {
   pages: Page[];
@@ -67,6 +77,7 @@ export function buildActivityRows(input: {
 
 /** 相对时间：1 分钟内“刚刚”，7 天内 x 分钟/小时/天前，更早显示日期。 */
 export function formatRelativeTime(now: number, timestamp: number): string {
+  // 未来时间（时钟回拨等）按 0 处理，避免出现负数文案。
   const diff = Math.max(0, now - timestamp);
   const minute = 60_000;
   const hour = 3_600_000;

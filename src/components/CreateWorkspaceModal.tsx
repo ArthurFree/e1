@@ -1,8 +1,14 @@
+/**
+ * @file 新建知识库弹窗：必填名称，可选 Emoji 图标与描述。
+ * 创建成功后由 AppState 切换到新知识库并进入其首页；取消不产生任何数据。
+ */
+
 import { useState, type FormEvent } from "react";
 import { useApp } from "../state/AppState";
 import { Dialog } from "./ui/Dialog";
 
 interface CreateWorkspaceModalProps {
+  /** 关闭弹窗（取消、提交成功后均触发）。 */
   onClose(): void;
 }
 

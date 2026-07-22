@@ -1,7 +1,13 @@
+/**
+ * 文档目录面板：由 editor/toc.extractToc 从当前文档提取标题生成目录，
+ * 随编辑器 update 事件自动刷新；点击条目经 scrollToPos 滚动到对应标题。
+ * 无标题时显示引导文案；空文本标题显示占位「无标题」。
+ */
 import { useEffect, useState } from "react";
 import type { Editor } from "@tiptap/core";
 import { extractToc, scrollToPos, type TocItem } from "../../editor/toc";
 
+/** TocPanel 入参。 */
 interface TocPanelProps {
   editor: Editor;
 }
@@ -26,6 +32,7 @@ export function TocPanel({ editor }: TocPanelProps) {
       ) : (
         items.map((item) => (
           <button
+            // 以文档位置作 key：标题文本可重复，位置唯一。
             key={item.pos}
             type="button"
             className="toc__item"

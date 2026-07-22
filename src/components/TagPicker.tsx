@@ -1,3 +1,9 @@
+/**
+ * @file 文档标签选择器：渲染在文档标题下方。
+ * 已选标签以 chip 展示、可单独移除；「＋标签」弹出面板支持勾选切换与即时新建，
+ * 新建标签的颜色从 TAG_COLORS 轮换分配。点击面板外或 Escape 关闭弹层。
+ */
+
 import { useEffect, useRef, useState } from "react";
 import { useApp } from "../state/AppState";
 
@@ -12,6 +18,7 @@ export const TAG_COLORS = [
 ];
 
 interface TagPickerProps {
+  /** 所属文档 ID；标签勾选结果按页面维度写入 pageTags。 */
   pageId: string;
 }
 
@@ -54,6 +61,7 @@ export function TagPicker({ pageId }: TagPickerProps) {
     const name = newName.trim();
     if (!name) return;
     setNewName("");
+    // 新建成功后直接勾到当前文档上，省去用户再点一次的步骤
     void createTag(name, TAG_COLORS[tags.length % TAG_COLORS.length]).then(
       (tag) => {
         if (tag) void setPageTags(pageId, [...selectedIds, tag.id]);

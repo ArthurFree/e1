@@ -3,6 +3,17 @@ import type { DocumentContent, Page, Workspace } from "../domain/types";
 import { createId } from "./id";
 import { STORE_CONTENTS, STORE_PAGES, STORE_WORKSPACES } from "./db";
 
+/**
+ * seed.ts —— 首次启动的预置数据。
+ *
+ * 本地优先应用没有服务端初始化，首次打开时（workspaces store 为空）
+ * 由这里写入一个预置知识库：欢迎文档（覆盖编辑器主要块类型，兼作功能演示）、
+ * 任务清单、一个分组及其内的会议纪要示例。全部为简体中文（见 AGENTS.md 约定）。
+ *
+ * 由 repositories.ts 的列表接口惰性触发，UI 层不感知本模块。
+ */
+
+/** 以下 text/paragraph/heading 等是构造 Tiptap 文档 JSON 的小型工厂，避免手写深层嵌套字面量。 */
 function text(value: string) {
   return { type: "text", text: value };
 }
@@ -96,6 +107,7 @@ function buildWelcomeDoc() {
   };
 }
 
+// 与 buildWelcomeDoc 对应的纯文本快照：搜索只查 textSnapshot，二者内容必须保持一致。
 const WELCOME_TEXT =
   "欢迎使用 Notion-like Web 这是一个本地优先的笔记应用。所有数据保存在浏览器 IndexedDB 中，离线也能编辑，刷新后内容不丢失。 " +
   "提示：在空行键入 / 打开命令菜单；选中文本可唤出浮动工具栏；输入 @ 可以提及其他页面。 " +
@@ -106,14 +118,22 @@ const WELCOME_TEXT =
 
 interface SeedPage {
   page: Page;
+  /** 文档 JSON；分组（group）没有正文，为 null。 */
   contentJson: unknown;
+  /** 与 contentJson 对应的 textSnapshot（搜索/导出用）。 */
   text: string;
 }
 
-/** 首次启动写入的预置知识库；全部为简体中文。 */
+/**
+ * 首次启动写入的预置知识库；全部为简体中文。
+ *
+ * 幂等：workspaces 非空时直接返回，重复调用不会产生重复数据。
+ * 并发安全：多次并发调用共享同一次种子写入——首次渲染时多个仓储方法
+ * 可能同时触发，「检查-写入」不是原子的，不去重会写入重复知识库。
+ *
+ * @param db 已打开的数据库连接（由调用方从 getDB() 传入，避免此处再开连接）。
+ */
 export async function ensureSeeded(db: IDBPDatabase): Promise<void> {
-  // 并发调用共享同一次种子写入：首次渲染时多个仓储方法可能同时触发，
-  // 检查-写入不是原子的，不去重会写入重复知识库。
   seedingPromise ??= doSeed(db).finally(() => {
     seedingPromise = null;
   });
@@ -127,6 +147,7 @@ async function doSeed(db: IDBPDatabase): Promise<void> {
   try {
     workspaceCount = await db.count(STORE_WORKSPACES);
   } catch {
+    // count 失败（如老浏览器兼容问题）按空库处理，宁可重新种子也不让启动卡死。
     workspaceCount = 0;
   }
   if (workspaceCount > 0) return;
@@ -236,6 +257,7 @@ async function doSeed(db: IDBPDatabase): Promise<void> {
     text: "会议纪要示例 这里是一个分组内的文档，用于演示树形结构。",
   };
 
+  // 单个事务写入知识库 + 全部页面 + 正文，保证种子要么完整落库要么整体失败。
   const tx = db.transaction([STORE_WORKSPACES, STORE_PAGES, STORE_CONTENTS], "readwrite");
   await tx.objectStore(STORE_WORKSPACES).put(workspace);
   for (const { page, contentJson, text: snapshot } of [welcome, todo, group, meeting]) {

@@ -1,3 +1,11 @@
+/**
+ * @file 「AI 帮你写」弹窗：从主题生成整篇文档草稿。
+ * 流程为输入（主题 / 类型 / 创建位置）→ 生成预览（可编辑、可重新生成）→
+ * 确认后才创建文档——AI 输出绝不未经确认写入文档（架构安全要求）。
+ * 未配置 AI 时不应到达此流程（开始页已拦截），此处防御性回退到设置。
+ * AI 返回的 Markdown 经编辑器白名单解析后落盘，不直接注入 DOM。
+ */
+
 import { useState } from "react";
 import type { PickerTarget } from "../domain/picker";
 import { jsonToText, markdownToJson } from "../editor/markdown";
@@ -8,12 +16,14 @@ import { Dialog } from "./ui/Dialog";
 import { TargetPicker } from "./TargetPicker";
 
 interface AIDraftModalProps {
+  /** 关闭弹窗（取消、确认创建后均触发）。 */
   onClose(): void;
 }
 
 /** 首批文档类型提示词。 */
 const DRAFT_TYPES = ["自由写作", "方案", "总结", "周报", "会议纪要"] as const;
 
+/** 弹窗的四个阶段：输入参数 → 生成中 → 预览确认 → 失败可重试。 */
 type Step = "input" | "generating" | "preview" | "error";
 
 /**

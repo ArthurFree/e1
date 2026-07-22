@@ -1,3 +1,9 @@
+/**
+ * 表格操作浮动条：选区进入表格时出现（BubbleMenu shouldShow = isActive("table")）。
+ * 提供插/删行列、表头切换、合并/拆分、行列移动与按列排序。
+ * 增删与表头操作直接用 Tiptap Table 扩展命令；移动与排序依赖
+ * editor/tableUtils 的行列索引定位，选区不在单元格内（索引为 null）时禁用。
+ */
 import { BubbleMenu } from "@tiptap/react/menus";
 import type { Editor } from "@tiptap/core";
 import {
@@ -8,10 +14,12 @@ import {
   sortByColumn,
 } from "../../editor/tableUtils";
 
+/** TableToolbar 入参。 */
 interface TableToolbarProps {
   editor: Editor;
 }
 
+/** 单个表格操作项；disabled 用于行列索引不可用时（选区不在单元格内）。 */
 interface TableAction {
   id: string;
   label: string;

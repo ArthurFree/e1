@@ -1,8 +1,20 @@
 import { openDB, type IDBPDatabase } from "idb";
 
+/**
+ * db.ts —— IndexedDB 连接与 schema 定义。
+ *
+ * 基础设施层的存储入口：整个应用只有一个数据库，全部实体各用一个 object store。
+ * 上层（repositories.ts）只通过 `getDB()` 拿连接，不直接关心版本与迁移。
+ *
+ * 版本策略（对应 R001 §6.2 的升级要求）：schema 变更通过提升 `DB_VERSION`，
+ * 并在 `getDB()` 的 upgrade 回调里按 `oldVersion` 逐级迁移——每个版本一个分支，
+ * 老库连续跳级时分支按顺序叠加执行。迁移全部在 upgrade 事务内完成，失败即整体回滚，
+ * 不会留下半新半旧的 schema（见 R001 §6.3 兼容与回滚原则）。
+ */
 export const DB_NAME = "notion-like-web";
 export const DB_VERSION = 2;
 
+// 各 object store 名集中定义为常量，避免仓储层散落硬编码字符串。
 export const STORE_WORKSPACES = "workspaces";
 export const STORE_PAGES = "pages";
 export const STORE_CONTENTS = "contents";
@@ -16,6 +28,10 @@ export const STORE_ATTACHMENTS = "attachments";
 /**
  * v1 schema。导出供迁移测试用真实旧库 fixture：
  * 以版本 1 打开数据库并写入旧结构数据后，再用当前版本打开验证迁移。
+ *
+ * 注意这里只含 v1 的 7 个 store（无 revisions/attachments），
+ * 索引集合也停留在 v1 状态；新增内容必须写进 `upgradeToV2`，不能回改本函数，
+ * 否则迁移测试就测不到真实的旧库。
  */
 export function createV1Schema(db: IDBPDatabase) {
   const workspaces = db.createObjectStore(STORE_WORKSPACES, { keyPath: "id" });
@@ -49,6 +65,9 @@ export function createV1Schema(db: IDBPDatabase) {
  * Page.kind "folder" 原地迁移为 "group"，并补齐新增字段默认值；
  * Workspace 补齐 icon/description/homePageId/favoriteAt/lastOpenedAt。
  * 迁移在 upgrade 事务内完成，失败即整体回滚。
+ *
+ * 存量记录用游标逐条 `update` 回写：IndexedDB 没有批量更新，
+ * 且必须在 upgrade 事务内做，不能另开事务。
  */
 async function upgradeToV2(db: IDBPDatabase, tx: { objectStore(name: string): unknown }) {
   const revisions = db.createObjectStore(STORE_REVISIONS, { keyPath: "id" });
@@ -112,6 +131,9 @@ let dbPromise: Promise<IDBPDatabase> | null = null;
 /**
  * 打开数据库。schema 变更通过提升 DB_VERSION 并在 upgrade 中
  * 按 oldVersion 逐级迁移；新增 store/索引写在对应分支里。
+ *
+ * 连接以模块级 Promise 单例缓存：全应用共享同一条连接，
+ * 并发调用在首次打开完成前复用同一个 Promise，不会重复触发 upgrade。
  */
 export function getDB(): Promise<IDBPDatabase> {
   dbPromise ??= openDB(DB_NAME, DB_VERSION, {
@@ -123,7 +145,11 @@ export function getDB(): Promise<IDBPDatabase> {
   return dbPromise;
 }
 
-/** 仅供测试：关闭连接并删除数据库。 */
+/**
+ * 仅供测试：关闭连接并删除数据库。
+ * `onblocked` 也按成功处理——测试环境里其他上下文可能仍持有连接，
+ * 此时删除请求会被阻塞，但连接已关闭、Promise 已清空，对测试目的已足够。
+ */
 export async function resetDB(): Promise<void> {
   if (dbPromise) {
     const db = await dbPromise;

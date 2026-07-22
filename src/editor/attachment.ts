@@ -1,15 +1,24 @@
+/**
+ * 附件块扩展（对应 R001 §7.6 附件块）。
+ * 文档节点只保存附件元数据（ID/名称/类型/大小），二进制 Blob 存 IndexedDB
+ * attachments store，经 attachmentRepository 读写；下载走本地 Blob URL。
+ * 另有插入、校验、引用收集等工具函数供命令注册表与保存流程使用。
+ */
 import { Node } from "@tiptap/core";
 import type { Editor } from "@tiptap/core";
 import { attachmentRepository } from "../infrastructure/repositories";
 
+/** 附件大小上限：Blob 整体存 IndexedDB，超限直接拒绝（R001 §7.6）。 */
 export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 
+/** 字节数的人性化展示（B/KB/MB，一位小数），用于附件块元信息。 */
 export function formatBytes(size: number): string {
   if (size < 1024) return `${size} B`;
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/** 附件节点的属性：仅元数据，Blob 本体不进入文档 JSON。 */
 export interface AttachmentAttrs {
   attachmentId: string;
   name: string;
@@ -17,7 +26,10 @@ export interface AttachmentAttrs {
   size: number;
 }
 
-/** 校验并写入附件记录后插入附件节点；超限立即提示且不写 IndexedDB。 */
+/**
+ * 校验并写入附件记录后插入附件节点；超限立即提示且不写 IndexedDB。
+ * @returns 是否成功插入；失败时已通过 alert 提示用户，文档与存储均无副作用。
+ */
 export async function insertAttachmentFile(
   editor: Editor,
   pageId: string,
@@ -90,6 +102,7 @@ export function collectAttachmentIds(doc: unknown): string[] {
 export const Attachment = Node.create({
   name: "attachment",
   group: "block",
+  // atom：节点无内部可编辑内容，作为整体叶子参与选区与删除。
   atom: true,
   selectable: true,
 

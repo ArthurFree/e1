@@ -1,11 +1,23 @@
+/**
+ * 主区域视图路由：序列化后存入 preferences.lastRoute，启动时恢复上次位置。
+ * 解析对坏数据零容忍——任何形状不符（含 JSON 解析失败、字段缺失或类型不对）
+ * 都返回 null，由调用方回退到开始首页，避免损坏的持久化数据卡死启动。
+ */
+
 /** 主区域视图路由：持久化到 preferences.lastRoute，启动时恢复。 */
 export type AppRoute =
+  /** 开始首页。 */
   | { view: "start" }
+  /** 最近浏览。 */
   | { view: "recent" }
+  /** 收藏页。 */
   | { view: "favorites" }
+  /** 知识库首页。 */
   | { view: "workspace"; workspaceId: string }
+  /** 文档编辑。 */
   | { view: "document"; workspaceId: string; pageId: string };
 
+/** 序列化为 JSON 字符串，供持久化。 */
 export function serializeRoute(route: AppRoute): string {
   return JSON.stringify(route);
 }

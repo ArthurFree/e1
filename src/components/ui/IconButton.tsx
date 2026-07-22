@@ -1,3 +1,9 @@
+/**
+ * @file 统一图标按钮原语（R002 §7.7/§7.8）。
+ * 强制要求可读名称 label（同时落到 aria-label 与 title），
+ * 保证纯图标按钮的可访问性；激活态通过 aria-pressed 暴露。
+ */
+
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 
 interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {

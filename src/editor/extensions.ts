@@ -1,3 +1,10 @@
+/**
+ * 编辑器扩展组合（编辑器内核的装配层）。
+ * - `buildDocumentExtensions` 是文档 schema 的唯一定义处，主编辑器与 Markdown
+ *   转换器（markdown.ts）共用，保证编辑、导入、导出三者 schema 一致；
+ * - `buildEditorExtensions` 在其上叠加仅交互态需要的扩展（占位提示、@ 提及、/ 命令）。
+ * 关键决策：只使用开源扩展，TableOfContents、UniqueID 等 Pro 能力由 toc.ts 等自行实现。
+ */
 import StarterKit from "@tiptap/starter-kit";
 import { Placeholder } from "@tiptap/extensions";
 import { TextStyleKit } from "@tiptap/extension-text-style";
@@ -20,6 +27,9 @@ import { Indent } from "./indent";
 import { createMentionSuggestion } from "./mentionSuggestion";
 import { createSlashSuggestion } from "./slashSuggestion";
 
+/**
+ * 构建交互态编辑器扩展所需的外部依赖，由编辑器宿主（DocumentEditor）注入。
+ */
 export interface EditorExtensionsOptions {
   /** @ 提及候选：当前工作区的文档页面。 */
   mentionPages: Page[];
@@ -59,6 +69,7 @@ export function buildDocumentExtensions(): AnyExtension[] {
 /**
  * 编辑器扩展组合。只含开源扩展；
  * TableOfContents 与 UniqueID 为 Pro 能力，目录由 src/editor/toc.ts 自行实现。
+ * @param options 宿主注入的依赖（@ 提及候选页与编辑器实例取用）。
  */
 export function buildEditorExtensions(options: EditorExtensionsOptions): AnyExtension[] {
   return [

@@ -1,10 +1,13 @@
-import type { AIConfig } from "./types";
-
 /**
  * AI 领域逻辑：配置校验、请求构造与错误映射。
- * 纯函数，无 DOM / fetch 依赖，provider 实现在基础设施层。
+ * 纯函数，无 DOM / fetch 依赖，provider 实现在基础设施层（src/infrastructure/aiProvider.ts）。
+ * 隐私约束：API key 只存 IndexedDB、不进入日志与上报；未配置时不发起任何外部请求；
+ * AI 输出须经用户确认后才写入文档（见 docs/architecture.md 安全要求）。
  */
 
+import type { AIConfig } from "./types";
+
+/** 请求模式：自由问答 / 润色选区 / 改写选区 / 总结 / 整篇起草。 */
 export type AIMode = "ask" | "polish" | "rewrite" | "summarize" | "draft";
 
 export interface AIRequest {
@@ -19,6 +22,7 @@ export interface AIRequest {
   draftType?: string;
 }
 
+/** provider 抽象：给定请求返回 AI 文本；实现负责鉴权、超时与协议细节。 */
 export interface AIProvider {
   complete(request: AIRequest): Promise<string>;
 }
@@ -39,6 +43,7 @@ export function validateAIConfig(config: AIConfig): string | null {
   } catch {
     return "Endpoint 必须是合法的 http(s) 地址";
   }
+  // new URL 接受 mailto: 等非 http 协议，需单独排除。
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     return "Endpoint 必须是合法的 http(s) 地址";
   }
@@ -63,7 +68,11 @@ export function buildChatCompletionsUrl(endpoint: string): string {
   return `${base}/chat/completions`;
 }
 
-/** 按模式构造中文 system / user prompt。 */
+/**
+ * 按模式构造中文 system / user prompt。
+ * draft 模式只使用主题与文档类型，忽略选区与上下文；其余模式跳过空白字段，
+ * 因此 prompt 为空时 user 里可以只有选区或上下文。
+ */
 export function buildPrompt(
   mode: AIMode,
   request: AIRequest,
@@ -128,12 +137,14 @@ export function mapAIError(error: unknown): string {
     if (status >= 500) return `AI 服务暂时不可用（状态码 ${status}）`;
     return `AI 服务返回错误（状态码 ${status}）`;
   }
+  // AbortError 在浏览器里是 DOMException，在 Node/测试环境可能只是同名 Error，两者都要识别。
   if (error instanceof DOMException && error.name === "AbortError") {
     return "请求超时，请检查网络或服务地址";
   }
   if (error instanceof Error && error.name === "AbortError") {
     return "请求超时，请检查网络或服务地址";
   }
+  // fetch 网络层失败（DNS、断网、CORS 等）统一抛 TypeError。
   if (error instanceof TypeError) {
     return "无法连接到 AI 服务，请检查网络和 Endpoint";
   }

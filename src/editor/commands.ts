@@ -1,21 +1,39 @@
+/**
+ * 命令注册表（编辑器内核的能力目录）。
+ * 统一命令定义驱动 `/` 命令菜单，浮动工具栏与块菜单复用同一注册表，
+ * 避免多处入口行为分叉（R001 §7.3 命令统一）。
+ * 每条命令的 run 接收可选 range：来自 `/` 菜单时为触发文本区间，需先删除再执行。
+ */
 import type { Editor, Range } from "@tiptap/core";
 import { openAIAssistant } from "./aiBridge";
 import { pickAndInsertAttachment } from "./attachment";
 
-/** 统一命令定义：驱动 / 命令菜单，后续浮动工具栏与块菜单复用同一注册表。 */
+/** 命令分组标签：决定 `/` 菜单中的分区展示。 */
 export interface EditorCommand {
+  /** 稳定标识，用于去重与测试引用。 */
   id: string;
+  /** 菜单展示名。 */
   title: string;
+  /** 额外检索词（拼音/英文），供 filterCommands 模糊匹配。 */
   keywords: string[];
   group: "基础" | "列表" | "插入" | "媒体" | "AI";
+  /**
+   * 执行命令。
+   * @param range 来自 `/` 菜单时为触发文本区间（需先删除）；其他入口省略。
+   */
   run(editor: Editor, range?: Range): void;
 }
 
+/**
+ * 命令执行包装：来自 `/` 菜单时先删除触发文本（range 覆盖 `/查询词`），
+ * 再执行实际命令；工具栏等入口不传 range 则直接执行。
+ */
 function apply(editor: Editor, range: Range | undefined, fn: () => void) {
   if (range) editor.chain().focus().deleteRange(range).run();
   fn();
 }
 
+/** 内嵌图片大小上限（base64 存入文档 JSON，过大会拖慢保存与加载）。 */
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 /** 选择本地图片并以 base64 内嵌：离线可用且随文档持久化。 */
@@ -39,6 +57,7 @@ export function pickAndInsertImage(editor: Editor) {
   input.click();
 }
 
+/** 全部内置命令；顺序即菜单展示顺序。新增命令只需在此登记。 */
 export const EDITOR_COMMANDS: EditorCommand[] = [
   {
     id: "heading1",

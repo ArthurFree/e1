@@ -1,15 +1,21 @@
+/**
+ * 代码块扩展（对应 R001 §7.5 代码块）。
+ * 在 CodeBlockLowlight 之上增加自定义 NodeView：顶部栏提供语言选择与复制按钮；
+ * 高亮使用 lowlight 的 common 语法集，离线打包、无运行时网络请求。
+ */
 import { CodeBlockLowlight } from "@tiptap/extension-code-block-lowlight";
 import { common, createLowlight } from "lowlight";
 
 /** lowlight common 语法集（离线打包，无运行时网络请求）。 */
 export const lowlight = createLowlight(common);
 
+/** 代码块可选语言项：id 存入节点 language 属性，name 用于下拉展示。 */
 export interface CodeLanguage {
   id: string;
   name: string;
 }
 
-/** 代码块可选语言；HTML 使用 highlight.js 的 xml 语法。 */
+/** 代码块可选语言；HTML 使用 highlight.js 的 xml 语法（lowlight common 集无独立 html 语法）。 */
 export const CODE_LANGUAGES: CodeLanguage[] = [
   { id: "plaintext", name: "纯文本" },
   { id: "javascript", name: "JavaScript" },
@@ -27,11 +33,12 @@ export const CODE_LANGUAGES: CodeLanguage[] = [
 
 const KNOWN = new Set(CODE_LANGUAGES.map((l) => l.id));
 
-/** 未知语言回退为纯文本，不破坏正文。 */
+/** 未知语言回退为纯文本，不破坏正文（Markdown 导入等外部内容的语言 id 不受控）。 */
 export function normalizeCodeLanguage(language: unknown): string {
   return typeof language === "string" && KNOWN.has(language) ? language : "plaintext";
 }
 
+/** 语言的展示名；未知语言经 normalize 后显示「纯文本」。 */
 export function codeLanguageName(language: unknown): string {
   const id = normalizeCodeLanguage(language);
   return CODE_LANGUAGES.find((l) => l.id === id)?.name ?? "纯文本";
@@ -49,6 +56,7 @@ export const CodeBlockWithLanguage = CodeBlockLowlight.extend({
 
       const header = document.createElement("div");
       header.className = "codeblock__header";
+      // 顶栏是控件而非正文：不可编辑，也不参与选区。
       header.contentEditable = "false";
 
       const select = document.createElement("select");
@@ -103,6 +111,7 @@ export const CodeBlockWithLanguage = CodeBlockLowlight.extend({
         dom,
         contentDOM: code,
         update(updated) {
+          // 类型已变（如被转换为段落）时返回 false，交给 ProseMirror 重建 NodeView。
           if (updated.type.name !== node.type.name) return false;
           node = updated;
           select.value = normalizeCodeLanguage(updated.attrs.language);

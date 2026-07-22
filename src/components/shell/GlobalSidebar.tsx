@@ -1,3 +1,12 @@
+/**
+ * @file 全局侧栏（R002 §7.1）：贯穿所有视图的一级导航。
+ * 自上而下为账户行、搜索入口、主导航（开始 / 最近 / 收藏）、知识库列表
+ * 与底部工具区（回收站 / 设置）；搜索、回收站、设置三个面板也在此挂载。
+ * 「开始」项悬停或聚焦时弹出 StartPreview 快速预览最近文档。
+ * ≥1280px 完整 240px；1024–1279px 折叠为 64px 图标栏；<1024px 隐藏
+ * （窄屏导航由树抽屉承担，见 R002 偏差记录）。
+ */
+
 import { useState } from "react";
 import { useApp } from "../../state/AppState";
 import { SearchPanel } from "../SearchPanel";
@@ -60,6 +69,7 @@ export function GlobalSidebar() {
       <div className="gsb__nav">
         <div
           className="gsb__start"
+          // 悬停与聚焦都触发预览（键盘用户也能用）；Escape 只关预览不导航
           onMouseEnter={() => setPreviewOpen(true)}
           onMouseLeave={() => setPreviewOpen(false)}
           onKeyDown={(event) => {

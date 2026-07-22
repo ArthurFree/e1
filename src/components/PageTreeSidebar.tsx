@@ -1,3 +1,11 @@
+/**
+ * @file 知识库文档树侧栏组件：当前知识库页面的层级树。
+ * 支持展开/折叠、新建文档与分组、行内重命名、软删除、HTML5 拖拽移动
+ * （拖放合法性判定在 domain/pageTree.ts）、底部标签筛选、Markdown 文件导入，
+ * 以及方向键/F2 键盘导航（R002 §11）。窄屏时由 AppShell 以抽屉方式开合。
+ * 拖拽排序与树的纯逻辑都在 domain 层，本组件只做事件接线与渲染。
+ */
+
 import { useCallback, useRef, useState } from "react";
 import type { Page } from "../domain/types";
 import {
@@ -12,10 +20,13 @@ import { useApp } from "../state/AppState";
 import { IconHome, PageIcon } from "./ui/icons";
 
 interface PageTreeSidebarProps {
+  /** 窄屏抽屉模式下的开合状态；宽屏下恒为关闭样式、侧栏常驻。 */
   open: boolean;
+  /** 抽屉模式下选中页面后关闭抽屉的回调。 */
   onClose(): void;
 }
 
+/** 拖拽时放入 dataTransfer 的自定义 MIME，用于识别「树内页面」拖动。 */
 const DND_MIME = "application/x-page-id";
 
 /** 文档树侧栏：层级展示、新建、重命名、删除、拖拽移动、标签筛选、Markdown 导入。 */
@@ -78,6 +89,8 @@ export function PageTreeSidebar({ open, onClose }: PageTreeSidebarProps) {
       const startWidth = widthRef.current;
 
       const onMove = (move: PointerEvent) => {
+        // 拖动中直接改 DOM 宽度（绕过 React 渲染）保证跟手，
+        // 持久化到偏好只在松手时做一次，避免每次 move 都写 IndexedDB
         const next = Math.min(480, Math.max(200, startWidth + move.clientX - startX));
         widthRef.current = next;
         const el = document.querySelector<HTMLElement>(".tree-sidebar");
@@ -99,9 +112,11 @@ export function PageTreeSidebar({ open, onClose }: PageTreeSidebarProps) {
     setImportError(null);
     try {
       const text = await file.text();
+      // Markdown 经白名单解析成文档 JSON（不注入原始 HTML），先建空页再写入内容
       const json = markdownToJson(text);
       const page = await createPage("document", null);
       if (!page) throw new Error("create failed");
+      // 以文件名（去扩展名）作为初始标题，无名文件降级为「导入文档」
       const title = file.name.replace(/\.(md|markdown)$/i, "") || "导入文档";
       await renamePage(page.id, title);
       await contentRepository.save(page.id, json, jsonToText(json));
@@ -121,7 +136,9 @@ export function PageTreeSidebar({ open, onClose }: PageTreeSidebarProps) {
       : null;
     if (!draggedId) return;
     const rect = event.currentTarget.getBoundingClientRect();
+    // 指针在行内的纵向比例决定落点分区：上方 / 作为子级 / 下方
     const zone = dropZoneAt((event.clientY - rect.top) / rect.height);
+    // 非法落点（如拖到自己或自己的后代上）不给视觉提示也不接受放置
     if (!resolveDrop(pages, draggedId, page.id, zone)) {
       setDropHint(null);
       return;

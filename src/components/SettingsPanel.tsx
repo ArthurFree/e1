@@ -1,3 +1,10 @@
+/**
+ * @file 设置面板：AI 服务（OpenAI 兼容接口）的 endpoint / 模型 / API Key 配置。
+ * 保存前经 domain/ai.ts 的 validateAIConfig 校验；
+ * API Key 只保存在本机 IndexedDB，不进入日志、同步或上报，
+ * 未配置时应用不会发起任何外部请求（隐私约束）。
+ */
+
 import { useState } from "react";
 import { useApp } from "../state/AppState";
 import { validateAIConfig } from "../domain/ai";
@@ -6,6 +13,7 @@ import { Dialog } from "./ui/Dialog";
 /**
  * 设置面板：AI 服务（OpenAI 兼容）配置。
  * API Key 只保存在本机 IndexedDB，不进入日志、同步或上报。
+ * 开关状态由 AppState 管理（settingsOpen），故无 onClose 属性。
  */
 export function SettingsPanel() {
   const { preferences, setAIConfig, closeSettings } = useApp();
@@ -23,6 +31,7 @@ export function SettingsPanel() {
       model: model.trim(),
       apiKey: apiKey.trim(),
     };
+    // 校验失败时仅展示错误、不落盘，避免半截配置导致 AI 请求 401/404
     const message = validateAIConfig(config);
     if (message) {
       setError(message);

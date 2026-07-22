@@ -1,7 +1,13 @@
+/**
+ * Emoji 选择器：向光标处插入常用 Emoji。
+ * 使用本地静态表情表，不请求网络（本地优先原则）；
+ * 面板经外部点击或 Escape 关闭。
+ */
 import { useEffect, useRef, useState } from "react";
 import type { Editor } from "@tiptap/core";
 import { IconSmile } from "../ui/icons";
 
+/** 常用 Emoji 静态表（32 个，覆盖表情/手势/符号/文档类）；本地数据，不发请求。 */
 const EMOJIS = [
   "😀", "😄", "😂", "🤣", "😊", "😍", "🤔", "😴",
   "👍", "👎", "👏", "🙏", "💪", "🎉", "✨", "🔥",

@@ -1,3 +1,10 @@
+/**
+ * @file 主区组件：应用右侧的内容分发与文档编辑宿主。
+ * 依据 AppState 中的 `view` 路由渲染开始首页 / 最近浏览 / 收藏 /
+ * 知识库首页 / 文档编辑区（R002 的 48px 顶栏 + 工具栏 + 780px 正文布局在此组装），
+ * 并承担文档内容的加载、最近浏览记录、主题切换与 Markdown 导出。
+ */
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Editor } from "@tiptap/core";
 import type { DocumentContent } from "../domain/types";
@@ -28,6 +35,7 @@ import {
 } from "./ui/icons";
 
 interface MainAreaProps {
+  /** 打开窄屏抽屉式文档树的回调，由 AppShell 注入。 */
   onOpenTree(): void;
 }
 
@@ -64,6 +72,7 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
   const retrySaveRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
+    // cancelled 防止竞态：快速切换页面时旧请求晚到不得覆盖新页面的内容
     let cancelled = false;
     setContent(null);
     if (view === "document" && page?.kind === "document") {
@@ -108,6 +117,7 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
   const exportMarkdown = () => {
     if (!editor || !page) return;
     const markdown = jsonToMarkdown(editor.getJSON());
+    // 通过临时 Blob + 隐藏 <a download> 触发浏览器下载，无需任何服务端参与
     const url = URL.createObjectURL(
       new Blob([markdown], { type: "text/markdown;charset=utf-8" }),
     );

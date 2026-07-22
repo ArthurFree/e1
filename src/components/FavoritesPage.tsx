@@ -1,3 +1,10 @@
+/**
+ * @file 「收藏」视图：跨知识库展示收藏的知识库与收藏的文档。
+ * 两段列表均按收藏时间倒序（排序纯逻辑在 domain/activity.ts），
+ * 收藏的知识库点击后切换工作区，收藏的文档点击后直接打开；
+ * 取消收藏在此页内即时生效，行随即从列表消失。
+ */
+
 import { useEffect, useMemo, useState } from "react";
 import type { Page } from "../domain/types";
 import {
@@ -11,6 +18,7 @@ import { useApp } from "../state/AppState";
 import { PageIcon } from "./ui/icons";
 
 interface FavoritesPageProps {
+  /** 打开窄屏抽屉式文档树的回调，由 MainArea 透传。 */
   onOpenTree(): void;
 }
 
@@ -55,6 +63,8 @@ export function FavoritesPage({ onOpenTree }: FavoritesPageProps) {
   );
 
   const onTogglePage = (page: Page) => {
+    // 本地快照同步修补为未收藏，让该行立刻从「收藏的文档」中消失，
+    // 与 ActivityList 的做法一致，避免整表重取
     void togglePageFavorite(page.id).then(() => {
       setAllPages((prev) =>
         prev.map((p) => (p.id === page.id ? { ...p, favoriteAt: null } : p)),
