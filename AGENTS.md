@@ -6,18 +6,18 @@
 
 `notion-like-web` 是一个独立的 Web 笔记应用：以 Tiptap 的 Notion-like 模板为交互和视觉参考，提供本地优先（离线可用）的知识库、页面树和块编辑能力。面向简体中文个人用户。
 
-**当前状态：第 1、2、3、4、5 阶段已全部完成。** 工程、IndexedDB 仓储、页面树、标题自动保存、主题持久化；编辑器核心（Tiptap 3 开源扩展、`/` 命令、浮动工具栏、Emoji、目录、公式）；高级块交互：自实现块把手（悬停 + 原生拖拽移动 + 复制/删除/转换/清除格式菜单，DragHandle 的 Pro 能力未使用）、表格工具条（行列增删、表头、合并/拆分、行列移动、按列排序）、顶栏撤销/重做实时状态、模板字级行高与浮层动画对齐；笔记管理：页面树拖放（含同级排序）、标签（添加/移除/筛选）、全局搜索（标题 + 正文快照）、回收站（恢复/彻底删除/清空）、Markdown 导入导出（官方 `@tiptap/markdown` 扩展，解析经编辑器白名单）、加载失败错误态；AI：设置面板配置 OpenAI 兼容服务（配置存 preferences，含形状校验降级）、`/` 命令「AI 助手」、浮动工具栏选区润色/改写/总结，结果预览确认后经白名单解析应用，未配置时安全降级；质量：Playwright 端到端（功能 6 例）、1440 × 900 中文截图基线 7 张（动态日期 mask）、1024/768/375 响应式冒烟；修复了新建文档时旧编辑器实例导致的崩溃与长文档撑高网格行的布局缺陷。README 含运行说明与隐私说明。常用命令：`npm run dev`、`npm run build`、`npm test`、`npm run typecheck`、`npm run test:e2e`（截图基线更新用 `npm run test:e2e:update`）。
+**当前状态：第 1–5 阶段与 R001（v0.2，语雀式知识库结构与编辑区增强）已全部完成，R001 待验收。** 工程、IndexedDB 仓储、页面树、标题自动保存、主题持久化；编辑器核心（Tiptap 3 开源扩展、`/` 命令、浮动工具栏、Emoji、目录、公式）；高级块交互：自实现块把手、表格工具条、顶栏撤销/重做；笔记管理：页面树拖放、标签、全局搜索、回收站、Markdown 导入导出；AI：设置面板配置 OpenAI 兼容服务、`/` 命令「AI 助手」、选区润色/改写/总结（预览确认后应用，未配置安全降级）。R001 v0.2 增量：全局「开始」首页（快速创建四卡片 + 编辑过/浏览过活动区 + 归属筛选分页）、知识库首页（图标/描述/收藏/统计/目录概览）、文件夹原地迁移为分组（DB v2，含 revisions/attachments store 与 v1 fixture 迁移测试）、跨知识库最近与收藏、六个内置模板、AI 新建文档流程、常驻格式工具栏（段落样式/标题 1–6/字号/缩进/对齐/插入）、代码块语言（lowlight 离线高亮 + 复制）、附件块（20MB 上限、Blob 存储、孤儿清理、永久删除级联）、保存状态机（未保存/保存中/已保存/失败重试）、字数统计（CJK 逐字 + 拉丁连续段）、本地版本历史（5 分钟间隔、去重、自动版本上限 100、恢复前自动存档）。质量：204 项单元/组件测试、33 项 Playwright（功能 14、视觉基线 13 张、响应式冒烟 6）、typecheck、生产构建全部通过。常用命令：`npm run dev`、`npm run build`、`npm test`、`npm run typecheck`、`npm run test:e2e`（截图基线更新用 `npm run test:e2e:update`）。
 
 ## 源码结构
 
-- `src/domain/`：实体类型（`types.ts`）、页面树纯逻辑（`pageTree.ts`，含拖放判定 `dropZoneAt`/`resolveDrop` 与移动重排 `movePage`）、全局搜索纯逻辑（`search.ts`）、AI 纯逻辑（`ai.ts`，配置校验/prompt 构造/错误映射）、仓储接口（`repositories.ts`）。
-- `src/infrastructure/`：IndexedDB 实现——`db.ts`（schema/迁移）、`repositories.ts`（接口实现，含损坏数据降级、软删/恢复/永久删除、标签仓储、AI 配置持久化）、`seed.ts`（预置知识库与中文欢迎文档 JSON）、`aiProvider.ts`（OpenAI 兼容 provider，30s 超时）。
-- `src/editor/`：编辑器内核——`extensions.ts`（Tiptap 扩展组合，`buildDocumentExtensions` 为编辑器与 Markdown 转换共用）、`markdown.ts`（Markdown 导入导出，模块级 headless 转换器）、`commands.ts`（统一命令注册表，含「AI 助手」命令）、`aiBridge.ts`（`/` 命令与浮动工具栏打开 AI 面板的轻量事件桥）、`slashSuggestion.ts` / `mentionSuggestion.ts` / `popupRenderer.ts`（`/` 与 `@` 浮层）、`toc.ts`（目录提取与跳转）、`blockActions.ts`（块移动/复制/删除/转换/清格式）、`tableUtils.ts`（表格行列移动与排序）。
-- `src/state/AppState.tsx`：应用状态 Provider（含标签、回收站、搜索、AI 配置与设置面板开关 action、加载错误态），UI 只通过它和仓储接口取数。
-- `src/components/`：`AppShell`、`WorkspaceRail`（搜索/回收站/设置入口）、`PageTreeSidebar`（树拖放、标签筛选、Markdown 导入）、`MainArea`（Markdown 导出）、`SearchPanel`、`TrashPanel`、`SettingsPanel`（AI 配置表单）、`TagPicker`、`TitleEditor`；`src/components/editor/`：`DocumentEditor`（宿主 + 保存适配器）、`BubbleToolbar`（含 AI 选区菜单）、`AIAssistantPanel`（提问/润色/改写/总结，预览后应用）、`TableToolbar`、`BlockHandle`、`CommandList`、`EmojiPicker`、`TocPanel`。
+- `src/domain/`：实体类型（`types.ts`）、页面树纯逻辑（`pageTree.ts`）、全局搜索（`search.ts`）、AI（`ai.ts`）、活动列表排序与归属路径（`activity.ts`）、创建位置选择（`picker.ts`）、路由持久化（`route.ts`）、版本策略（`revisions.ts`）、字数统计（`wordCount.ts`）、仓储接口（`repositories.ts`）。
+- `src/infrastructure/`：IndexedDB 实现——`db.ts`（DB v2 schema 与按 oldVersion 分支迁移，导出 `createV1Schema` 供迁移 fixture）、`repositories.ts`（含损坏数据降级、软删/恢复、版本与附件仓储、purge 级联）、`seed.ts`（预置知识库，模块级 Promise 防并发重复种子）、`aiProvider.ts`、`migration.test.ts`（v1 真实 fixture 迁移测试）。
+- `src/editor/`：编辑器内核——`extensions.ts`、`markdown.ts`、`commands.ts`（统一命令注册表）、`aiBridge.ts`、`slashSuggestion.ts` / `mentionSuggestion.ts` / `popupRenderer.ts`、`toc.ts`、`blockActions.ts`、`tableUtils.ts`、`format.ts`（段落样式/字号/清格式，常驻工具栏与其他入口共用）、`indent.ts`、`codeBlock.ts`（语言选择 + lowlight 高亮 + 复制）、`attachment.ts`（附件节点）、`templates.ts`（六个内置模板 JSON）。
+- `src/state/AppState.tsx`：应用状态 Provider（视图路由 `view`、页面/标签/回收站/搜索/收藏/最近浏览 action、AI 配置与设置面板开关），UI 只通过它和仓储接口取数。
+- `src/components/`：`AppShell`、`WorkspaceRail`（开始/知识库切换/搜索/最近/收藏/回收站/设置 + 开始预览）、`PageTreeSidebar`、`MainArea`（按视图分发）、`StartPage`、`ActivityList`、`RecentPage`、`FavoritesPage`、`WorkspaceHome`、`TargetPicker`、`TemplateCenter`、`AIDraftModal`、`CreateWorkspaceModal`、`SearchPanel`、`TrashPanel`、`SettingsPanel`、`VersionPanel`、`TagPicker`、`TitleEditor`、`StartPreview`；`src/components/editor/`：`DocumentEditor`（宿主 + 保存适配器 + 保存状态机 + 间隔自动版本）、`FormatToolbar`（常驻工具栏）、`BubbleToolbar`、`AIAssistantPanel`、`SaveStateIndicator`、`WordCount`、`TableToolbar`、`BlockHandle`、`CommandList`、`EmojiPicker`、`TocPanel`。
 - `src/hooks/useDebouncedCallback.ts`：防抖保存 hook（beforeunload/卸载时 flush）。
-- `src/styles/global.css`：主题令牌（`data-theme` 切换浅/深）与全部组件样式、响应式规则；应用壳网格行高固定为 `minmax(0, 1fr)` 且 `overflow: clip`，避免长文档撑高行或被滚动锚定带走。
-- `e2e/`：Playwright 测试——`app.spec.ts`（功能端到端，含 AI 配置后 mock endpoint 验证「确认后才写入」）、`visual.spec.ts`（1440 × 900 截图基线，存于 `visual.spec.ts-snapshots/`）、`responsive.spec.ts`（1024/768/375 冒烟）；浏览器二进制装在项目内（`PLAYWRIGHT_BROWSERS_PATH=0`，npm script 已注入）。
+- `src/styles/global.css`：主题令牌（`data-theme` 切换浅/深）与全部组件样式、响应式规则；应用壳网格行高固定为 `minmax(0, 1fr)` 且 `overflow: clip`；`.doc-layout` 纵向（工具栏在上），`.doc-main` 为正文 + 目录行容器。
+- `e2e/`：Playwright 测试——`app.spec.ts`（14 例功能端到端：开始首页/知识库首页/收藏/最近/保存状态/版本历史/模板/AI/回收站，含 mock endpoint 验证「确认后才写入」）、`visual.spec.ts`（13 张 1440 × 900 基线，存于 `visual.spec.ts-snapshots/`）、`responsive.spec.ts`（1024/768/375 冒烟）；浏览器二进制装在项目内（`PLAYWRIGHT_BROWSERS_PATH=0`，npm script 已注入）。
 
 ## 技术栈（已确认的决策）
 

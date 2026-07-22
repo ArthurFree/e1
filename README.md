@@ -2,15 +2,17 @@
 
 一个独立的 Web 笔记应用：以 Tiptap 的 Notion-like 模板为交互和视觉参考，提供本地优先（离线可用）的知识库、页面树和块编辑能力。面向简体中文个人用户。
 
-**当前状态：第 1–5 阶段已全部完成。**
+**当前状态：v0.2（R001 语雀式知识库结构与编辑区增强）已完成，待验收。**
 
 ## 功能
 
-- 知识库与页面树：多知识库、树形页面（拖放排序/移动）、重命名、图标
-- 块编辑器：`/` 命令菜单、浮动工具栏、块把手（拖拽移动/复制/删除/转换/清除格式）、表格工具条、目录、Emoji、公式、@ 提及
-- 笔记管理：标签（添加/筛选）、全局搜索（标题 + 正文）、回收站（恢复/彻底删除/清空）、Markdown 导入导出
-- AI 助手（可选）：`/` 命令「AI 助手」提问，选区润色/改写/总结；结果先预览，确认后才写入文档
-- 浅色/深色主题，偏好本地持久化
+- 组织：多知识库（图标/描述/收藏）、全局「开始」首页（快速创建 + 编辑过/浏览过活动区）、知识库首页（统计 + 目录概览）、分组（任意层级、拖放排序）、跨知识库最近与收藏
+- 块编辑器：`/` 命令菜单、常驻格式工具栏（标题 1–6、字号、缩进、对齐、插入）、浮动工具栏、块把手、表格工具条、目录、Emoji、公式、@ 提及
+- 技术文档：代码块语言选择与离线语法高亮、复制；附件块（20MB 上限，离线可下载）
+- 笔记管理：标签、全局搜索、回收站、Markdown 导入导出、六个内置模板、AI 新建文档
+- 写作保障：保存状态（未保存/保存中/已保存/失败重试）、字数统计、本地版本历史（自动间隔版本、恢复前自动存档）
+- AI 助手（可选）：`/` 命令提问，选区润色/改写/总结；结果先预览，确认后才写入文档
+- 浅色/深色主题，偏好与路由本地持久化
 
 ## 运行
 
@@ -61,23 +63,25 @@ src/
 
 | 实体 | 必要字段 | 说明 |
 | --- | --- | --- |
-| `Workspace` | `id`, `name`, `createdAt`, `updatedAt` | 知识库根对象 |
-| `Page` | `id`, `workspaceId`, `parentId`, `kind`, `title`, `icon`, `position`, `deletedAt` | `kind` 为 document 或 folder；`deletedAt` 软删 |
+| `Workspace` | `id`, `name`, `icon`, `description`, `homePageId`, `favoriteAt`, `lastOpenedAt`, `createdAt`, `updatedAt` | 知识库根对象 |
+| `Page` | `id`, `workspaceId`, `parentId`, `kind`, `title`, `icon`, `position`, `favoriteAt`, `lastOpenedAt`, `deletedAt`, `createdAt`, `updatedAt` | `kind` 为 document 或 group；`deletedAt` 软删 |
 | `DocumentContent` | `pageId`, `contentJson`, `textSnapshot`, `updatedAt` | Tiptap JSON 与搜索文本快照 |
+| `DocumentRevision` | `id`, `pageId`, `contentJson`, `textSnapshot`, `createdAt`, `reason` | 本地版本（interval / before-restore / manual） |
+| `Attachment` | `id`, `pageId`, `name`, `mimeType`, `size`, `blob`, `createdAt` | 附件 Blob，文档节点只存 ID |
 | `Tag` | `id`, `workspaceId`, `name`, `color` | 工作区标签定义 |
 | `PageTag` | `pageId`, `tagId` | 页面与标签的关联 |
 | `Preferences` | `theme`, `sidebarWidth`, `aiConfig` | 浏览器本地偏好 |
 | `TrashRecord` | `pageId`, `deletedAt`, `originalParentId` | 用于恢复原始位置 |
 
-文档内容 JSON 是唯一编辑真相；`textSnapshot` 仅用于搜索与 Markdown 导出。仓储读取含损坏数据降级（字段缺失/形状不符时跳过或回退默认值）。
+文档内容 JSON 是唯一编辑真相；`textSnapshot` 仅用于搜索与 Markdown 导出。仓储读取含损坏数据降级（字段缺失/形状不符时跳过或回退默认值）。DB v1→v2 迁移将 `folder` 原地改写为 `group` 并补齐新字段，在 upgrade 事务内完成。
 
 ### 编辑器组合
 
-- 基础：StarterKit（标题 1–3、链接、代码块）、TextStyle、Color、Highlight、TextAlign、Typography、Image（base64 内嵌）、Subscript/Superscript、Mathematics
-- 块：TaskList、BulletList、OrderedList、Table
+- 基础：StarterKit（标题 1–6、链接）、TextStyle、Color、Highlight、TextAlign、Typography、Image（base64 内嵌）、Subscript/Superscript、Mathematics
+- 块：TaskList、BulletList、OrderedList、Table、代码块（lowlight 离线高亮 + 语言属性）、附件节点
 - 交互：Suggestion 驱动 `/` 与 `@` 浮层，BubbleMenu 驱动文本工具栏，Floating UI 定位；块拖拽把手与目录为自实现（DragHandle/TableOfContents 是 Pro 能力，未使用）
-- 统一命令注册表（`src/editor/commands.ts`）驱动 `/` 菜单，AI 命令经 `aiBridge` 事件桥打开面板，避免功能分叉
-- 保存：变更经 800ms 防抖写入 IndexedDB，切换文档或页面卸载（beforeunload）时强制落盘
+- 统一命令注册表（`src/editor/commands.ts`）驱动 `/` 菜单；常驻工具栏经 `format.ts` 共用同一执行函数，AI 命令经 `aiBridge` 事件桥打开面板，避免功能分叉
+- 保存：变更经 800ms 防抖写入 IndexedDB，切换文档或页面卸载（beforeunload）时强制落盘；保存状态机实时反馈，保存成功后按 5 分钟间隔生成自动版本（去重、上限 100）
 
 ### AI 接口
 

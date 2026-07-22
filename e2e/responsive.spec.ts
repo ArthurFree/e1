@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 /**
- * 响应式冒烟：1024 / 768 / 375 宽度下侧栏、编辑区与浮层可用且不溢出。
+ * 响应式冒烟：1024 / 768 / 375 宽度下开始首页、文档树与浮层可用且不溢出。
  * 基准视觉为 1440 × 900，窄屏只验证可用性（见 docs/test-plan.md）。
  */
 
@@ -22,16 +22,17 @@ for (const viewport of VIEWPORTS) {
   test.describe(`响应式 ${viewport.width}px`, () => {
     test.use({ viewport });
 
-    test("编辑区可用且无横向溢出", async ({ page }) => {
+    test("开始首页可用且无横向溢出", async ({ page }) => {
       await page.goto("/");
-      await expect(page.getByLabel("文档标题")).toBeVisible();
-      await expect(page.locator(".editor__content")).toBeVisible();
+      await expect(page.getByRole("heading", { name: "开始" })).toBeVisible();
+      await expect(page.getByLabel("快速操作")).toBeVisible();
+      await expect(page.getByLabel("文档活动")).toBeVisible();
       await expectNoHorizontalOverflow(page);
     });
 
     test("文档树与搜索浮层不溢出", async ({ page }) => {
       await page.goto("/");
-      await expect(page.getByLabel("文档标题")).toBeVisible();
+      await expect(page.getByRole("heading", { name: "开始" })).toBeVisible();
 
       // 窄屏下文档树为抽屉，由 ☰ 打开
       const toggle = page.getByLabel("打开文档树");

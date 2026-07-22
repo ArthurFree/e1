@@ -112,6 +112,17 @@ interface SeedPage {
 
 /** 首次启动写入的预置知识库；全部为简体中文。 */
 export async function ensureSeeded(db: IDBPDatabase): Promise<void> {
+  // 并发调用共享同一次种子写入：首次渲染时多个仓储方法可能同时触发，
+  // 检查-写入不是原子的，不去重会写入重复知识库。
+  seedingPromise ??= doSeed(db).finally(() => {
+    seedingPromise = null;
+  });
+  return seedingPromise;
+}
+
+let seedingPromise: Promise<void> | null = null;
+
+async function doSeed(db: IDBPDatabase): Promise<void> {
   let workspaceCount = 0;
   try {
     workspaceCount = await db.count(STORE_WORKSPACES);

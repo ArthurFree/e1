@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Editor } from "@tiptap/core";
 import type { DocumentContent } from "../domain/types";
 import { jsonToMarkdown } from "../editor/markdown";
@@ -10,9 +10,12 @@ import { StartPage } from "./StartPage";
 import { RecentPage } from "./RecentPage";
 import { FavoritesPage } from "./FavoritesPage";
 import { WorkspaceHome } from "./WorkspaceHome";
-import { DocumentEditor } from "./editor/DocumentEditor";
+import { VersionPanel } from "./VersionPanel";
+import { DocumentEditor, type SaveState } from "./editor/DocumentEditor";
 import { FormatToolbar } from "./editor/FormatToolbar";
 import { TocPanel } from "./editor/TocPanel";
+import { WordCount } from "./editor/WordCount";
+import { SaveStateIndicator } from "./editor/SaveStateIndicator";
 
 interface MainAreaProps {
   onOpenTree(): void;
@@ -46,6 +49,9 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
   const [content, setContent] = useState<DocumentContent | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
   const [tocOpen, setTocOpen] = useState(false);
+  const [versionsOpen, setVersionsOpen] = useState(false);
+  const [saveState, setSaveState] = useState<SaveState>({ status: "saved", savedAt: null });
+  const retrySaveRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -63,6 +69,14 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
 
   const onEditorReady = useCallback((instance: Editor | null) => {
     setEditor(instance);
+  }, []);
+
+  const onSaveStateChange = useCallback((state: SaveState) => {
+    setSaveState(state);
+  }, []);
+
+  const onRegisterRetry = useCallback((retry: () => void) => {
+    retrySaveRef.current = retry;
   }, []);
 
   // 文档在主区域完成渲染后记录最近浏览时间（仅打开，不含搜索预览）。
@@ -138,6 +152,12 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
         </button>
         <span className="topbar__title">{page?.title || "无标题"}</span>
         <div className="topbar__spacer" />
+        {isDocument && liveEditor && (
+          <>
+            <SaveStateIndicator state={saveState} onRetry={() => retrySaveRef.current?.()} />
+            <WordCount editor={liveEditor} />
+          </>
+        )}
         {isDocument && (
           <button
             type="button"
@@ -148,6 +168,19 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
             onClick={() => void togglePageFavorite(page.id)}
           >
             {page.favoriteAt === null ? "☆" : "★"}
+          </button>
+        )}
+        {isDocument && (
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="版本历史"
+            title="版本历史"
+            aria-pressed={versionsOpen}
+            disabled={!liveEditor}
+            onClick={() => setVersionsOpen((v) => !v)}
+          >
+            🕘
           </button>
         )}
         <button
@@ -183,35 +216,46 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
       {isDocument ? (
         <div className="doc-layout">
           {liveEditor && <FormatToolbar editor={liveEditor} />}
-          <div className="doc-scroll">
-            <div className="doc-header">
-              {page.icon && (
-                <div className="doc-header__icon" aria-hidden="true">
-                  {page.icon}
-                </div>
-              )}
-              <TitleEditor
-                pageId={page.id}
-                title={page.title}
-                autoFocus={page.id === titleFocusPageId}
-                onFocused={clearTitleFocus}
-                onSave={(id, title) => void renamePage(id, title || "无标题")}
-              />
-              <TagPicker pageId={page.id} />
-            </div>
-            <div className="doc-body">
-              {content ? (
-                <DocumentEditor
+          <div className="doc-main">
+            <div className="doc-scroll">
+              <div className="doc-header">
+                {page.icon && (
+                  <div className="doc-header__icon" aria-hidden="true">
+                    {page.icon}
+                  </div>
+                )}
+                <TitleEditor
                   pageId={page.id}
-                  initialContent={content.contentJson}
-                  onEditorReady={onEditorReady}
+                  title={page.title}
+                  autoFocus={page.id === titleFocusPageId}
+                  onFocused={clearTitleFocus}
+                  onSave={(id, title) => void renamePage(id, title || "无标题")}
                 />
-              ) : (
-                <p className="doc-placeholder">正在加载文档…</p>
-              )}
+                <TagPicker pageId={page.id} />
+              </div>
+              <div className="doc-body">
+                {content ? (
+                  <DocumentEditor
+                    pageId={page.id}
+                    initialContent={content.contentJson}
+                    onEditorReady={onEditorReady}
+                    onSaveStateChange={onSaveStateChange}
+                    onRegisterRetry={onRegisterRetry}
+                  />
+                ) : (
+                  <p className="doc-placeholder">正在加载文档…</p>
+                )}
+              </div>
             </div>
+            {tocOpen && liveEditor && <TocPanel editor={liveEditor} />}
           </div>
-          {tocOpen && liveEditor && <TocPanel editor={liveEditor} />}
+          {versionsOpen && liveEditor && (
+            <VersionPanel
+              pageId={page.id}
+              editor={liveEditor}
+              onClose={() => setVersionsOpen(false)}
+            />
+          )}
         </div>
       ) : (
         <div className="main-empty">从左侧选择或新建一篇文档。</div>

@@ -249,6 +249,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const openDocument = useCallback(
     async (pageId: string) => {
       let wsId = workspaceId;
+      const inState = pages.some((p) => p.id === pageId);
       let target = pages.find((p) => p.id === pageId);
       if (!target) {
         const all = await pageRepository.listAll();
@@ -260,6 +261,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setWorkspaceId(wsId);
         await Promise.all([loadPages(wsId), loadTags(wsId)]);
         void workspaceRepository.setLastOpened(wsId, Date.now());
+      } else if (!inState && wsId) {
+        // 页面由仓储直接创建（模板/AI 流程），当前列表未包含时同步刷新。
+        await loadPages(wsId);
       }
       if (!wsId) return;
       setSelectedPageId(pageId);
