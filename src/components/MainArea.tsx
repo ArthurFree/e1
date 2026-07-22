@@ -16,6 +16,16 @@ import { FormatToolbar } from "./editor/FormatToolbar";
 import { TocPanel } from "./editor/TocPanel";
 import { WordCount } from "./editor/WordCount";
 import { SaveStateIndicator } from "./editor/SaveStateIndicator";
+import {
+  IconClock,
+  IconExport,
+  IconList,
+  IconMenu,
+  IconMoon,
+  IconStar,
+  IconStarFilled,
+  IconSun,
+} from "./ui/icons";
 
 interface MainAreaProps {
   onOpenTree(): void;
@@ -148,9 +158,11 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
           aria-label="打开文档树"
           onClick={onOpenTree}
         >
-          ☰
+          <IconMenu />
         </button>
-        <span className="topbar__title">{page?.title || "无标题"}</span>
+        <span className="topbar__title" title={page?.title || "无标题"}>
+          {page?.title || "无标题"}
+        </span>
         <div className="topbar__spacer" />
         {isDocument && liveEditor && (
           <>
@@ -167,7 +179,7 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
             title={page.favoriteAt === null ? "收藏" : "取消收藏"}
             onClick={() => void togglePageFavorite(page.id)}
           >
-            {page.favoriteAt === null ? "☆" : "★"}
+            {page.favoriteAt === null ? <IconStar /> : <IconStarFilled />}
           </button>
         )}
         {isDocument && (
@@ -180,7 +192,7 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
             disabled={!liveEditor}
             onClick={() => setVersionsOpen((v) => !v)}
           >
-            🕘
+            <IconClock />
           </button>
         )}
         <button
@@ -191,7 +203,7 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
           disabled={!liveEditor}
           onClick={exportMarkdown}
         >
-          📤
+          <IconExport />
         </button>
         <button
           type="button"
@@ -201,7 +213,7 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
           disabled={!liveEditor}
           onClick={() => setTocOpen((v) => !v)}
         >
-          ☰
+          <IconList />
         </button>
         <button
           type="button"
@@ -209,7 +221,7 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
           aria-label={preferences.theme === "dark" ? "切换到浅色主题" : "切换到深色主题"}
           onClick={toggleTheme}
         >
-          {preferences.theme === "dark" ? "🌞" : "🌙"}
+          {preferences.theme === "dark" ? <IconSun /> : <IconMoon />}
         </button>
       </header>
 

@@ -3,6 +3,7 @@ import { BubbleMenu } from "@tiptap/react/menus";
 import type { Editor } from "@tiptap/core";
 import { openAIAssistant } from "../../editor/aiBridge";
 import type { AIMode } from "../../domain/ai";
+import { IconSparkle } from "../ui/icons";
 import {
   HIGHLIGHT_COLORS,
   TEXT_COLORS,
@@ -129,7 +130,7 @@ export function BubbleToolbar({ editor }: BubbleToolbarProps) {
           className="bubble-toolbar__button"
           onClick={() => setPanel(panel === "ai" ? "none" : "ai")}
         >
-          ✨
+          <IconSparkle />
         </button>
 
         {panel === "ai" && (
@@ -179,7 +180,7 @@ export function BubbleToolbar({ editor }: BubbleToolbarProps) {
                   setPanel("none");
                 }}
               >
-                <span style={{ color: c.value ?? "var(--text-primary)" }}>A</span>
+                <span style={{ color: c.value ?? "var(--color-text-primary)" }}>A</span>
                 <span>{c.name}</span>
               </button>
             ))}
@@ -203,7 +204,7 @@ export function BubbleToolbar({ editor }: BubbleToolbarProps) {
                 <span
                   style={{
                     background: c.value ?? "transparent",
-                    border: "1px solid var(--border-strong)",
+                    border: "1px solid var(--color-border-strong)",
                     borderRadius: 3,
                     padding: "0 4px",
                   }}

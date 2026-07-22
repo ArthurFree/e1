@@ -8,6 +8,7 @@ import {
 } from "../domain/activity";
 import { pageRepository } from "../infrastructure/repositories";
 import { useApp } from "../state/AppState";
+import { PageIcon } from "./ui/icons";
 
 interface FavoritesPageProps {
   onOpenTree(): void;
@@ -89,7 +90,7 @@ export function FavoritesPage({ onOpenTree }: FavoritesPageProps) {
                     className="favorites__title"
                     onClick={() => void switchWorkspace(ws.id)}
                   >
-                    <span aria-hidden="true">{ws.icon ?? "📚"}</span>
+                    <PageIcon icon={ws.icon} kind="workspace" size={14} />
                     {ws.name}
                   </button>
                   <span className="favorites__time">
@@ -123,7 +124,7 @@ export function FavoritesPage({ onOpenTree }: FavoritesPageProps) {
                     className="favorites__title"
                     onClick={() => void openDocument(page.id)}
                   >
-                    <span aria-hidden="true">{page.icon ?? "📄"}</span>
+                    <PageIcon icon={page.icon} kind="document" size={14} />
                     {page.title || "无标题"}
                   </button>
                   <span className="favorites__path">

@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { useApp } from "../state/AppState";
-import { WorkspaceRail } from "./WorkspaceRail";
+import { GlobalSidebar } from "./shell/GlobalSidebar";
 import { PageTreeSidebar } from "./PageTreeSidebar";
 import { MainArea } from "./MainArea";
 
-/** 应用壳：工作区轨道 + 文档树侧栏（窄屏抽屉化）+ 主栏。 */
+/** 应用壳：全局侧栏 + 知识库侧栏（窄屏抽屉化）+ 主区。 */
 export function AppShell() {
   const { ready, error, retryLoad, preferences } = useApp();
   const [treeOpen, setTreeOpen] = useState(false);
@@ -31,7 +31,7 @@ export function AppShell() {
 
   return (
     <div className="app-shell">
-      <WorkspaceRail />
+      <GlobalSidebar />
       <PageTreeSidebar open={treeOpen} onClose={() => setTreeOpen(false)} />
       {treeOpen && (
         <div

@@ -1,0 +1,188 @@
+/* 全局侧栏（R002 §7.1）：240px 完整 / 64px 折叠（1024–1279px）/ <1024px 隐藏。 */
+
+.gsb {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 240px;
+  padding: 8px;
+  background: var(--color-sidebar-global);
+  border-right: 1px solid var(--color-border-subtle);
+}
+
+.gsb__account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  padding: 0 8px;
+}
+
+.gsb__logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: var(--color-brand);
+  color: var(--color-brand-contrast);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.gsb__account-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.gsb__search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-hover);
+  color: var(--color-text-secondary);
+  font-size: 14px;
+}
+
+.gsb__search:hover {
+  background: var(--color-surface-active);
+}
+
+.gsb__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 8px;
+}
+
+.gsb__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  text-align: left;
+}
+
+.gsb__item:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+}
+
+.gsb__item--active,
+.gsb__item--active:hover {
+  background: var(--color-surface-active);
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+.gsb__section {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.gsb__section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 28px;
+  padding: 0 12px;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+
+.gsb__section-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-tertiary);
+}
+
+.gsb__section-action:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+}
+
+.gsb__ws-icon {
+  display: inline-flex;
+  width: 18px;
+  justify-content: center;
+  flex: none;
+}
+
+.gsb__ws-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gsb__footer {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+/* 开始入口的悬停预览定位上下文 */
+.gsb__start {
+  position: relative;
+}
+
+/* ===== 折叠态：1024–1279px，64px 图标栏 ===== */
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .gsb {
+    width: 64px;
+    padding: 8px 6px;
+    align-items: center;
+  }
+
+  .gsb__label,
+  .gsb__section-title .gsb__label {
+    display: none;
+  }
+
+  .gsb__account {
+    padding: 0;
+    justify-content: center;
+  }
+
+  .gsb__search,
+  .gsb__item {
+    justify-content: center;
+    padding: 0;
+    width: 40px;
+    gap: 0;
+  }
+
+  .gsb__section {
+    align-items: center;
+  }
+
+  .gsb__section-title {
+    justify-content: center;
+    padding: 0;
+  }
+}
+
+/* ===== <1024px：隐藏（窄屏由树抽屉导航，见 R002 偏差记录） ===== */
+@media (max-width: 1023px) {
+  .gsb {
+    display: none;
+  }
+}

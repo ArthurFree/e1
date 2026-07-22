@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import type { SuggestionKeyDownProps } from "@tiptap/suggestion";
 import type { SearchResult } from "../domain/types";
 import { useApp } from "../state/AppState";
 import { useDebouncedCallback } from "../hooks/useDebouncedCallback";
+import { Dialog } from "./ui/Dialog";
+import { PageIcon } from "./ui/icons";
 import {
   CommandList,
   type CommandListItem,
@@ -19,14 +21,6 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const listRef = useRef<CommandListRef>(null);
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
 
   const { debounced: debouncedSearch } = useDebouncedCallback((value: string) => {
     void search(value).then(setResults);
@@ -47,7 +41,7 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
       id: result.pageId,
       title: result.title,
       subtitle: result.snippet || undefined,
-      icon: page?.icon ?? (page?.kind === "group" ? "📁" : "📄"),
+      icon: page?.icon ?? <PageIcon kind={page?.kind === "group" ? "group" : "document"} size={14} />,
     };
   });
 
@@ -57,35 +51,28 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
   };
 
   return (
-    <div className="dialog-backdrop" onClick={onClose}>
-      <div
-        className="dialog search-panel"
-        role="dialog"
-        aria-label="全局搜索"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <input
-          className="search-panel__input"
-          aria-label="搜索文档"
-          placeholder="搜索标题与正文…"
-          value={query}
-          autoFocus
-          onChange={(event) => onQueryChange(event.target.value)}
-          onKeyDown={(event) => {
-            if (["ArrowUp", "ArrowDown", "Enter"].includes(event.key)) {
-              event.preventDefault();
-              listRef.current?.onKeyDown({
-                event: event.nativeEvent,
-              } as unknown as SuggestionKeyDownProps);
-            }
-          }}
-        />
-        {query.trim() ? (
-          <CommandList ref={listRef} items={items} command={jump} />
-        ) : (
-          <div className="search-panel__hint">输入关键词，按标题与正文查找文档。</div>
-        )}
-      </div>
-    </div>
+    <Dialog label="全局搜索" className="search-panel" onClose={onClose}>
+      <input
+        className="search-panel__input"
+        aria-label="搜索文档"
+        placeholder="搜索标题与正文…"
+        value={query}
+        autoFocus
+        onChange={(event) => onQueryChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (["ArrowUp", "ArrowDown", "Enter"].includes(event.key)) {
+            event.preventDefault();
+            listRef.current?.onKeyDown({
+              event: event.nativeEvent,
+            } as unknown as SuggestionKeyDownProps);
+          }
+        }}
+      />
+      {query.trim() ? (
+        <CommandList ref={listRef} items={items} command={jump} />
+      ) : (
+        <div className="search-panel__hint">输入关键词，按标题与正文查找文档。</div>
+      )}
+    </Dialog>
   );
 }

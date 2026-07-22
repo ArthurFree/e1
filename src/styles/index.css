@@ -1,0 +1,12 @@
+/* 样式入口：固定导入顺序 tokens → reset → typography → components。
+   global.css 为迁移期的组件层（R002 §12.1 的拆分按页面渐进进行）。 */
+
+@layer tokens, reset, base, layout, components, utilities;
+
+@import "./tokens.css" layer(tokens);
+@import "./reset.css" layer(reset);
+@import "./typography.css" layer(base);
+@import "./global.css" layer(components);
+@import "./components/buttons.css" layer(components);
+@import "./components/sidebar.css" layer(components);
+@import "./components/empty-state.css" layer(components);

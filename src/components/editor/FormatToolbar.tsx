@@ -357,7 +357,7 @@ export function FormatToolbar({ editor }: FormatToolbarProps) {
             aria-label={`文本颜色：${c.name}`}
             onClick={() => applyTextColor(editor, c.value)}
           >
-            <span style={{ color: c.value ?? "var(--text-primary)" }}>A</span> {c.name}
+            <span style={{ color: c.value ?? "var(--color-text-primary)" }}>A</span> {c.name}
           </button>
         ))}
         <div className="ft-palette__label">高亮背景</div>
@@ -373,7 +373,7 @@ export function FormatToolbar({ editor }: FormatToolbarProps) {
             <span
               style={{
                 background: c.value ?? "transparent",
-                border: "1px solid var(--border-strong)",
+                border: "1px solid var(--color-border-strong)",
                 borderRadius: 3,
                 padding: "0 4px",
               }}

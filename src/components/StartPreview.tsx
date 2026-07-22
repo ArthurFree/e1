@@ -7,6 +7,7 @@ import {
 } from "../domain/activity";
 import { pageRepository } from "../infrastructure/repositories";
 import { useApp } from "../state/AppState";
+import { PageIcon } from "./ui/icons";
 
 interface StartPreviewProps {
   onClose(): void;
@@ -87,7 +88,7 @@ export function StartPreview({ onClose }: StartPreviewProps) {
                   void openDocument(row.page.id);
                 }}
               >
-                <span aria-hidden="true">{row.page.icon ?? "📄"}</span>
+                <PageIcon icon={row.page.icon} kind="document" size={14} />
                 <span className="start-preview__item-title">
                   {row.page.title || "无标题"}
                 </span>

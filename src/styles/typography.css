@@ -1,0 +1,25 @@
+/* 通用排版令牌与编辑正文排版（R002 §5.2、§4.4）。
+   编辑器画布的标题/正文尺寸在这里定义，编辑区结构调整见阶段 4。 */
+
+:root {
+  --text-caption: 12px/18px;
+  --text-body-sm: 13px/20px;
+  --text-body: 14px/22px;
+  --text-editor-body: 16px/28px;
+}
+
+/* 编辑正文：16px / 1.75，段落间距 8px。 */
+.editor__content {
+  font-size: 16px;
+  line-height: 1.75;
+}
+
+.editor__content p {
+  margin: 4px 0;
+}
+
+/* 代码统一等宽字体。 */
+.editor__content code,
+.editor__content pre {
+  font-family: var(--font-mono);
+}

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import type { Editor } from "@tiptap/core";
 import type { DocumentRevision, RevisionReason } from "../domain/types";
 import { contentRepository, revisionRepository } from "../infrastructure/repositories";
+import { Dialog } from "./ui/Dialog";
+import { EmptyState } from "./ui/EmptyState";
 
 interface VersionPanelProps {
   pageId: string;
@@ -32,14 +34,6 @@ export function VersionPanel({ pageId, editor, onClose }: VersionPanelProps) {
     void reload();
   }, [reload]);
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
-
   const restore = async (revision: DocumentRevision) => {
     // 恢复前保存当前版本，避免二次丢失。
     await revisionRepository.add(
@@ -55,68 +49,61 @@ export function VersionPanel({ pageId, editor, onClose }: VersionPanelProps) {
   };
 
   return (
-    <div className="dialog-backdrop" onClick={onClose}>
-      <div
-        className="dialog version-panel"
-        role="dialog"
-        aria-label="版本历史"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="dialog__header">
-          <span>版本历史</span>
-        </div>
-        {revisions.length === 0 ? (
-          <div className="dialog__empty">暂无历史版本，编辑保存后自动记录。</div>
-        ) : (
-          <div className="version-panel__list">
-            {revisions.map((revision) => (
-              <div key={revision.id} className="version-panel__item">
-                <button
-                  type="button"
-                  className="version-panel__summary"
-                  aria-expanded={previewId === revision.id}
-                  onClick={() => {
-                    setPreviewId(previewId === revision.id ? null : revision.id);
-                    setConfirmId(null);
-                  }}
-                >
-                  <span className="version-panel__time">
-                    {new Date(revision.createdAt).toLocaleString("zh-CN")}
-                  </span>
-                  <span className="version-panel__reason">
-                    {REASON_LABEL[revision.reason]}
-                  </span>
-                  <span className="version-panel__snippet">
-                    {revision.textSnapshot.slice(0, 40) || "（空文档）"}
-                  </span>
-                </button>
-                {previewId === revision.id && (
-                  <div className="version-panel__preview">
-                    <div className="version-panel__text">
-                      {revision.textSnapshot || "（空文档）"}
-                    </div>
-                    <div className="version-panel__actions">
-                      <button
-                        type="button"
-                        className={`version-panel__restore${confirmId === revision.id ? " version-panel__restore--danger" : ""}`}
-                        onClick={() => {
-                          if (confirmId === revision.id) {
-                            void restore(revision);
-                          } else {
-                            setConfirmId(revision.id);
-                          }
-                        }}
-                      >
-                        {confirmId === revision.id ? "确认恢复？" : "恢复此版本"}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+    <Dialog label="版本历史" className="version-panel" onClose={onClose}>
+      <div className="dialog__header">
+        <span>版本历史</span>
       </div>
-    </div>
+      {revisions.length === 0 ? (
+        <EmptyState title="暂无历史版本" hint="编辑保存后自动记录。" />
+      ) : (
+        <div className="version-panel__list">
+          {revisions.map((revision) => (
+            <div key={revision.id} className="version-panel__item">
+              <button
+                type="button"
+                className="version-panel__summary"
+                aria-expanded={previewId === revision.id}
+                onClick={() => {
+                  setPreviewId(previewId === revision.id ? null : revision.id);
+                  setConfirmId(null);
+                }}
+              >
+                <span className="version-panel__time">
+                  {new Date(revision.createdAt).toLocaleString("zh-CN")}
+                </span>
+                <span className="version-panel__reason">
+                  {REASON_LABEL[revision.reason]}
+                </span>
+                <span className="version-panel__snippet">
+                  {revision.textSnapshot.slice(0, 40) || "（空文档）"}
+                </span>
+              </button>
+              {previewId === revision.id && (
+                <div className="version-panel__preview">
+                  <div className="version-panel__text">
+                    {revision.textSnapshot || "（空文档）"}
+                  </div>
+                  <div className="version-panel__actions">
+                    <button
+                      type="button"
+                      className={`version-panel__restore${confirmId === revision.id ? " version-panel__restore--danger" : ""}`}
+                      onClick={() => {
+                        if (confirmId === revision.id) {
+                          void restore(revision);
+                        } else {
+                          setConfirmId(revision.id);
+                        }
+                      }}
+                    >
+                      {confirmId === revision.id ? "确认恢复？" : "恢复此版本"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </Dialog>
   );
 }

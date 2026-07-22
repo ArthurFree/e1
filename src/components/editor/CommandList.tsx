@@ -3,6 +3,7 @@ import {
   useEffect,
   useImperativeHandle,
   useState,
+  type ReactNode,
 } from "react";
 import type { SuggestionKeyDownProps } from "@tiptap/suggestion";
 
@@ -10,7 +11,7 @@ export interface CommandListItem {
   id: string;
   title: string;
   subtitle?: string;
-  icon?: string | null;
+  icon?: ReactNode;
 }
 
 export interface CommandListRef {

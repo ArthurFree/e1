@@ -9,6 +9,7 @@ import {
 import { jsonToText, markdownToJson } from "../editor/markdown";
 import { contentRepository } from "../infrastructure/repositories";
 import { useApp } from "../state/AppState";
+import { IconHome, PageIcon } from "./ui/icons";
 
 interface PageTreeSidebarProps {
   open: boolean;
@@ -146,6 +147,34 @@ export function PageTreeSidebar({ open, onClose }: PageTreeSidebarProps) {
     return ` tree-row--drop-${dropHint.zone}`;
   };
 
+  // 树的键盘导航（R002 §11）：上下移动、左右展开/收起、F2 重命名。
+  const treeRef = useRef<HTMLDivElement>(null);
+  const onTreeKeyDown = (event: React.KeyboardEvent) => {
+    const items = Array.from(
+      treeRef.current?.querySelectorAll<HTMLElement>('[role="treeitem"]') ?? [],
+    );
+    const index = items.indexOf(document.activeElement as HTMLElement);
+    if (index < 0) return;
+    const pageId = items[index].dataset.pageId;
+    const page = pages.find((p) => p.id === pageId);
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      items[index + 1]?.focus();
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      items[index - 1]?.focus();
+    } else if (event.key === "ArrowRight" && page) {
+      event.preventDefault();
+      if (collapsed.has(page.id)) toggleCollapse(page.id);
+    } else if (event.key === "ArrowLeft" && page) {
+      event.preventDefault();
+      if (!collapsed.has(page.id)) toggleCollapse(page.id);
+    } else if (event.key === "F2" && page) {
+      event.preventDefault();
+      startRename(page);
+    }
+  };
+
   const renderRow = (page: Page, children: Page[]) => {
     const isCollapsed = collapsed.has(page.id);
     const isGroup = page.kind === "group";
@@ -155,6 +184,7 @@ export function PageTreeSidebar({ open, onClose }: PageTreeSidebarProps) {
         role="treeitem"
         aria-selected={page.id === selectedPageId}
         aria-expanded={children.length > 0 ? !isCollapsed : undefined}
+        data-page-id={page.id}
         tabIndex={0}
         draggable
         onDragStart={(event) => {
@@ -200,7 +230,7 @@ export function PageTreeSidebar({ open, onClose }: PageTreeSidebarProps) {
           <span className="tree-row__toggle" aria-hidden="true" />
         )}
         <span className="tree-row__icon" aria-hidden="true">
-          {page.icon ?? (isGroup ? "📁" : "📄")}
+          <PageIcon icon={page.icon} kind={isGroup ? "group" : "document"} size={14} />
         </span>
         {renamingId === page.id ? (
           <input
@@ -317,7 +347,7 @@ export function PageTreeSidebar({ open, onClose }: PageTreeSidebarProps) {
           onClose();
         }}
       >
-        <span aria-hidden="true">🏠</span> 首页
+        <IconHome size={14} /> 首页
       </button>
       <div className="tree-sidebar__header">
         <span>目录</span>
@@ -382,7 +412,13 @@ export function PageTreeSidebar({ open, onClose }: PageTreeSidebarProps) {
           </button>
         </div>
       )}
-      <div className="tree-sidebar__body" role="tree" aria-label="页面树">
+      <div
+        className="tree-sidebar__body"
+        role="tree"
+        aria-label="页面树"
+        ref={treeRef}
+        onKeyDown={onTreeKeyDown}
+      >
         {activeTagId ? renderTagFiltered() : renderTree(null)}
       </div>
       <div className="tree-tags" aria-label="标签筛选">

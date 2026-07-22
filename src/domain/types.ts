@@ -98,7 +98,7 @@ export interface SearchResult {
   snippet: string;
 }
 
-export const DEFAULT_SIDEBAR_WIDTH = 280;
+export const DEFAULT_SIDEBAR_WIDTH = 224;
 
 export const DEFAULT_PREFERENCES: Preferences = {
   id: "preferences",

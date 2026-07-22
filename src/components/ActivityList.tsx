@@ -8,6 +8,7 @@ import {
 } from "../domain/activity";
 import { pageRepository } from "../infrastructure/repositories";
 import { useApp } from "../state/AppState";
+import { IconStar, IconStarFilled, PageIcon } from "./ui/icons";
 
 /**
  * 跨知识库文档活动列表：编辑过/浏览过页签、归属筛选、分页与空态。
@@ -137,7 +138,7 @@ export function ActivityList() {
                     className="activity-table__title"
                     onClick={() => void openDocument(row.page.id)}
                   >
-                    <span aria-hidden="true">{row.page.icon ?? "📄"}</span>
+                    <PageIcon icon={row.page.icon} kind="document" size={14} />
                     {row.page.title || "无标题"}
                   </button>
                 </td>
@@ -164,7 +165,7 @@ export function ActivityList() {
                     title={row.page.favoriteAt === null ? "收藏" : "取消收藏"}
                     onClick={() => onToggleFavorite(row.page)}
                   >
-                    {row.page.favoriteAt === null ? "☆" : "★"}
+                    {row.page.favoriteAt === null ? <IconStar size={14} /> : <IconStarFilled size={14} />}
                   </button>
                 </td>
               </tr>

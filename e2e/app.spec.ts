@@ -37,11 +37,7 @@ test.describe("开始首页与知识库", () => {
 
   test("知识库首页：名称、收藏与目录概览", async ({ page }) => {
     await gotoStart(page);
-    await page.getByLabel("切换知识库").click();
-    await page
-      .getByRole("menu", { name: "知识库列表" })
-      .getByRole("menuitem", { name: "我的知识库" })
-      .click();
+    await page.getByLabel("知识库「我的知识库」").click();
     await expect(page.getByRole("heading", { name: "我的知识库" })).toBeVisible();
     await expect(page.getByLabel("收藏知识库")).toBeVisible();
     await expect(page.getByLabel("目录概览")).toContainText("欢迎使用 Notion-like Web");
@@ -132,6 +128,21 @@ test.describe("文档编辑", () => {
 
     await page.keyboard.press("Escape");
     await expect(headingOption).toBeHidden();
+  });
+
+  test("页面树支持方向键导航与 F2 重命名", async ({ page }) => {
+    await gotoStart(page);
+    const tree = page.getByRole("tree", { name: "页面树" });
+    const items = tree.getByRole("treeitem");
+    await items.first().focus();
+    await page.keyboard.press("ArrowDown");
+    await expect(items.nth(1)).toBeFocused();
+    await page.keyboard.press("ArrowUp");
+    await expect(items.first()).toBeFocused();
+    // F2 进入重命名，Escape 退出
+    await page.keyboard.press("F2");
+    await expect(tree.getByRole("textbox", { name: "重命名" })).toBeFocused();
+    await page.keyboard.press("Escape");
   });
 
   test("常驻格式工具栏可直接设置标题", async ({ page }) => {

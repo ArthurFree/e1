@@ -1,0 +1,58 @@
+/* 统一按钮（R002 §7.9）。图标按钮沿用现有 .icon-button 规格（32px 点击区）。 */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 14px;
+  border-radius: var(--radius-sm);
+  transition: background var(--motion-fast) var(--motion-ease),
+    border-color var(--motion-fast) var(--motion-ease);
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.button--primary {
+  background: var(--color-brand);
+  color: var(--color-brand-contrast);
+}
+
+.button--primary:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.button--secondary {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  color: var(--color-text-primary);
+}
+
+.button--secondary:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+}
+
+.button--ghost {
+  background: transparent;
+  color: var(--color-text-secondary);
+}
+
+.button--ghost:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+}
+
+.button--danger {
+  background: var(--color-danger);
+  color: #ffffff;
+}
+
+.button--danger:hover:not(:disabled) {
+  opacity: 0.9;
+}

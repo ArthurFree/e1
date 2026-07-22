@@ -1,0 +1,97 @@
+/**
+ * 设计令牌（R002 §5）：语义颜色、字体、间距、圆角、阴影、层级与动效。
+ * 业务组件只允许使用语义变量，不直接书写十六进制颜色。
+ */
+
+:root {
+  --font-sans: "Chinese Quote", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+    "Helvetica Neue", Arial, sans-serif;
+  --font-mono: SFMono-Regular, Consolas, "Liberation Mono", monospace;
+
+  /* ===== 颜色（浅色） ===== */
+  --color-canvas: #ffffff;
+  --color-sidebar-global: #f7f8f7;
+  --color-sidebar-context: #fbfbfa;
+  --color-surface: #ffffff;
+  --color-surface-hover: #f3f4f3;
+  --color-surface-active: #edefef;
+  --color-text-primary: #262626;
+  --color-text-secondary: #737773;
+  --color-text-tertiary: #a0a4a0;
+  --color-border-subtle: #edeeeb;
+  --color-border-strong: #d8dbd8;
+  --color-brand: #22a06b;
+  --color-brand-contrast: #ffffff;
+  --color-brand-soft: #e8f7f0;
+  --color-info: #3578e5;
+  --color-warning: #d9822b;
+  --color-danger: #d14343;
+  --color-overlay: rgba(18, 20, 18, 0.42);
+
+  /* ===== 圆角 ===== */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+
+  /* ===== 阴影（仅浮层使用） ===== */
+  --shadow-popover: 0 6px 20px rgba(18, 20, 18, 0.12),
+    0 1px 4px rgba(18, 20, 18, 0.08);
+  --shadow-dialog: 0 18px 48px rgba(18, 20, 18, 0.2),
+    0 2px 8px rgba(18, 20, 18, 0.1);
+
+  /* ===== 层级 ===== */
+  --z-sticky: 10;
+  --z-dropdown: 30;
+  --z-popover: 40;
+  --z-drawer: 50;
+  --z-modal: 60;
+  --z-toast: 70;
+
+  /* ===== 动效 ===== */
+  --motion-fast: 120ms;
+  --motion-standard: 180ms;
+  --motion-structural: 240ms;
+  --motion-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* ===== 结构尺寸 ===== */
+  --topbar-height: 48px;
+}
+
+[data-theme="dark"] {
+  --color-canvas: #171817;
+  --color-sidebar-global: #1d1f1e;
+  --color-sidebar-context: #202220;
+  --color-surface: #252725;
+  --color-surface-hover: #2d302e;
+  --color-surface-active: #353936;
+  --color-text-primary: #e8eae8;
+  --color-text-secondary: #a6aaa6;
+  --color-text-tertiary: #777c78;
+  --color-border-subtle: #303330;
+  --color-border-strong: #474b48;
+  --color-brand: #42c98a;
+  --color-brand-contrast: #173d2d;
+  --color-brand-soft: #173d2d;
+  --color-info: #6da0f2;
+  --color-warning: #f0a454;
+  --color-danger: #f06b6b;
+  --color-overlay: rgba(0, 0, 0, 0.64);
+
+  /* 深色阴影减弱扩散，主要靠边框区分浮层。 */
+  --shadow-popover: 0 6px 20px rgba(0, 0, 0, 0.4),
+    0 1px 4px rgba(0, 0, 0, 0.3);
+  --shadow-dialog: 0 18px 48px rgba(0, 0, 0, 0.5),
+    0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+/* 减少动效：取消位移与缩放，只保留快速透明度变化。 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 80ms !important;
+    animation-duration: 80ms !important;
+  }
+}

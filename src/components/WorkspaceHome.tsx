@@ -4,6 +4,7 @@ import { formatRelativeTime, workspaceDocStats } from "../domain/activity";
 import { childrenOf } from "../domain/pageTree";
 import { contentRepository } from "../infrastructure/repositories";
 import { useApp } from "../state/AppState";
+import { PageIcon } from "./ui/icons";
 
 interface WorkspaceHomeProps {
   onOpenTree(): void;
@@ -57,7 +58,7 @@ export function WorkspaceHome({ onOpenTree }: WorkspaceHomeProps) {
         className="ws-home__doc-title"
         onClick={() => void openDocument(page.id)}
       >
-        <span aria-hidden="true">{page.icon ?? "📄"}</span>
+        <PageIcon icon={page.icon} kind="document" size={14} />
         {page.title || "无标题"}
       </button>
       <span className="ws-home__doc-time">
@@ -88,7 +89,7 @@ export function WorkspaceHome({ onOpenTree }: WorkspaceHomeProps) {
             onClick={() => toggleCollapse(page.id)}
           >
             <span aria-hidden="true">{isCollapsed ? "▸" : "▾"}</span>
-            <span aria-hidden="true">{page.icon ?? "📁"}</span>
+            <PageIcon icon={page.icon} kind="group" size={14} />
             {page.title || "未命名分组"}
           </button>
           {!isCollapsed &&

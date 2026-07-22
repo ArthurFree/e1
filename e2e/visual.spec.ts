@@ -31,11 +31,7 @@ test.describe("视觉回归（1440 × 900）", () => {
 
   test("知识库首页", async ({ page }) => {
     await gotoStart(page);
-    await page.getByLabel("切换知识库").click();
-    await page
-      .getByRole("menu", { name: "知识库列表" })
-      .getByRole("menuitem", { name: "我的知识库" })
-      .click();
+    await page.getByLabel("知识库「我的知识库」").click();
     await expect(page.getByRole("heading", { name: "我的知识库" })).toBeVisible();
     await expect(page).toHaveScreenshot("workspace-home.png", {
       mask: [page.locator(".ws-home time, .ws-home [data-dynamic]")],

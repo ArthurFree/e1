@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { PickerTarget } from "../domain/picker";
 import { jsonToText, markdownToJson } from "../editor/markdown";
 import { createOpenAICompatibleProvider } from "../infrastructure/aiProvider";
 import { contentRepository, pageRepository } from "../infrastructure/repositories";
 import { useApp } from "../state/AppState";
+import { Dialog } from "./ui/Dialog";
 import { TargetPicker } from "./TargetPicker";
 
 interface AIDraftModalProps {
@@ -28,21 +29,12 @@ export function AIDraftModal({ onClose }: AIDraftModalProps) {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
-
   const config = preferences.aiConfig;
   if (!config) {
     // 防御：未配置时不应到达此流程（开始页已拦截），回退到设置。
     return (
-      <div className="modal-backdrop" role="presentation" onClick={onClose}>
-        <div className="modal" role="dialog" aria-modal="true" aria-label="AI 帮你写">
-          <h2 className="modal__title">AI 帮你写</h2>
+      <Dialog label="AI 帮你写" className="modal" onClose={onClose}>
+        <h2 className="modal__title">AI 帮你写</h2>
           <p className="modal__hint">需要先在设置中配置兼容的 AI 服务。</p>
           <div className="modal__actions">
             <button type="button" className="button" onClick={onClose}>
@@ -59,8 +51,7 @@ export function AIDraftModal({ onClose }: AIDraftModalProps) {
               前往设置
             </button>
           </div>
-        </div>
-      </div>
+      </Dialog>
     );
   }
 
@@ -98,15 +89,8 @@ export function AIDraftModal({ onClose }: AIDraftModalProps) {
   };
 
   return (
-    <div className="modal-backdrop" role="presentation" onClick={onClose}>
-      <div
-        className="modal modal--wide"
-        role="dialog"
-        aria-modal="true"
-        aria-label="AI 帮你写"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <h2 className="modal__title">AI 帮你写</h2>
+    <Dialog label="AI 帮你写" className="modal modal--wide" onClose={onClose}>
+      <h2 className="modal__title">AI 帮你写</h2>
         <div className="modal__form">
           <label className="modal__field">
             <span>主题</span>
@@ -192,7 +176,6 @@ export function AIDraftModal({ onClose }: AIDraftModalProps) {
             )}
           </div>
         </div>
-      </div>
-    </div>
+    </Dialog>
   );
 }

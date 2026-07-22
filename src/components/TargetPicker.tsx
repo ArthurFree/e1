@@ -3,6 +3,7 @@ import type { Page } from "../domain/types";
 import { buildPickerTargets, type PickerTarget } from "../domain/picker";
 import { pageRepository } from "../infrastructure/repositories";
 import { useApp } from "../state/AppState";
+import { IconFolder } from "./ui/icons";
 
 interface TargetPickerProps {
   onSelect(target: PickerTarget): void;
@@ -44,7 +45,7 @@ export function TargetPicker({ onSelect, className }: TargetPickerProps) {
           style={{ paddingLeft: 12 + target.depth * 16 }}
           onClick={() => onSelect(target)}
         >
-          {target.depth > 0 && <span aria-hidden="true">📁 </span>}
+          {target.depth > 0 && <IconFolder size={14} />}
           {target.label}
         </button>
       ))}

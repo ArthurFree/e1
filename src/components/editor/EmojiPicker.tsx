@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Editor } from "@tiptap/core";
+import { IconSmile } from "../ui/icons";
 
 const EMOJIS = [
   "😀", "😄", "😂", "🤣", "😊", "😍", "🤔", "😴",
@@ -43,7 +44,7 @@ export function EmojiPicker({ editor }: EmojiPickerProps) {
         title="插入表情"
         onClick={() => setOpen((v) => !v)}
       >
-        😊
+        <IconSmile />
       </button>
       {open && (
         <div className="emoji-picker__panel" role="menu" aria-label="表情列表">

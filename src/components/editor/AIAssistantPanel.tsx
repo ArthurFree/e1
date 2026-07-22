@@ -4,6 +4,7 @@ import { useApp } from "../../state/AppState";
 import { isAIConfigured, type AIMode } from "../../domain/ai";
 import { createOpenAICompatibleProvider } from "../../infrastructure/aiProvider";
 import { markdownToJson } from "../../editor/markdown";
+import { Dialog } from "../ui/Dialog";
 import {
   onAIAssistantOpen,
   type AIAssistantOpen,
@@ -94,15 +95,6 @@ export function AIAssistantPanel({ editor }: AIAssistantPanelProps) {
     void run(request, "");
   }, [request, status, configured, run]);
 
-  useEffect(() => {
-    if (!request) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") close();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [request, close]);
-
   if (!request) return null;
 
   const apply = () => {
@@ -131,13 +123,7 @@ export function AIAssistantPanel({ editor }: AIAssistantPanelProps) {
   };
 
   return (
-    <div className="dialog-backdrop" onClick={close}>
-      <div
-        className="dialog ai-panel"
-        role="dialog"
-        aria-label={MODE_TITLE[request.mode]}
-        onClick={(event) => event.stopPropagation()}
-      >
+    <Dialog label={MODE_TITLE[request.mode]} className="ai-panel" onClose={close}>
         <div className="dialog__header">
           <span>{MODE_TITLE[request.mode]}</span>
         </div>
@@ -233,7 +219,6 @@ export function AIAssistantPanel({ editor }: AIAssistantPanelProps) {
             )}
           </>
         )}
-      </div>
-    </div>
+    </Dialog>
   );
 }
