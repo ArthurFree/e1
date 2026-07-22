@@ -84,8 +84,8 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
     if (view === "document" && page?.kind === "document" && content) {
       void markOpened(page.id);
     }
-    // content 随页面加载一次性落地，用 pageId 标识即可。
-  }, [view, page?.id, page?.kind, content?.pageId, markOpened]);
+    // content 随页面加载一次性落地，加载完成时触发一次即可。
+  }, [view, page?.id, page?.kind, content, markOpened]);
 
   // 切换/新建文档时旧编辑器先销毁、onEditorReady(null) 后落地，
   // 期间状态里仍是已销毁实例，调用其 API 会抛错，需以 isDestroyed 兜底。

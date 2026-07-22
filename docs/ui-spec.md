@@ -1,5 +1,7 @@
 # UI 与视觉规格
 
+> 本文保留项目初始视觉基线。R001 完成后的下一轮完整 UI 设计、令牌、组件、响应式和实施要求见 [`requirements/R002-yuque-ui-design-system.md`](./requirements/R002-yuque-ui-design-system.md)，实际实现以 R002 为准。
+
 ## 基准与原则
 
 - 基准视口：1440 × 900。

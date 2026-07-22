@@ -396,16 +396,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await pageRepository.remove(id);
       if (workspaceId) await loadPages(workspaceId);
       // 删除当前正在编辑的文档：主区域返回知识库首页。
-      setSelectedPageId((current) => {
-        if (current === id && workspaceId) {
-          setView("workspace");
-          persistRoute({ view: "workspace", workspaceId });
-          return null;
-        }
-        return current;
-      });
+      if (selectedPageId === id && workspaceId) {
+        setSelectedPageId(null);
+        setView("workspace");
+        persistRoute({ view: "workspace", workspaceId });
+      }
     },
-    [workspaceId, loadPages, persistRoute],
+    [workspaceId, selectedPageId, loadPages, persistRoute],
   );
 
   const movePage = useCallback(
@@ -428,16 +425,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async (id: string) => {
       await pageRepository.purge(id);
       if (workspaceId) await loadPages(workspaceId);
-      setSelectedPageId((current) => {
-        if (current === id && workspaceId) {
-          setView("workspace");
-          persistRoute({ view: "workspace", workspaceId });
-          return null;
-        }
-        return current;
-      });
+      if (selectedPageId === id && workspaceId) {
+        setSelectedPageId(null);
+        setView("workspace");
+        persistRoute({ view: "workspace", workspaceId });
+      }
     },
-    [workspaceId, loadPages, persistRoute],
+    [workspaceId, selectedPageId, loadPages, persistRoute],
   );
 
   const emptyTrash = useCallback(async () => {

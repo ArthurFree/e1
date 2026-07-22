@@ -347,9 +347,10 @@ export function PageTreeSidebar({ open, onClose }: PageTreeSidebarProps) {
             title="新建分组"
             onClick={() => {
               // 创建后立即进入重命名状态。
-              void createPage("group", null).then((page) => {
+              void (async () => {
+                const page = await createPage("group", null);
                 if (page) startRename(page);
-              });
+              })();
             }}
           >
             📁

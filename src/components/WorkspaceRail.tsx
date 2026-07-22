@@ -118,22 +118,7 @@ export function WorkspaceRail() {
       {settingsOpen && <SettingsPanel />}
 
       {switcherOpen && (
-        <div
-          role="menu"
-          aria-label="知识库列表"
-          style={{
-            position: "fixed",
-            left: 60,
-            bottom: 12,
-            zIndex: 40,
-            minWidth: 180,
-            padding: 6,
-            background: "var(--bg-canvas)",
-            border: "1px solid var(--border-subtle)",
-            borderRadius: "var(--radius-lg)",
-            boxShadow: "var(--shadow-popover)",
-          }}
-        >
+        <div role="menu" aria-label="知识库列表" className="rail-switcher">
           {workspaces.map((ws) => (
             <button
               key={ws.id}
