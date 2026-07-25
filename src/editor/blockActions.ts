@@ -24,6 +24,77 @@ export function getTopLevelBlock(editor: Editor, pos: number) {
   return { pos: start, node, end: start + node.nodeSize };
 }
 
+/** 把指针坐标夹进正文矩形，使左侧把手列也能用 posAtCoords 命中块。 */
+function mapIntoContent(
+  viewDom: HTMLElement,
+  clientX: number,
+  clientY: number,
+): { x: number; y: number } {
+  const rect = viewDom.getBoundingClientRect();
+  return {
+    x: Math.min(Math.max(clientX, rect.left + 1), Math.max(rect.left + 1, rect.right - 1)),
+    y: Math.min(Math.max(clientY, rect.top + 1), Math.max(rect.top + 1, rect.bottom - 1)),
+  };
+}
+
+/**
+ * 按垂直坐标查找最近的顶层块（含块间空隙：落到距哪块更近）。
+ * 用于指针在左侧把手列、posAtCoords 可能落空时的拖放命中。
+ */
+function findTopLevelBlockAtY(editor: Editor, clientY: number) {
+  let best: { pos: number; end: number; rect: DOMRect; dist: number } | null = null;
+  editor.state.doc.forEach((node, offset) => {
+    const dom = editor.view.nodeDOM(offset);
+    if (!(dom instanceof HTMLElement)) return;
+    const rect = dom.getBoundingClientRect();
+    let dist = 0;
+    if (clientY < rect.top) dist = rect.top - clientY;
+    else if (clientY > rect.bottom) dist = clientY - rect.bottom;
+    if (!best || dist < best.dist) {
+      best = { pos: offset, end: offset + node.nodeSize, rect, dist };
+    }
+  });
+  return best;
+}
+
+/**
+ * 解析块拖放的插入位置：上半区插到目标块前，下半区插到目标块后。
+ * 指针可在正文外（左侧把手列），内部会把坐标映射进内容区再命中。
+ * @returns insertPos 为移动前坐标系的文档位置；lineClientY 供放置指示线；无法命中时 null。
+ */
+export function resolveBlockDropTarget(
+  editor: Editor,
+  clientX: number,
+  clientY: number,
+): { insertPos: number; lineClientY: number } | null {
+  const viewDom = editor.view.dom as HTMLElement;
+  const { x, y } = mapIntoContent(viewDom, clientX, clientY);
+
+  let target: { pos: number; end: number; rect: DOMRect } | null = null;
+  const coords = editor.view.posAtCoords({ left: x, top: y });
+  if (coords) {
+    const block = getTopLevelBlock(editor, coords.pos);
+    if (block) {
+      const dom = editor.view.nodeDOM(block.pos);
+      if (dom instanceof HTMLElement) {
+        target = { pos: block.pos, end: block.end, rect: dom.getBoundingClientRect() };
+      }
+    }
+  }
+  if (!target) {
+    const byY = findTopLevelBlockAtY(editor, clientY);
+    if (!byY) return null;
+    target = byY;
+  }
+
+  // 用原始 clientY（未竖直夹紧）判断上/下半，便于在块间空隙时落到正确一侧。
+  const insertBefore = clientY < target.rect.top + target.rect.height / 2;
+  return {
+    insertPos: insertBefore ? target.pos : target.end,
+    lineClientY: insertBefore ? target.rect.top : target.rect.bottom,
+  };
+}
+
 /** 把 fromPos 处的顶层块移动到 insertPos（文档位置，移动前坐标系）。 */
 export function moveBlock(editor: Editor, fromPos: number, insertPos: number) {
   const node = editor.state.doc.nodeAt(fromPos);

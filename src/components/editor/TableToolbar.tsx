@@ -6,6 +6,7 @@
  */
 import { BubbleMenu } from "@tiptap/react/menus";
 import type { Editor } from "@tiptap/core";
+import type { VirtualElement } from "@floating-ui/dom";
 import {
   currentColumnIndex,
   currentRowIndex,
@@ -27,10 +28,30 @@ interface TableAction {
   disabled?: boolean;
 }
 
+/** 由当前选区反查所在的 table DOM 元素；选区不在表格内时返回 null。 */
+function findTableElement(editor: Editor): HTMLTableElement | null {
+  const { state, view } = editor;
+  const pos = state.selection.from;
+  if (pos > state.doc.content.size) return null;
+  const dom = view.domAtPos(pos).node;
+  const el = dom instanceof HTMLElement ? dom : dom.parentElement;
+  return el?.closest("table") ?? null;
+}
+
 /** 表格操作条：选区在表格内时出现。 */
 export function TableToolbar({ editor }: TableToolbarProps) {
   const col = currentColumnIndex(editor);
   const row = currentRowIndex(editor);
+
+  // 以整个表格（而非单元格选区）为定位锚点：工具栏浮在表格上缘外侧，
+  // 避免光标在中间行时遮住表头行；每次定位实时反查，跟随选区所在表格。
+  const getTableVirtualElement = (): VirtualElement | null => {
+    if (!findTableElement(editor)) return null;
+    return {
+      getBoundingClientRect: () =>
+        findTableElement(editor)?.getBoundingClientRect() ?? new DOMRect(),
+    };
+  };
 
   const groups: TableAction[][] = [
     [
@@ -63,7 +84,9 @@ export function TableToolbar({ editor }: TableToolbarProps) {
   return (
     <BubbleMenu
       editor={editor}
+      pluginKey="tableToolbar"
       options={{ placement: "top", offset: 8 }}
+      getReferencedVirtualElement={getTableVirtualElement}
       shouldShow={({ editor: e }) => e.isActive("table")}
     >
       <div className="table-toolbar" role="toolbar" aria-label="表格操作">

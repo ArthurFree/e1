@@ -390,7 +390,7 @@
 
 .ProseMirror p {
   margin: 8px 0;
-  line-height: 1.7;
+  line-height: 1.75; /* R002 §4.4：正文 16px/1.75 */
 }
 
 .ProseMirror h1 {
@@ -768,16 +768,35 @@
 
 .editor {
   position: relative;
+  /* 把手列纳入命中区：拖放/悬停可在左侧留白完成，不必回到正文矩形内。
+     margin 抵消 padding，正文视觉位置与原先 left:-46px 方案一致。 */
+  padding-left: 46px;
+  margin-left: -46px;
 }
 
 .block-handle {
   position: absolute;
-  left: -46px;
+  left: 0;
   z-index: 15;
   display: flex;
   gap: 1px;
   height: 26px;
   align-items: center;
+  /* 向右延伸透明命中区，盖住正文与把手之间的空隙，避免移过去时中途消失。 */
+  padding-right: 12px;
+}
+
+/* 块拖放落点指示线：横跨把手列与正文，跟随 resolveBlockDropTarget 的 lineClientY。 */
+.block-drop-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 16;
+  height: 2px;
+  margin-top: -1px;
+  background: var(--color-brand);
+  pointer-events: none;
+  border-radius: 1px;
 }
 
 .block-handle__button {
@@ -812,6 +831,12 @@
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-popover);
   animation: pop-in 120ms ease;
+}
+
+/* 视口下部空间不足时向上展开（BlockHandle 打开菜单后测量决定）。 */
+.block-menu--up {
+  top: auto;
+  bottom: calc(100% + 4px);
 }
 
 .block-menu__item {
@@ -909,7 +934,7 @@
 
 .ProseMirror {
   font-size: 16px;
-  line-height: 1.65;
+  line-height: 1.75; /* 与 typography.css 的正文规范（R002 16px/1.75）保持一致 */
 }
 
 .ProseMirror h1 {

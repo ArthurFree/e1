@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Editor } from "@tiptap/core";
 import { buildEditorExtensions } from "./extensions";
 import {
@@ -8,6 +8,7 @@ import {
   duplicateBlock,
   getTopLevelBlock,
   moveBlock,
+  resolveBlockDropTarget,
 } from "./blockActions";
 
 function createEditor(content?: unknown) {
@@ -34,7 +35,31 @@ function docWithTwoBlocks() {
   });
 }
 
+/** jsdom 无布局：给顶层块 DOM 填入垂直矩形，供拖放命中测试。 */
+function stubBlockRects(editor: Editor) {
+  const first = getTopLevelBlock(editor, 1)!;
+  const second = getTopLevelBlock(editor, first.end + 1)!;
+  const firstDom = editor.view.nodeDOM(first.pos) as HTMLElement;
+  const secondDom = editor.view.nodeDOM(second.pos) as HTMLElement;
+  vi.spyOn(firstDom, "getBoundingClientRect").mockReturnValue(
+    new DOMRect(100, 0, 400, 40),
+  );
+  vi.spyOn(secondDom, "getBoundingClientRect").mockReturnValue(
+    new DOMRect(100, 50, 400, 40),
+  );
+  vi.spyOn(editor.view.dom, "getBoundingClientRect").mockReturnValue(
+    new DOMRect(100, 0, 400, 100),
+  );
+  // 指针在正文外时 posAtCoords 常为 null，走 Y 轴回退。
+  vi.spyOn(editor.view, "posAtCoords").mockReturnValue(null);
+  return { first, second };
+}
+
 describe("块操作", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("getTopLevelBlock 定位顶层块", () => {
     const editor = docWithTwoBlocks();
     const block = getTopLevelBlock(editor, 2);
@@ -104,6 +129,23 @@ describe("块操作", () => {
     const node = editor.getJSON().content?.[0];
     expect(node?.type).toBe("paragraph");
     expect(node?.content?.[0]?.marks).toBeUndefined();
+    editor.destroy();
+  });
+
+  it("resolveBlockDropTarget 在左侧把手列按 Y 解析插入点", () => {
+    const editor = docWithTwoBlocks();
+    const { first, second } = stubBlockRects(editor);
+
+    // 指针在正文左侧（x=40）、第一块上半 → 插到第一块前。
+    const beforeFirst = resolveBlockDropTarget(editor, 40, 10);
+    expect(beforeFirst?.insertPos).toBe(first.pos);
+    expect(beforeFirst?.lineClientY).toBe(0);
+
+    // 第二块下半 → 插到第二块后。
+    const afterSecond = resolveBlockDropTarget(editor, 40, 80);
+    expect(afterSecond?.insertPos).toBe(second.end);
+    expect(afterSecond?.lineClientY).toBe(90);
+
     editor.destroy();
   });
 });

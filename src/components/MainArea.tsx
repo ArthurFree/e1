@@ -252,6 +252,7 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
                   autoFocus={page.id === titleFocusPageId}
                   onFocused={clearTitleFocus}
                   onSave={(id, title) => void renamePage(id, title || "无标题")}
+                  onExitToBody={() => liveEditor?.chain().focus("start").run()}
                 />
                 <TagPicker pageId={page.id} />
               </div>

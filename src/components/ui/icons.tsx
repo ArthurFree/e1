@@ -176,6 +176,31 @@ export const IconTemplate = (p: IconProps) => (
   </Svg>
 );
 
+export const IconLink = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+  </Svg>
+);
+
+export const IconHighlighter = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="m9 11-6 6v3h9l3-3" />
+    <path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4z" />
+  </Svg>
+);
+
+export const IconGrip = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="9" cy="5" r="1" />
+    <circle cx="9" cy="12" r="1" />
+    <circle cx="9" cy="19" r="1" />
+    <circle cx="15" cy="5" r="1" />
+    <circle cx="15" cy="12" r="1" />
+    <circle cx="15" cy="19" r="1" />
+  </Svg>
+);
+
 /**
  * 页面/知识库图标：用户自定义 Emoji 原样展示（R002 §6 允许），
  * 未设置时按 kind 回退到统一的 SVG 默认图标（文档 / 分组 / 知识库）。

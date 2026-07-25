@@ -27,6 +27,7 @@ import {
   setFontSize,
 } from "../../editor/format";
 import { EmojiPicker } from "./EmojiPicker";
+import { IconLink } from "../ui/icons";
 
 /** FormatToolbar 入参。 */
 interface FormatToolbarProps {
@@ -334,7 +335,7 @@ export function FormatToolbar({ editor }: FormatToolbarProps) {
       <div className="ft-dropdown">
         <ToolbarButton
           label="链接"
-          icon="🔗"
+          icon={<IconLink />}
           active={editor.isActive("link")}
           onClick={() => {
             setLinkUrl((editor.getAttributes("link").href as string) ?? "");
@@ -352,7 +353,12 @@ export function FormatToolbar({ editor }: FormatToolbarProps) {
               onChange={(event) => setLinkUrl(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter") applyLink();
-                if (event.key === "Escape") setLinkOpen(false);
+                if (event.key === "Escape") {
+                  // 与 BubbleToolbar 一致：关闭面板并把焦点还给编辑器。
+                  event.stopPropagation();
+                  setLinkOpen(false);
+                  editor.chain().focus().run();
+                }
               }}
             />
             <button type="button" className="button" onClick={applyLink}>

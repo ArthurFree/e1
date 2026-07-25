@@ -18,10 +18,19 @@ interface TitleEditorProps {
   onFocused?(): void;
   /** 标题落盘回调；(pageId, 新标题) 通常接到 AppState.renamePage。 */
   onSave(pageId: string, title: string): void;
+  /** Enter/ArrowDown 离开标题进入正文（通常聚焦编辑器首行）。 */
+  onExitToBody?(): void;
 }
 
 /** 文档标题：本地即时更新，500ms 防抖保存，卸载/切换前强制落盘。 */
-export function TitleEditor({ pageId, title, autoFocus, onFocused, onSave }: TitleEditorProps) {
+export function TitleEditor({
+  pageId,
+  title,
+  autoFocus,
+  onFocused,
+  onSave,
+  onExitToBody,
+}: TitleEditorProps) {
   const [value, setValue] = useState(title);
   const { debounced, flush } = useDebouncedCallback(
     (id: string, next: string) => onSave(id, next),
@@ -51,6 +60,14 @@ export function TitleEditor({ pageId, title, autoFocus, onFocused, onSave }: Tit
       onChange={(event) => {
         setValue(event.target.value);
         debounced(pageId, event.target.value);
+      }}
+      onKeyDown={(event) => {
+        // Notion/语雀惯例：标题内 Enter 或 ArrowDown 进入正文首行。
+        if (event.key === "Enter" || event.key === "ArrowDown") {
+          event.preventDefault();
+          flush();
+          onExitToBody?.();
+        }
       }}
       onBlur={flush}
     />

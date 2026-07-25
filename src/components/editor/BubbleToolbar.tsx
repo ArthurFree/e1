@@ -11,7 +11,7 @@ import { BubbleMenu } from "@tiptap/react/menus";
 import type { Editor } from "@tiptap/core";
 import { openAIAssistant } from "../../editor/aiBridge";
 import type { AIMode } from "../../domain/ai";
-import { IconSparkle } from "../ui/icons";
+import { IconHighlighter, IconLink, IconSparkle } from "../ui/icons";
 import {
   HIGHLIGHT_COLORS,
   TEXT_COLORS,
@@ -115,7 +115,7 @@ export function BubbleToolbar({ editor }: BubbleToolbarProps) {
             setPanel(panel === "link" ? "none" : "link");
           }}
         >
-          🔗
+          <IconLink />
         </button>
         <button
           type="button"
@@ -133,7 +133,7 @@ export function BubbleToolbar({ editor }: BubbleToolbarProps) {
           className="bubble-toolbar__button"
           onClick={() => setPanel(panel === "highlight" ? "none" : "highlight")}
         >
-          🖊
+          <IconHighlighter />
         </button>
 
         <button
@@ -173,7 +173,13 @@ export function BubbleToolbar({ editor }: BubbleToolbarProps) {
               onChange={(e) => setLinkUrl(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") applyLink();
-                if (e.key === "Escape") setPanel("none");
+                if (e.key === "Escape") {
+                  // 阻止冒泡到全局 Escape 处理，并把焦点还给编辑器：
+                  // 否则选区塌陷后 BubbleMenu 的 shouldShow 不会重估，工具栏悬滞不消失。
+                  e.stopPropagation();
+                  setPanel("none");
+                  editor.chain().focus().run();
+                }
               }}
             />
           </div>

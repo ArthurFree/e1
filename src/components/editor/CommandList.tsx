@@ -9,6 +9,7 @@ import {
   forwardRef,
   useEffect,
   useImperativeHandle,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -39,10 +40,23 @@ interface CommandListProps {
 export const CommandList = forwardRef<CommandListRef, CommandListProps>(
   function CommandList({ items, command }, ref) {
     const [selectedIndex, setSelectedIndex] = useState(0);
+    const listRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
       setSelectedIndex(0);
     }, [items]);
+
+    // 列表可滚动（max-height 限高）：键盘移动高亮后保证选中项可见，
+    // 否则环绕到列表另一端时高亮会滚出视野。
+    useEffect(() => {
+      const selected = listRef.current?.querySelector<HTMLElement>(
+        '[aria-selected="true"]',
+      );
+      // jsdom 等环境未实现 scrollIntoView，缺失时静默跳过。
+      if (typeof selected?.scrollIntoView === "function") {
+        selected.scrollIntoView({ block: "nearest" });
+      }
+    }, [selectedIndex, items]);
 
     useImperativeHandle(ref, () => ({
       onKeyDown({ event }) {
@@ -71,7 +85,7 @@ export const CommandList = forwardRef<CommandListRef, CommandListProps>(
     }
 
     return (
-      <div className="command-list" role="listbox" aria-label="命令列表">
+      <div ref={listRef} className="command-list" role="listbox" aria-label="命令列表">
         {items.map((item, index) => (
           <button
             key={item.id}
