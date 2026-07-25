@@ -70,11 +70,14 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>({ status: "saved", savedAt: null });
   const retrySaveRef = useRef<(() => void) | null>(null);
+  // 标题 Enter/ArrowDown 时正文编辑器可能尚未就绪；就绪后补一次聚焦首行。
+  const pendingExitToBodyRef = useRef(false);
 
   useEffect(() => {
     // cancelled 防止竞态：快速切换页面时旧请求晚到不得覆盖新页面的内容
     let cancelled = false;
     setContent(null);
+    pendingExitToBodyRef.current = false;
     if (view === "document" && page?.kind === "document") {
       void contentRepository.get(page.id).then((result) => {
         // 新建文档尚无内容行：以空文档作为初始内容，首次编辑即落盘。
@@ -88,6 +91,10 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
 
   const onEditorReady = useCallback((instance: Editor | null) => {
     setEditor(instance);
+    if (instance && !instance.isDestroyed && pendingExitToBodyRef.current) {
+      pendingExitToBodyRef.current = false;
+      instance.chain().focus("start").run();
+    }
   }, []);
 
   const onSaveStateChange = useCallback((state: SaveState) => {
@@ -252,7 +259,14 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
                   autoFocus={page.id === titleFocusPageId}
                   onFocused={clearTitleFocus}
                   onSave={(id, title) => void renamePage(id, title || "无标题")}
-                  onExitToBody={() => liveEditor?.chain().focus("start").run()}
+                  onExitToBody={() => {
+                    if (liveEditor) {
+                      liveEditor.chain().focus("start").run();
+                    } else {
+                      // 正文仍在加载：等 onEditorReady 后再聚焦首行。
+                      pendingExitToBodyRef.current = true;
+                    }
+                  }}
                 />
                 <TagPicker pageId={page.id} />
               </div>

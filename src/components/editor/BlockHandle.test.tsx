@@ -92,6 +92,16 @@ describe("BlockHandle 块菜单键盘导航", () => {
     expect(screen.getByRole("button", { name: "块菜单" })).toHaveFocus();
   });
 
+  it("拖动开始即关闭已打开的块菜单", () => {
+    const e = setup();
+    openMenu(e);
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    fireEvent.dragStart(screen.getByRole("button", { name: "拖动块" }), {
+      dataTransfer: { effectAllowed: "none", setData: vi.fn() },
+    });
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
   it("从正文移向把手时不立刻隐藏", () => {
     vi.useFakeTimers();
     const e = setup();

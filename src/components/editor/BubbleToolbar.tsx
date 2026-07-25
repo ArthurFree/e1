@@ -66,6 +66,12 @@ export function BubbleToolbar({ editor }: BubbleToolbarProps) {
     setLinkUrl("");
   };
 
+  /** 关闭子面板并把焦点还给编辑器，避免选区塌陷后 BubbleMenu 悬滞。 */
+  const closePanel = () => {
+    setPanel("none");
+    editor.chain().focus().run();
+  };
+
   const formatButtons: {
     id: string;
     label: string;
@@ -89,7 +95,18 @@ export function BubbleToolbar({ editor }: BubbleToolbarProps) {
         !state.selection.empty && !e.isActive("image") && !e.isActive("table")
       }
     >
-      <div className="bubble-toolbar" role="toolbar" aria-label="文本格式">
+      <div
+        className="bubble-toolbar"
+        role="toolbar"
+        aria-label="文本格式"
+        onKeyDown={(e) => {
+          // 链接 / 颜色 / 高亮 / AI 子面板共用：Escape 关面板并归还焦点。
+          if (e.key === "Escape" && panel !== "none") {
+            e.stopPropagation();
+            closePanel();
+          }
+        }}
+      >
         {formatButtons.map((btn) => (
           <button
             key={btn.id}
@@ -173,13 +190,7 @@ export function BubbleToolbar({ editor }: BubbleToolbarProps) {
               onChange={(e) => setLinkUrl(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") applyLink();
-                if (e.key === "Escape") {
-                  // 阻止冒泡到全局 Escape 处理，并把焦点还给编辑器：
-                  // 否则选区塌陷后 BubbleMenu 的 shouldShow 不会重估，工具栏悬滞不消失。
-                  e.stopPropagation();
-                  setPanel("none");
-                  editor.chain().focus().run();
-                }
+                // Escape 由外层 toolbar onKeyDown 统一处理（stopPropagation + 归还焦点）。
               }}
             />
           </div>

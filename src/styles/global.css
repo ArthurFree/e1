@@ -486,13 +486,37 @@
   align-items: flex-start;
 }
 
+/* 勾选框与首行文字垂直居中对齐：label 高度对齐正文行高，
+ * 并去掉 taskItem 内段落上下 margin（否则相对 checkbox 会偏下）。 */
 .ProseMirror ul[data-type="taskList"] li > label {
-  margin-top: 4px;
   flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.75em; /* 与 .ProseMirror p 的 line-height 一致 */
+  margin: 0;
+  padding: 0;
+  user-select: none;
+}
+
+.ProseMirror ul[data-type="taskList"] li > label input[type="checkbox"] {
+  margin: 0;
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
 }
 
 .ProseMirror ul[data-type="taskList"] li > div {
   flex: 1;
+  min-width: 0;
+}
+
+.ProseMirror ul[data-type="taskList"] li > div > p {
+  margin: 0;
+}
+
+.ProseMirror ul[data-type="taskList"] li > div > p + p {
+  margin-top: 8px;
 }
 
 .ProseMirror ul[data-type="taskList"] li[data-checked="true"] > div {

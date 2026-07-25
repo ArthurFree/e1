@@ -156,6 +156,9 @@ export function BlockHandle({ editor }: BlockHandleProps) {
       const from = dragPosRef.current;
       dragPosRef.current = null;
       setDropLineTop(null);
+      // 拖放结束必须关掉菜单：否则 setHandle(null) 后 menuOpen 仍为 true，
+      // 下次悬停任意块时会未点「+」就自动弹出菜单。
+      setMenuOpen(false);
       if (from === null) return;
       event.preventDefault();
       const target = resolveBlockDropTarget(editor, event.clientX, event.clientY);
@@ -166,6 +169,7 @@ export function BlockHandle({ editor }: BlockHandleProps) {
     const onDragEnd = () => {
       dragPosRef.current = null;
       setDropLineTop(null);
+      setMenuOpen(false);
     };
 
     hoverRoot.addEventListener("mousemove", onMouseMove);
@@ -299,6 +303,8 @@ export function BlockHandle({ editor }: BlockHandleProps) {
           title="拖动以移动块"
           draggable
           onDragStart={(event) => {
+            // 拖动开始即关菜单，避免拖放途中菜单仍开着。
+            setMenuOpen(false);
             dragPosRef.current = handle.blockPos;
             event.dataTransfer.effectAllowed = "move";
             event.dataTransfer.setData("text/plain", "");
@@ -306,6 +312,7 @@ export function BlockHandle({ editor }: BlockHandleProps) {
           onDragEnd={() => {
             dragPosRef.current = null;
             setDropLineTop(null);
+            setMenuOpen(false);
           }}
         >
           <IconGrip />
