@@ -10,7 +10,13 @@ import type { Editor } from "@tiptap/core";
 import type { DocumentContent } from "../domain/types";
 import { jsonToMarkdown } from "../editor/markdown";
 import { contentRepository } from "../infrastructure/repositories";
+import {
+  discardRecovery,
+  readRecovery,
+  type DocumentRecoveryRecord,
+} from "../application/services/documentRecovery";
 import { useApp } from "../state/AppState";
+import { Button } from "./ui/Button";
 import { TitleEditor } from "./TitleEditor";
 import { TagPicker } from "./TagPicker";
 import { StartPage } from "./StartPage";
@@ -62,6 +68,9 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
     togglePageFavorite,
     titleFocusPageId,
     clearTitleFocus,
+    workspaceStatus,
+    workspaceError,
+    retryLoad,
   } = useApp();
   const page = pages.find((p) => p.id === selectedPageId) ?? null;
   const [content, setContent] = useState<DocumentContent | null>(null);
@@ -69,6 +78,10 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
   const [tocOpen, setTocOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>({ status: "saved", savedAt: null });
+  // 未落盘编辑的恢复提示（R003 §1.4）：恢复缓冲比 IndexedDB 正文更新时出现。
+  const [recovery, setRecovery] = useState<DocumentRecoveryRecord | null>(null);
+  // 应用恢复后递增：强制编辑器以恢复内容重建，并触发一次立即保存。
+  const [contentEpoch, setContentEpoch] = useState(0);
   const retrySaveRef = useRef<(() => void) | null>(null);
   // 标题 Enter/ArrowDown 时正文编辑器可能尚未就绪；就绪后补一次聚焦首行。
   const pendingExitToBodyRef = useRef(false);
@@ -77,11 +90,19 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
     // cancelled 防止竞态：快速切换页面时旧请求晚到不得覆盖新页面的内容
     let cancelled = false;
     setContent(null);
+    setRecovery(null);
     pendingExitToBodyRef.current = false;
     if (view === "document" && page?.kind === "document") {
       void contentRepository.get(page.id).then((result) => {
+        if (cancelled) return;
         // 新建文档尚无内容行：以空文档作为初始内容，首次编辑即落盘。
-        if (!cancelled) setContent(result ?? emptyContent(page.id));
+        const base = result ?? emptyContent(page.id);
+        // 恢复缓冲比已落盘正文更新：提示用户恢复上次未保存的编辑。
+        const record = readRecovery(page.id);
+        if (record && record.timestamp > base.updatedAt) {
+          setRecovery(record);
+        }
+        setContent(base);
       });
     }
     return () => {
@@ -104,6 +125,24 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
   const onRegisterRetry = useCallback((retry: () => void) => {
     retrySaveRef.current = retry;
   }, []);
+
+  // 应用恢复缓冲：以恢复内容重建编辑器，并由编辑器立即执行一次保存；
+  // 恢复缓冲本身在保存成功后由协调器清除（期间重复提示可接受）。
+  const applyRecovery = useCallback(() => {
+    if (!recovery || !content) return;
+    setContent({
+      ...content,
+      contentJson: recovery.contentJson,
+      updatedAt: recovery.timestamp,
+    });
+    setRecovery(null);
+    setContentEpoch((e) => e + 1);
+  }, [recovery, content]);
+
+  const discardRecoveryPrompt = useCallback(() => {
+    if (page) discardRecovery(page.id);
+    setRecovery(null);
+  }, [page]);
 
   // 文档在主区域完成渲染后记录最近浏览时间（仅打开，不含搜索预览）。
   useEffect(() => {
@@ -136,6 +175,27 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
   };
 
   const isDocument = page?.kind === "document";
+
+  // 知识库会话切换中/失败（R003 阶段 2）：不渲染任何基于旧会话数据的视图。
+  if (workspaceStatus === "loading") {
+    return (
+      <main className="main">
+        <div className="main-empty">正在加载知识库…</div>
+      </main>
+    );
+  }
+  if (workspaceStatus === "error") {
+    return (
+      <main className="main">
+        <div className="app-error" role="alert">
+          <p>{workspaceError ?? "知识库加载失败，请重试。"}</p>
+          <button type="button" className="app-error__retry" onClick={retryLoad}>
+            重试
+          </button>
+        </div>
+      </main>
+    );
+  }
 
   if (view === "start") {
     return (
@@ -247,6 +307,19 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
           {liveEditor && <FormatToolbar editor={liveEditor} />}
           <div className="doc-main">
             <div className="doc-scroll">
+              {recovery && (
+                <div className="recovery-banner" role="status">
+                  <span className="recovery-banner__text">
+                    检测到上次未保存的编辑内容。
+                  </span>
+                  <Button variant="primary" onClick={applyRecovery}>
+                    恢复
+                  </Button>
+                  <Button variant="ghost" onClick={discardRecoveryPrompt}>
+                    丢弃
+                  </Button>
+                </div>
+              )}
               <div className="doc-header">
                 {page.icon && (
                   <div className="doc-header__icon" aria-hidden="true">
@@ -273,11 +346,14 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
               <div className="doc-body">
                 {content ? (
                   <DocumentEditor
+                    // contentEpoch 变化（应用恢复）时强制重建编辑器以加载恢复内容。
+                    key={`${page.id}:${contentEpoch}`}
                     pageId={page.id}
                     initialContent={content.contentJson}
                     onEditorReady={onEditorReady}
                     onSaveStateChange={onSaveStateChange}
                     onRegisterRetry={onRegisterRetry}
+                    restoreRequestId={contentEpoch}
                   />
                 ) : (
                   <p className="doc-placeholder">正在加载文档…</p>

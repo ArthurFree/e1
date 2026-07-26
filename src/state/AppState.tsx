@@ -2,15 +2,18 @@
  * 应用全局状态层：UI 与基础设施之间的唯一桥梁。
  *
  * 架构位置：视图组件只通过 useApp() 读状态、触发动作；动作内部调用
- * src/infrastructure 的仓储接口写入 IndexedDB，再以 setState 同步内存镜像，
+ * 仓储接口（经 application 层服务）写入 IndexedDB，再以 dispatch 同步内存镜像，
  * 因此仓储实现可整体替换而不影响 UI（docs/architecture.md 的分层约束）。
  *
  * 关键设计：
+ * - 知识库会话（workspaceId/pages/tags/pageTags）由 useReducer 持有：
+ *   切换知识库时经 WorkspaceSessionService 一次原子加载，requestId 丢弃过期
+ *   响应，三类数据在单次 dispatch 中提交，UI 永远不会看到新旧知识库混合态
+ *   （R003 阶段 2）；
  * - pages / tags / workspaces 是 IndexedDB 的内存镜像：写操作先落库再刷新，
  *   保证刷新页面后状态可完整恢复；
  * - 主区域视图（view）与选中页面组成的路由持久化到 preferences.lastRoute，
- *   启动时恢复，覆盖 R001 的开始首页 / 最近 / 收藏 / 知识库首页 / 文档视图；
- * - 切换知识库时并行重载其页面与标签，并回写 lastOpenedAt 维护「最近使用」排序。
+ *   启动时恢复，覆盖 R001 的开始首页 / 最近 / 收藏 / 知识库首页 / 文档视图。
  */
 import {
   createContext,
@@ -18,6 +21,8 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useReducer,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -41,6 +46,98 @@ import {
   tagRepository,
   workspaceRepository,
 } from "../infrastructure/repositories";
+import {
+  WorkspaceSessionService,
+  type WorkspaceSessionData,
+} from "../application/services/WorkspaceSessionService";
+import { PreferencesService } from "../application/services/PreferencesService";
+
+/** 会话加载服务装配点：生产环境注入 IndexedDB 仓储实现。 */
+const sessionService = new WorkspaceSessionService({
+  pages: pageRepository,
+  tags: tagRepository,
+});
+
+/** 知识库会话加载状态。 */
+export type WorkspaceSessionStatus = "idle" | "loading" | "ready" | "error";
+
+/** 知识库会话：四类数据必须同批次提交，由 reducer 保证原子性。 */
+interface WorkspaceSessionState {
+  status: WorkspaceSessionStatus;
+  /** 最近一次加载请求的序号；过期响应据此丢弃。 */
+  requestId: number;
+  workspaceId: string | null;
+  pages: Page[];
+  tags: Tag[];
+  pageTags: PageTag[];
+  error: string | null;
+}
+
+type SessionAction =
+  | { type: "session/load-start"; requestId: number; workspaceId: string }
+  | { type: "session/load-success"; requestId: number; data: WorkspaceSessionData }
+  | { type: "session/load-error"; requestId: number; error: string }
+  | { type: "pages/set"; pages: Page[] | ((prev: Page[]) => Page[]) }
+  | {
+      type: "tags/set-all";
+      tags: Tag[];
+      pageTags: PageTag[];
+    };
+
+const initialSession: WorkspaceSessionState = {
+  status: "idle",
+  requestId: 0,
+  workspaceId: null,
+  pages: [],
+  tags: [],
+  pageTags: [],
+  error: null,
+};
+
+function sessionReducer(
+  state: WorkspaceSessionState,
+  action: SessionAction,
+): WorkspaceSessionState {
+  switch (action.type) {
+    case "session/load-start":
+      // 加载期间清空旧数据：UI 要么看到 loading，要么看到完整新会话，绝不混合。
+      return {
+        status: "loading",
+        requestId: action.requestId,
+        workspaceId: action.workspaceId,
+        pages: [],
+        tags: [],
+        pageTags: [],
+        error: null,
+      };
+    case "session/load-success":
+      // 过期响应直接丢弃：快速连切时只有最后一次请求生效。
+      if (action.requestId !== state.requestId) return state;
+      return {
+        status: "ready",
+        requestId: state.requestId,
+        workspaceId: action.data.workspaceId,
+        pages: action.data.pages,
+        tags: action.data.tags,
+        pageTags: action.data.pageTags,
+        error: null,
+      };
+    case "session/load-error":
+      if (action.requestId !== state.requestId) return state;
+      return { ...state, status: "error", error: action.error };
+    case "pages/set":
+      return {
+        ...state,
+        pages:
+          typeof action.pages === "function"
+            ? action.pages(state.pages)
+            : action.pages,
+      };
+    case "tags/set-all":
+      // 标签与页面-标签关联同批次提交，避免 UI 读到只更新了一半的标签状态。
+      return { ...state, tags: action.tags, pageTags: action.pageTags };
+  }
+}
 
 /** 通过 useApp() 暴露给组件树的全部状态与动作。 */
 interface AppState {
@@ -52,6 +149,10 @@ interface AppState {
   workspaces: Workspace[];
   /** 当前知识库；由内部 workspaceId 派生，未匹配时为 null。 */
   workspace: Workspace | null;
+  /** 知识库会话状态：切换知识库期间为 loading，失败为 error（R003 阶段 2）。 */
+  workspaceStatus: WorkspaceSessionStatus;
+  /** 知识库会话加载失败的错误信息；为 null 表示正常。 */
+  workspaceError: string | null;
   /** 当前知识库的页面镜像（含分组与回收站条目）。 */
   pages: Page[];
   /** 当前打开的文档 ID；仅 view === "document" 时有意义。 */
@@ -61,6 +162,8 @@ interface AppState {
   /** 新建文档后需要聚焦标题的页面 ID（消费后清除）。 */
   titleFocusPageId: string | null;
   preferences: Preferences;
+  /** 路由/偏好异步写入状态：失败时为 "error"（R003 阶段 3，错误可观测）。 */
+  routePersistenceStatus: "idle" | "error";
   tags: Tag[];
   /** 当前工作区的全部页面-标签关联。 */
   pageTags: PageTag[];
@@ -118,7 +221,7 @@ interface AppState {
     name: string,
     extra?: { icon?: string | null; description?: string },
   ): Promise<void>;
-  /** 切换当前知识库：重载其页面/标签并进入知识库首页。 */
+  /** 切换当前知识库：原子重载其页面/标签/关联并进入知识库首页。 */
   switchWorkspace(id: string): Promise<void>;
   /** 更新主题偏好并持久化。 */
   setTheme(theme: Preferences["theme"]): Promise<void>;
@@ -144,31 +247,78 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [loadKey, setLoadKey] = useState(0);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
-  const [pages, setPages] = useState<Page[]>([]);
+  const [session, dispatchSession] = useReducer(sessionReducer, initialSession);
+  // 会话加载请求序号：每次加载递增，过期响应据此丢弃（R003 阶段 2）。
+  const sessionRequestRef = useRef(0);
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
   const [view, setView] = useState<MainView>("start");
   const [titleFocusPageId, setTitleFocusPageId] = useState<string | null>(null);
   const [preferences, setPreferences] = useState<Preferences>(DEFAULT_PREFERENCES);
-  const [tags, setTags] = useState<Tag[]>([]);
-  const [pageTags, setPageTagList] = useState<PageTag[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // 路由持久化状态（R003 阶段 3）：偏好异步写入错误可观测。
+  const [routePersistenceStatus, setRoutePersistenceStatus] = useState<
+    "idle" | "error"
+  >("idle");
+  // 偏好写入服务：串行合并主题/侧栏宽度/AI 配置/路由更新，杜绝读-改-写竞态。
+  const preferencesService = useMemo(
+    () =>
+      new PreferencesService({
+        preferences: preferencesRepository,
+        onError: (err) => {
+          console.error("偏好写入失败", err);
+          setRoutePersistenceStatus("error");
+        },
+      }),
+    [],
+  );
 
-  // 从仓储重取页面并覆盖内存镜像；返回列表供调用方继续使用（如路由恢复时校验文档存在性）。
+  const workspaceId = session.workspaceId;
+  const pages = session.pages;
+  const tags = session.tags;
+  const pageTags = session.pageTags;
+
+  /**
+   * 原子加载知识库会话：数据一次拉齐、单次 dispatch 提交；
+   * 返回数据供调用方继续流程（如路由恢复时校验文档存在性）；
+   * 过期请求或加载失败返回 null，调用方应中止后续导航。
+   */
+  const loadSession = useCallback(
+    async (wsId: string): Promise<WorkspaceSessionData | null> => {
+      const requestId = ++sessionRequestRef.current;
+      dispatchSession({ type: "session/load-start", requestId, workspaceId: wsId });
+      try {
+        const data = await sessionService.load(wsId);
+        if (requestId !== sessionRequestRef.current) return null;
+        dispatchSession({ type: "session/load-success", requestId, data });
+        return data;
+      } catch (err) {
+        if (requestId !== sessionRequestRef.current) return null;
+        console.error("知识库会话加载失败", err);
+        dispatchSession({
+          type: "session/load-error",
+          requestId,
+          error: "知识库加载失败，请重试。",
+        });
+        return null;
+      }
+    },
+    [],
+  );
+
+  // 当前知识库内的增量刷新：只更新页面镜像，不触碰会话其余字段。
   const loadPages = useCallback(async (wsId: string) => {
     const list = await pageRepository.listByWorkspace(wsId);
-    setPages(list);
+    dispatchSession({ type: "pages/set", pages: list });
     return list;
   }, []);
 
-  // 标签与页面-标签关联并行加载、一起刷新，避免 UI 读到只更新了一半的标签状态。
+  // 标签与页面-标签关联并行加载、同批次提交。
   const loadTags = useCallback(async (wsId: string) => {
     const [tagList, pageTagList] = await Promise.all([
       tagRepository.listByWorkspace(wsId),
       tagRepository.listWorkspacePageTags(wsId),
     ]);
-    setTags(tagList);
-    setPageTagList(pageTagList);
+    dispatchSession({ type: "tags/set-all", tags: tagList, pageTags: pageTagList });
   }, []);
 
   useEffect(() => {
@@ -196,12 +346,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setReady(true);
           return;
         }
-        setWorkspaceId(target.id);
-        const [pageList] = await Promise.all([
-          loadPages(target.id),
-          loadTags(target.id),
-        ]);
-        if (cancelled) return;
+        const sessionData = await loadSession(target.id);
+        if (cancelled || !sessionData) return;
+        const pageList = sessionData.pages;
         let nextView: MainView = "start";
         let nextPageId: string | null = null;
         if (route?.view === "recent" || route?.view === "favorites") {
@@ -239,7 +386,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [loadPages, loadTags, loadKey]);
+  }, [loadSession, loadKey]);
 
   const workspace = workspaces.find((w) => w.id === workspaceId) ?? null;
   const trashedPages = pages.filter((p) => p.deletedAt !== null);
@@ -251,12 +398,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // 视图/页面切换时把路由写入 preferences，刷新后恢复到同一位置；
-  // update 返回完整偏好，直接替换内存镜像保持一致。
-  const persistRoute = useCallback((route: AppRoute) => {
-    void preferencesRepository
-      .update({ lastRoute: serializeRoute(route) })
-      .then(setPreferences);
-  }, []);
+  // 经 PreferencesService 串行写入（last-write-wins），内存镜像同步更新。
+  const persistRoute = useCallback(
+    (route: AppRoute) => {
+      const lastRoute = serializeRoute(route);
+      preferencesService.persistRoute(lastRoute);
+      setPreferences((prev) => ({ ...prev, lastRoute }));
+    },
+    [preferencesService],
+  );
 
   const selectPage = useCallback(
     (id: string | null) => {
@@ -307,10 +457,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       if (!target || target.kind !== "document") return;
       if (target.workspaceId !== wsId) {
-        // 跨知识库：切换上下文并重载目标库的页面与标签。
+        // 跨知识库：原子加载目标库会话；未 ready 前不进入文档视图。
         wsId = target.workspaceId;
-        setWorkspaceId(wsId);
-        await Promise.all([loadPages(wsId), loadTags(wsId)]);
+        const data = await loadSession(wsId);
+        if (!data) return;
         void workspaceRepository.setLastOpened(wsId, Date.now());
       } else if (!inState && wsId) {
         // 页面由仓储直接创建（模板/AI 流程），当前列表未包含时同步刷新。
@@ -321,7 +471,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setView("document");
       persistRoute({ view: "document", workspaceId: wsId, pageId });
     },
-    [workspaceId, pages, loadPages, loadTags, persistRoute],
+    [workspaceId, pages, loadSession, loadPages, persistRoute],
   );
 
   const locatePage = useCallback(
@@ -335,10 +485,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       if (!target) return;
       if (target.workspaceId !== wsId) {
-        // 跨知识库定位：先切换到所属知识库再在树中高亮。
+        // 跨知识库定位：先原子加载所属知识库会话再在树中高亮。
         wsId = target.workspaceId;
-        setWorkspaceId(wsId);
-        await Promise.all([loadPages(wsId), loadTags(wsId)]);
+        const data = await loadSession(wsId);
+        if (!data) return;
         void workspaceRepository.setLastOpened(wsId, Date.now());
       }
       if (!wsId) return;
@@ -347,15 +497,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setView("workspace");
       persistRoute({ view: "workspace", workspaceId: wsId });
     },
-    [workspaceId, pages, loadPages, loadTags, persistRoute],
+    [workspaceId, pages, loadSession, persistRoute],
   );
 
   const markOpened = useCallback(async (pageId: string) => {
     const at = Date.now();
     await pageRepository.setLastOpened(pageId, at);
-    setPages((prev) =>
-      prev.map((p) => (p.id === pageId ? { ...p, lastOpenedAt: at } : p)),
-    );
+    dispatchSession({
+      type: "pages/set",
+      pages: (prev) =>
+        prev.map((p) => (p.id === pageId ? { ...p, lastOpenedAt: at } : p)),
+    });
   }, []);
 
   const togglePageFavorite = useCallback(
@@ -368,9 +520,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // favoriteAt 兼作排序依据：收藏时写入时间戳，取消时清空。
       const next = page.favoriteAt === null ? Date.now() : null;
       await pageRepository.setFavorite(pageId, next);
-      setPages((prev) =>
-        prev.map((p) => (p.id === pageId ? { ...p, favoriteAt: next } : p)),
-      );
+      dispatchSession({
+        type: "pages/set",
+        pages: (prev) =>
+          prev.map((p) => (p.id === pageId ? { ...p, favoriteAt: next } : p)),
+      });
     },
     [pages],
   );
@@ -397,9 +551,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         title: "无标题",
       });
       if (wsId !== workspaceId) {
-        // 在其他知识库中创建（如开始首页选择目标库）：顺带切换上下文。
-        setWorkspaceId(wsId);
-        await Promise.all([loadPages(wsId), loadTags(wsId)]);
+        // 在其他知识库中创建（如开始首页选择目标库）：原子切换会话上下文。
+        const data = await loadSession(wsId);
+        // 会话加载被更新的请求取代时中止导航，避免混入过期知识库。
+        if (!data) return page;
       } else {
         await loadPages(wsId);
       }
@@ -415,7 +570,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       persistRoute({ view: "document", workspaceId: wsId, pageId: page.id });
       return page;
     },
-    [workspaceId, loadPages, loadTags, persistRoute],
+    [workspaceId, loadSession, loadPages, persistRoute],
   );
 
   const createPage = useCallback(
@@ -440,16 +595,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [workspaceId, loadPages, persistRoute],
   );
 
-  const renamePage = useCallback(
-    async (id: string, title: string) => {
-      await pageRepository.rename(id, title);
-      // 镜像中同步 updatedAt，让「最近编辑」排序立即反映本次重命名。
-      setPages((prev) =>
+  const renamePage = useCallback(async (id: string, title: string) => {
+    await pageRepository.rename(id, title);
+    // 镜像中同步 updatedAt，让「最近编辑」排序立即反映本次重命名。
+    dispatchSession({
+      type: "pages/set",
+      pages: (prev) =>
         prev.map((p) => (p.id === id ? { ...p, title, updatedAt: Date.now() } : p)),
-      );
-    },
-    [],
-  );
+    });
+  }, []);
 
   const deletePage = useCallback(
     async (id: string) => {
@@ -540,7 +694,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async (name: string, extra?: { icon?: string | null; description?: string }) => {
       const ws = await workspaceRepository.create(name, extra);
       setWorkspaces((prev) => [...prev, ws]);
-      setWorkspaceId(ws.id);
+      // 原子加载新知识库会话；被更新的请求取代时中止导航。
+      const data = await loadSession(ws.id);
+      if (!data) return;
       setSelectedPageId(null);
       setView("workspace");
       persistRoute({ view: "workspace", workspaceId: ws.id });
@@ -549,15 +705,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
           prev.map((w) => (w.id === ws.id ? { ...w, lastOpenedAt: Date.now() } : w)),
         );
       });
-      await Promise.all([loadPages(ws.id), loadTags(ws.id)]);
     },
-    [loadPages, loadTags, persistRoute],
+    [loadSession, persistRoute],
   );
 
   const switchWorkspace = useCallback(
     async (id: string) => {
-      setWorkspaceId(id);
-      await Promise.all([loadPages(id), loadTags(id)]);
+      // 原子切换：会话数据同批次提交，过期请求在此被丢弃、中止导航。
+      const data = await loadSession(id);
+      if (!data) return;
       // 进入知识库首页，目录结构在侧栏与首页中呈现。
       setSelectedPageId(null);
       setView("workspace");
@@ -568,24 +724,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
         );
       });
     },
-    [loadPages, loadTags, persistRoute],
+    [loadSession, persistRoute],
   );
 
-  // preferencesRepository.update 返回更新后的完整偏好，直接整体替换内存镜像。
-  const setTheme = useCallback(async (theme: Preferences["theme"]) => {
-    const next = await preferencesRepository.update({ theme });
-    setPreferences(next);
-  }, []);
+  // 偏好更新统一走 PreferencesService 串行队列（R003 阶段 3）：
+  // update 返回合并后的完整偏好，直接整体替换内存镜像。
+  const setTheme = useCallback(
+    async (theme: Preferences["theme"]) => {
+      const next = await preferencesService.update({ theme });
+      setPreferences(next);
+    },
+    [preferencesService],
+  );
 
-  const setSidebarWidth = useCallback(async (width: number) => {
-    const next = await preferencesRepository.update({ sidebarWidth: width });
-    setPreferences(next);
-  }, []);
+  const setSidebarWidth = useCallback(
+    async (width: number) => {
+      // 拖动期间内存实时更新，持久化经服务 250ms 防抖（只落盘最后一次）。
+      setPreferences((prev) => ({ ...prev, sidebarWidth: width }));
+      preferencesService.updateSidebarWidthDebounced(width);
+    },
+    [preferencesService],
+  );
 
-  const setAIConfig = useCallback(async (config: AIConfig | null) => {
-    const next = await preferencesRepository.update({ aiConfig: config });
-    setPreferences(next);
-  }, []);
+  const setAIConfig = useCallback(
+    async (config: AIConfig | null) => {
+      const next = await preferencesService.update({ aiConfig: config });
+      setPreferences(next);
+    },
+    [preferencesService],
+  );
 
   const openSettings = useCallback(() => {
     setSettingsOpen(true);
@@ -601,11 +768,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       error,
       workspaces,
       workspace,
+      workspaceStatus: session.status,
+      workspaceError: session.error,
       pages,
       selectedPageId,
       view,
       titleFocusPageId,
       preferences,
+      routePersistenceStatus,
       tags,
       pageTags,
       trashedPages,
@@ -647,11 +817,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       error,
       workspaces,
       workspace,
+      session.status,
+      session.error,
       pages,
       selectedPageId,
       view,
       titleFocusPageId,
       preferences,
+      routePersistenceStatus,
       tags,
       pageTags,
       trashedPages,

@@ -647,6 +647,34 @@ export const tagRepository: TagRepository = {
 };
 
 /**
+ * 偏好记录校验与默认值回退：旧版本或损坏数据不会污染运行时配置。
+ * get 与 update 共用，保证两条路径的校验规则一致。
+ */
+function normalizePreferences(stored: unknown): Preferences {
+  // 损坏或缺失时回退默认值。
+  if (!stored || typeof stored !== "object") return DEFAULT_PREFERENCES;
+  const partial = stored as Partial<Preferences>;
+  // aiConfig 形状校验：三个字段均为字符串才保留，否则回退 null。
+  const ai = partial.aiConfig;
+  const aiConfig =
+    ai !== null &&
+    typeof ai === "object" &&
+    typeof ai.endpoint === "string" &&
+    typeof ai.model === "string" &&
+    typeof ai.apiKey === "string"
+      ? { endpoint: ai.endpoint, model: ai.model, apiKey: ai.apiKey }
+      : null;
+  return {
+    ...DEFAULT_PREFERENCES,
+    ...partial,
+    id: "preferences",
+    theme: partial.theme === "dark" ? "dark" : "light",
+    aiConfig,
+    lastRoute: typeof partial.lastRoute === "string" ? partial.lastRoute : null,
+  };
+}
+
+/**
  * 偏好设置仓储。整库只有一条固定 id 为 "preferences" 的记录；
  * 读取时逐字段校验并回退默认值，保证旧版本或损坏数据不会污染运行时配置。
  * 注意 aiConfig 含 API Key，仅存于本地 IndexedDB，不进入日志与上报（见 AGENTS.md 安全约定）。
@@ -654,36 +682,20 @@ export const tagRepository: TagRepository = {
 export const preferencesRepository: PreferencesRepository = {
   async get() {
     const db = await getDB();
-    const stored = (await db.get(STORE_PREFERENCES, "preferences")) as
-      | Partial<Preferences>
-      | undefined;
-    // 损坏或缺失时回退默认值。
-    if (!stored || typeof stored !== "object") return DEFAULT_PREFERENCES;
-    // aiConfig 形状校验：三个字段均为字符串才保留，否则回退 null。
-    const ai = stored.aiConfig;
-    const aiConfig =
-      ai !== null &&
-      typeof ai === "object" &&
-      typeof ai.endpoint === "string" &&
-      typeof ai.model === "string" &&
-      typeof ai.apiKey === "string"
-        ? { endpoint: ai.endpoint, model: ai.model, apiKey: ai.apiKey }
-        : null;
-    return {
-      ...DEFAULT_PREFERENCES,
-      ...stored,
-      id: "preferences",
-      theme: stored.theme === "dark" ? "dark" : "light",
-      aiConfig,
-      lastRoute: typeof stored.lastRoute === "string" ? stored.lastRoute : null,
-    };
+    const stored = await db.get(STORE_PREFERENCES, "preferences");
+    return normalizePreferences(stored);
   },
 
   async update(patch) {
-    const current = await preferencesRepository.get();
-    const next: Preferences = { ...current, ...patch, id: "preferences" };
+    // 读-改-写放在同一 readwrite 事务内（R003 阶段 3）：
+    // 并发 update 不再各自读取过期基线后互相覆盖。
     const db = await getDB();
-    await db.put(STORE_PREFERENCES, next);
+    const tx = db.transaction(STORE_PREFERENCES, "readwrite");
+    const stored = await tx.store.get("preferences");
+    const current = normalizePreferences(stored);
+    const next: Preferences = { ...current, ...patch, id: "preferences" };
+    await tx.store.put(next);
+    await tx.done;
     return next;
   },
 };
