@@ -15,6 +15,14 @@ import {
   readRecovery,
   type DocumentRecoveryRecord,
 } from "../application/services/documentRecovery";
+import {
+  clearCorruptedDiagnostic,
+  writeCorruptedDiagnostic,
+} from "../application/services/corruptedDiagnostics";
+import {
+  parseDocumentContent,
+  sanitizeDocumentContent,
+} from "../domain/validation/documentContent";
 import { useApp } from "../state/AppState";
 import { Button } from "./ui/Button";
 import { TitleEditor } from "./TitleEditor";
@@ -80,6 +88,8 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
   const [saveState, setSaveState] = useState<SaveState>({ status: "saved", savedAt: null });
   // 未落盘编辑的恢复提示（R003 §1.4）：恢复缓冲比 IndexedDB 正文更新时出现。
   const [recovery, setRecovery] = useState<DocumentRecoveryRecord | null>(null);
+  // 正文 JSON 校验失败（R003 阶段 4）：不渲染编辑器，显示损坏处理面板。
+  const [corrupted, setCorrupted] = useState<{ raw: unknown; error: string } | null>(null);
   // 应用恢复后递增：强制编辑器以恢复内容重建，并触发一次立即保存。
   const [contentEpoch, setContentEpoch] = useState(0);
   const retrySaveRef = useRef<(() => void) | null>(null);
@@ -91,12 +101,26 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
     let cancelled = false;
     setContent(null);
     setRecovery(null);
+    setCorrupted(null);
     pendingExitToBodyRef.current = false;
     if (view === "document" && page?.kind === "document") {
       void contentRepository.get(page.id).then((result) => {
         if (cancelled) return;
         // 新建文档尚无内容行：以空文档作为初始内容，首次编辑即落盘。
         const base = result ?? emptyContent(page.id);
+        // 正文 JSON 运行时校验：损坏时不进编辑器，转入损坏处理面板（R003 阶段 4）。
+        const parsed = parseDocumentContent(base.contentJson);
+        if (!parsed.ok) {
+          writeCorruptedDiagnostic({
+            pageId: page.id,
+            raw: parsed.raw,
+            error: parsed.error.message,
+            detectedAt: Date.now(),
+          });
+          setCorrupted({ raw: parsed.raw, error: parsed.error.message });
+          setContent(base);
+          return;
+        }
         // 恢复缓冲比已落盘正文更新：提示用户恢复上次未保存的编辑。
         const record = readRecovery(page.id);
         if (record && record.timestamp > base.updatedAt) {
@@ -142,6 +166,43 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
   const discardRecoveryPrompt = useCallback(() => {
     if (page) discardRecovery(page.id);
     setRecovery(null);
+  }, [page]);
+
+  // 损坏正文：尝试恢复（sanitize 尽力保留合法内容），重建编辑器并立即保存。
+  const recoverCorrupted = useCallback(() => {
+    if (!corrupted || !content) return;
+    const sanitized = sanitizeDocumentContent(corrupted.raw);
+    setCorrupted(null);
+    setContent({ ...content, contentJson: sanitized, updatedAt: Date.now() });
+    setContentEpoch((e) => e + 1);
+  }, [corrupted, content]);
+
+  // 损坏正文：导出原始 JSON 供排查或外部修复。
+  const exportCorrupted = useCallback(() => {
+    if (!corrupted || !page) return;
+    const blob = new Blob([JSON.stringify(corrupted.raw, null, 2)], {
+      type: "application/json;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${page.title || "无标题"}.corrupted.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }, [corrupted, page]);
+
+  // 损坏正文：以空白文档覆盖（原始 JSON 已保留在诊断记录中，可先导出）。
+  const blankCorrupted = useCallback(async () => {
+    if (!page) return;
+    await contentRepository.save(
+      page.id,
+      { type: "doc", content: [{ type: "paragraph" }] },
+      "",
+    );
+    clearCorruptedDiagnostic(page.id);
+    setCorrupted(null);
+    setContent(emptyContent(page.id));
+    setContentEpoch((e) => e + 1);
   }, [page]);
 
   // 文档在主区域完成渲染后记录最近浏览时间（仅打开，不含搜索预览）。
@@ -344,7 +405,29 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
                 <TagPicker pageId={page.id} />
               </div>
               <div className="doc-body">
-                {content ? (
+                {corrupted ? (
+                  <div className="corrupted-panel" role="alert">
+                    <h2 className="corrupted-panel__title">文档内容损坏</h2>
+                    <p className="corrupted-panel__hint">
+                      正文数据未通过校验，编辑器已停止加载以防内容进一步损坏。
+                      原始数据已保留在本地诊断记录中。
+                    </p>
+                    <div className="corrupted-panel__actions">
+                      <Button variant="primary" onClick={recoverCorrupted}>
+                        尝试恢复
+                      </Button>
+                      <Button variant="secondary" onClick={exportCorrupted}>
+                        导出原始 JSON
+                      </Button>
+                      <Button
+                        variant="danger"
+                        onClick={() => void blankCorrupted()}
+                      >
+                        创建空白副本
+                      </Button>
+                    </div>
+                  </div>
+                ) : content ? (
                   <DocumentEditor
                     // contentEpoch 变化（应用恢复）时强制重建编辑器以加载恢复内容。
                     key={`${page.id}:${contentEpoch}`}

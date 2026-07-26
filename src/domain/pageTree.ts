@@ -5,6 +5,7 @@
  */
 
 import type { Page } from "./types";
+import { DomainError } from "./errors";
 
 /** 拖拽落点区域：目标行之前 / 作为目标子级 / 目标行之后。 */
 export type DropZone = "before" | "inside" | "after";
@@ -110,9 +111,9 @@ export function movePage(
   index: number,
 ): Page[] {
   const target = pages.find((p) => p.id === id);
-  if (!target) throw new Error(`页面不存在: ${id}`);
+  if (!target) throw new DomainError("PAGE_NOT_FOUND", `页面不存在: ${id}`);
   if (wouldCreateCycle(pages, id, newParentId)) {
-    throw new Error("不能移动到自身或其子页面下");
+    throw new DomainError("PAGE_TREE_CYCLE", "不能移动到自身或其子页面下");
   }
   const siblings = childrenOf(pages, newParentId).filter((p) => p.id !== id);
   const clamped = Math.max(0, Math.min(index, siblings.length));

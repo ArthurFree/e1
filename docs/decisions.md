@@ -18,5 +18,8 @@
 | 未落盘内容兜底（R003 阶段 1） | localStorage 恢复缓冲（仅正文 JSON + 代次 + 时间戳），保存成功即清除，启动时比对提示恢复 | `beforeunload` 无法保证 IndexedDB 异步写入完成；附件 Blob 继续依赖正常 IndexedDB 流程 |
 | 知识库会话加载（R003 阶段 2） | `WorkspaceSessionService` 一次原子加载页面/标签/关联 + requestId 丢弃过期响应 + 单次 dispatch 提交 | 快速连切知识库时 UI 绝不出现新旧数据混合；会话未 ready 不进入文档视图 |
 | 偏好写入（R003 阶段 3） | 仓储 update 单事务读-改-写 + `PreferencesService` 串行队列；侧栏宽度 250ms 防抖、路由 last-write-wins | 主题/侧栏宽度/路由并发更新不再互相覆盖；写入错误统一可观测 |
+| 正文 JSON 校验（R003 阶段 4） | 读路径经 `parseDocumentContent` 白名单校验，损坏不进编辑器；「尝试恢复」用 sanitize 尽力保留合法内容，原始 JSON 可导出 | 损坏数据曾可让编辑器白屏；白名单与 extensions.ts 的同步由 schema 测试强制 |
+| 领域错误码（R003 阶段 4） | 统一 `DomainError` + 稳定 code（PAGE_NOT_FOUND / CROSS_WORKSPACE_PARENT / CORRUPTED_DOCUMENT 等），message 保留中文文案 | code 供程序判断，UI 不解析错误字符串 |
+| 页面/标签关系约束（R003 阶段 4） | 仓储层强制：父级存在/同知识库/未删除、标签与页面同知识库、kind 与标题入参校验 | 约束放在仓储层才能覆盖全部写入口（UI、模板、AI、未来的同步适配器） |
 
 任何会改变以上结论的需求，应先更新本文件及受影响的需求、架构和测试文档。

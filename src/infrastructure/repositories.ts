@@ -17,6 +17,7 @@ import {
   nextPosition,
   wouldCreateCycle,
 } from "../domain/pageTree";
+import { DomainError } from "../domain/errors";
 import {
   DEFAULT_PREFERENCES,
   type Attachment,
@@ -105,7 +106,7 @@ async function getRequiredPage(id: string): Promise<Page> {
   const db = await getDB();
   const page = normalizePage(await db.get(STORE_PAGES, id));
   if (!page) {
-    throw new Error(`页面不存在或数据损坏: ${id}`);
+    throw new DomainError("PAGE_NOT_FOUND", `页面不存在或数据损坏: ${id}`);
   }
   return page;
 }
@@ -146,7 +147,7 @@ export const workspaceRepository: WorkspaceRepository = {
     const db = await getDB();
     const workspace = normalizeWorkspace(await db.get(STORE_WORKSPACES, id));
     if (!workspace) {
-      throw new Error(`知识库不存在或数据损坏: ${id}`);
+      throw new DomainError("WORKSPACE_NOT_FOUND", `知识库不存在或数据损坏: ${id}`);
     }
     await db.put(STORE_WORKSPACES, { ...workspace, name, updatedAt: Date.now() });
   },
@@ -155,7 +156,7 @@ export const workspaceRepository: WorkspaceRepository = {
     const db = await getDB();
     const workspace = normalizeWorkspace(await db.get(STORE_WORKSPACES, id));
     if (!workspace) {
-      throw new Error(`知识库不存在或数据损坏: ${id}`);
+      throw new DomainError("WORKSPACE_NOT_FOUND", `知识库不存在或数据损坏: ${id}`);
     }
     await db.put(STORE_WORKSPACES, { ...workspace, ...patch, id, updatedAt: Date.now() });
   },
@@ -164,7 +165,7 @@ export const workspaceRepository: WorkspaceRepository = {
     const db = await getDB();
     const workspace = normalizeWorkspace(await db.get(STORE_WORKSPACES, id));
     if (!workspace) {
-      throw new Error(`知识库不存在或数据损坏: ${id}`);
+      throw new DomainError("WORKSPACE_NOT_FOUND", `知识库不存在或数据损坏: ${id}`);
     }
     await db.put(STORE_WORKSPACES, { ...workspace, favoriteAt, updatedAt: Date.now() });
   },
@@ -176,6 +177,44 @@ export const workspaceRepository: WorkspaceRepository = {
     await db.put(STORE_WORKSPACES, { ...workspace, lastOpenedAt: at });
   },
 };
+
+/** 页面标题长度上限（字符）。 */
+const MAX_PAGE_TITLE_LENGTH = 200;
+
+/** 创建页面的入参校验（R003 阶段 4）：kind 合法、标题非空且不超长。 */
+function validateCreatePageInput(input: CreatePageInput): void {
+  if (input.kind !== "document" && input.kind !== "group") {
+    throw new DomainError("INVALID_INPUT", `非法页面类型: ${String(input.kind)}`);
+  }
+  const title = input.title.trim();
+  if (title.length === 0 || title.length > MAX_PAGE_TITLE_LENGTH) {
+    throw new DomainError(
+      "INVALID_INPUT",
+      `页面标题长度须在 1～${MAX_PAGE_TITLE_LENGTH} 字符之间`,
+    );
+  }
+}
+
+/**
+ * 父级关系约束：父级必须存在、与被操作的页面同属一个知识库、未进回收站。
+ * pages 为全量规范化页面（不限工作区），用于区分「不存在」与「跨知识库」。
+ */
+function assertValidParent(
+  pages: Page[],
+  parentId: string,
+  workspaceId: string,
+): void {
+  const parent = pages.find((p) => p.id === parentId);
+  if (!parent) {
+    throw new DomainError("PARENT_NOT_FOUND", `父页面不存在: ${parentId}`);
+  }
+  if (parent.workspaceId !== workspaceId) {
+    throw new DomainError("CROSS_WORKSPACE_PARENT", "父页面属于其他知识库");
+  }
+  if (parent.deletedAt !== null) {
+    throw new DomainError("PARENT_IN_TRASH", "父页面在回收站中，不能作为父级");
+  }
+}
 
 /**
  * 页面仓储。树形操作（移动、软删、恢复、永久删除）都以整棵子树为单位，
@@ -201,13 +240,28 @@ export const pageRepository: PageRepository = {
   },
 
   async create(input: CreatePageInput) {
+    validateCreatePageInput(input);
     const db = await getDB();
-    // position 取同父级兄弟的下一个空位（追加到末尾），由 pageTree 纯函数计算。
-    const siblings = (await db.getAll(STORE_PAGES)) as unknown[];
-    const pages = siblings
+    // 知识库必须存在（R003 阶段 4：页面关系约束）。
+    const workspace = normalizeWorkspace(
+      await db.get(STORE_WORKSPACES, input.workspaceId),
+    );
+    if (!workspace) {
+      throw new DomainError(
+        "WORKSPACE_NOT_FOUND",
+        `知识库不存在或数据损坏: ${input.workspaceId}`,
+      );
+    }
+    const all = ((await db.getAll(STORE_PAGES)) as unknown[])
       .map(normalizePage)
-      .filter((p): p is Page => p !== null && p.workspaceId === input.workspaceId);
+      .filter((p): p is Page => p !== null);
+    // 父级必须存在、同属本知识库、未删除。
+    if (input.parentId !== null) {
+      assertValidParent(all, input.parentId, input.workspaceId);
+    }
+    const pages = all.filter((p) => p.workspaceId === input.workspaceId);
     const now = Date.now();
+    // position 取同父级兄弟的下一个空位（追加到末尾），由 pageTree 纯函数计算。
     const page: Page = {
       id: createId(),
       workspaceId: input.workspaceId,
@@ -262,9 +316,13 @@ export const pageRepository: PageRepository = {
       .map(normalizePage)
       .filter((p): p is Page => p !== null);
     const page = all.find((p) => p.id === id);
-    if (!page) throw new Error(`页面不存在或数据损坏: ${id}`);
+    if (!page) throw new DomainError("PAGE_NOT_FOUND", `页面不存在或数据损坏: ${id}`);
+    // 新父级必须存在、同属本知识库、未删除（R003 阶段 4：页面关系约束）。
+    if (newParentId !== null) {
+      assertValidParent(all, newParentId, page.workspaceId);
+    }
     if (wouldCreateCycle(all, id, newParentId)) {
-      throw new Error("不能移动到自身或其子页面下");
+      throw new DomainError("PAGE_TREE_CYCLE", "不能移动到自身或其子页面下");
     }
     const workspacePages = all.filter((p) => p.workspaceId === page.workspaceId);
     const targetIndex =
@@ -290,7 +348,7 @@ export const pageRepository: PageRepository = {
       .map(normalizePage)
       .filter((p): p is Page => p !== null);
     const page = all.find((p) => p.id === id);
-    if (!page) throw new Error(`页面不存在或数据损坏: ${id}`);
+    if (!page) throw new DomainError("PAGE_NOT_FOUND", `页面不存在或数据损坏: ${id}`);
     const now = Date.now();
     const ids = collectSubtreeIds(all, id);
     const tx = db.transaction([STORE_PAGES, STORE_TRASH], "readwrite");
@@ -314,7 +372,7 @@ export const pageRepository: PageRepository = {
       .map(normalizePage)
       .filter((p): p is Page => p !== null);
     const page = all.find((p) => p.id === id);
-    if (!page) throw new Error(`页面不存在或数据损坏: ${id}`);
+    if (!page) throw new DomainError("PAGE_NOT_FOUND", `页面不存在或数据损坏: ${id}`);
     const ids = collectSubtreeIds(all, id);
     const trash = (await db.getAll(STORE_TRASH)) as {
       pageId: string;
@@ -355,7 +413,7 @@ export const pageRepository: PageRepository = {
       .map(normalizePage)
       .filter((p): p is Page => p !== null);
     const page = all.find((p) => p.id === id);
-    if (!page) throw new Error(`页面不存在或数据损坏: ${id}`);
+    if (!page) throw new DomainError("PAGE_NOT_FOUND", `页面不存在或数据损坏: ${id}`);
     const ids = collectSubtreeIds(all, id);
     const tx = db.transaction(
       [STORE_PAGES, STORE_CONTENTS, STORE_PAGE_TAGS, STORE_TRASH, STORE_REVISIONS, STORE_ATTACHMENTS],
@@ -633,13 +691,31 @@ export const tagRepository: TagRepository = {
 
   async setPageTags(pageId, tagIds) {
     const db = await getDB();
+    // 关系约束（R003 阶段 4）：页面存在、标签存在且与页面同属一个知识库。
+    const page = normalizePage(await db.get(STORE_PAGES, pageId));
+    if (!page) {
+      throw new DomainError("PAGE_NOT_FOUND", `页面不存在或数据损坏: ${pageId}`);
+    }
+    const uniqueTagIds = [...new Set(tagIds)];
+    for (const tagId of uniqueTagIds) {
+      const tag = await db.get(STORE_TAGS, tagId);
+      if (!isValidTag(tag)) {
+        throw new DomainError("TAG_NOT_FOUND", `标签不存在或数据损坏: ${tagId}`);
+      }
+      if (tag.workspaceId !== page.workspaceId) {
+        throw new DomainError(
+          "CROSS_WORKSPACE_TAG",
+          "标签与页面属于不同知识库，不能绑定",
+        );
+      }
+    }
     const tx = db.transaction(STORE_PAGE_TAGS, "readwrite");
-    // 覆盖式语义：先清后写；入参去重避免复合主键冲突。
+    // 覆盖式语义：先清后写；入参已去重避免复合主键冲突。
     const existing = await tx.store.index("pageId").getAllKeys(pageId);
     for (const key of existing) {
       await tx.store.delete(key);
     }
-    for (const tagId of new Set(tagIds)) {
+    for (const tagId of uniqueTagIds) {
       await tx.store.put({ pageId, tagId });
     }
     await tx.done;

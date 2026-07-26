@@ -2788,3 +2788,40 @@
   flex: 1;
   min-width: 0;
 }
+
+/* 损坏正文面板（R003 阶段 4）：校验失败时替代编辑器渲染。 */
+.corrupted-panel {
+  max-width: 560px;
+  margin: 48px auto;
+  padding: 20px 24px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.corrupted-panel__title {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.corrupted-panel__hint {
+  margin: 0 0 16px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+}
+
+.corrupted-panel__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* 版本历史面板的恢复拦截错误提示。 */
+.version-panel__error {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--color-danger);
+}

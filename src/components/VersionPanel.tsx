@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Editor } from "@tiptap/core";
 import type { DocumentRevision, RevisionReason } from "../domain/types";
+import { parseDocumentContent } from "../domain/validation/documentContent";
 import { contentRepository, revisionRepository } from "../infrastructure/repositories";
 import { Dialog } from "./ui/Dialog";
 import { EmptyState } from "./ui/EmptyState";
@@ -36,6 +37,8 @@ export function VersionPanel({ pageId, editor, onClose }: VersionPanelProps) {
   const [revisions, setRevisions] = useState<DocumentRevision[]>([]);
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  // 损坏版本的恢复拦截提示（R003 阶段 4：损坏内容不进入编辑器）。
+  const [restoreError, setRestoreError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     setRevisions(await revisionRepository.listByPage(pageId));
@@ -46,6 +49,14 @@ export function VersionPanel({ pageId, editor, onClose }: VersionPanelProps) {
   }, [reload]);
 
   const restore = async (revision: DocumentRevision) => {
+    // 版本内容先过运行时校验：损坏版本不进入编辑器、不写回存储。
+    const parsed = parseDocumentContent(revision.contentJson);
+    if (!parsed.ok) {
+      setRestoreError("该版本内容损坏，无法恢复。");
+      setConfirmId(null);
+      return;
+    }
+    setRestoreError(null);
     // 恢复前保存当前版本，避免二次丢失。
     await revisionRepository.add(
       pageId,
@@ -54,8 +65,8 @@ export function VersionPanel({ pageId, editor, onClose }: VersionPanelProps) {
       "before-restore",
     );
     // 先替换编辑器内容再落盘，防止 DocumentEditor 的防抖保存把旧内容盖回来
-    editor.commands.setContent(revision.contentJson as never);
-    await contentRepository.save(pageId, revision.contentJson, revision.textSnapshot);
+    editor.commands.setContent(parsed.value as never);
+    await contentRepository.save(pageId, parsed.value, revision.textSnapshot);
     setConfirmId(null);
     onClose();
   };
@@ -65,6 +76,11 @@ export function VersionPanel({ pageId, editor, onClose }: VersionPanelProps) {
       <div className="dialog__header">
         <span>版本历史</span>
       </div>
+      {restoreError && (
+        <p className="version-panel__error" role="alert">
+          {restoreError}
+        </p>
+      )}
       {revisions.length === 0 ? (
         <EmptyState title="暂无历史版本" hint="编辑保存后自动记录。" />
       ) : (

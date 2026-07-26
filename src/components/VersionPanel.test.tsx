@@ -70,4 +70,24 @@ describe("VersionPanel", () => {
     expect(saved?.textSnapshot).toContain("历史版本内容");
     editor.destroy();
   });
+
+  it("损坏版本拒绝恢复：提示错误且不改动编辑器与存储", async () => {
+    const badJson = { type: "doc", content: [{ type: "evilNode" }] };
+    await revisionRepository.add(PAGE_ID, badJson, "损坏版本摘要", "interval");
+    const editor = createEditor("当前内容");
+    render(<VersionPanel pageId={PAGE_ID} editor={editor} onClose={() => undefined} />);
+
+    fireEvent.click(await screen.findByText(/损坏版本摘要/));
+    fireEvent.click(await screen.findByText("恢复此版本"));
+    fireEvent.click(await screen.findByText("确认恢复？"));
+
+    expect(await screen.findByText(/该版本内容损坏，无法恢复/)).toBeInTheDocument();
+    // 编辑器内容未被替换。
+    expect(editor.getText()).toContain("当前内容");
+    // 未创建恢复前版本，也未写回存储。
+    const revisions = await revisionRepository.listByPage(PAGE_ID);
+    expect(revisions.every((r) => r.reason !== "before-restore")).toBe(true);
+    expect(await contentRepository.get(PAGE_ID)).toBeUndefined();
+    editor.destroy();
+  });
 });

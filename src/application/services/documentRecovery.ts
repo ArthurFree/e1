@@ -8,6 +8,7 @@
  * 安全约定：只写正文 JSON 与元数据，不写附件 Blob，不写任何密钥；
  * localStorage 与 IndexedDB 同属本地数据源，不扩大数据暴露面。
  */
+import { parseDocumentContent } from "../../domain/validation/documentContent";
 
 /** 恢复缓冲记录：正文 JSON + 保存代次 + 写入时间。 */
 export interface DocumentRecoveryRecord {
@@ -61,7 +62,7 @@ export function discardRecovery(pageId: string): void {
   }
 }
 
-/** 读取恢复缓冲；数据损坏时删除并返回 null，绝不让坏数据进入编辑器。 */
+/** 读取恢复缓冲；数据损坏（含正文 JSON 未通过白名单校验）时删除并返回 null。 */
 export function readRecovery(pageId: string): DocumentRecoveryRecord | null {
   try {
     const raw = localStorage.getItem(keyOf(pageId));
@@ -72,7 +73,9 @@ export function readRecovery(pageId: string): DocumentRecoveryRecord | null {
       record.pageId !== pageId ||
       typeof record.generation !== "number" ||
       typeof record.timestamp !== "number" ||
-      !("contentJson" in record)
+      !("contentJson" in record) ||
+      // 正文 JSON 必须能通过运行时校验，兑现「绝不让坏数据进入编辑器」。
+      !parseDocumentContent(record.contentJson).ok
     ) {
       localStorage.removeItem(keyOf(pageId));
       return null;
