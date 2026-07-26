@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useApp } from "../state/AppState";
+import { useOverlay } from "../state/OverlayContext";
 import { GlobalSidebar } from "./shell/GlobalSidebar";
 import { PageTreeSidebar } from "./PageTreeSidebar";
 import { MainArea } from "./MainArea";
@@ -9,13 +10,13 @@ import { MainArea } from "./MainArea";
  * 组合全局侧栏（GlobalSidebar）、知识库侧栏（PageTreeSidebar，窄屏时抽屉化）
  * 与主区（MainArea），并负责把主题偏好落到 `<html data-theme>` 上供
  * tokens.css 的浅/深令牌切换消费（R002）。
+ * 窄屏文档树抽屉的开关由 OverlayContext 统一持有（R003 阶段 6）。
  */
 
 /** 应用壳：全局侧栏 + 知识库侧栏（窄屏抽屉化）+ 主区。 */
 export function AppShell() {
   const { ready, error, retryLoad, preferences } = useApp();
-  // 窄屏下文档树以抽屉形式覆盖主区，treeOpen 控制抽屉与遮罩的显隐
-  const [treeOpen, setTreeOpen] = useState(false);
+  const { treeDrawerOpen, closeTreeDrawer } = useOverlay();
 
   // 主题切换不经过 React 渲染，直接写根元素 data-theme，让 CSS 变量即时生效
   useEffect(() => {
@@ -41,15 +42,15 @@ export function AppShell() {
   return (
     <div className="app-shell">
       <GlobalSidebar />
-      <PageTreeSidebar open={treeOpen} onClose={() => setTreeOpen(false)} />
-      {treeOpen && (
+      <PageTreeSidebar />
+      {treeDrawerOpen && (
         <div
           className="backdrop"
           aria-hidden="true"
-          onClick={() => setTreeOpen(false)}
+          onClick={closeTreeDrawer}
         />
       )}
-      <MainArea onOpenTree={() => setTreeOpen(true)} />
+      <MainArea />
     </div>
   );
 }

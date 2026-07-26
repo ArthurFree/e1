@@ -5,8 +5,8 @@
  * （首次点击进入确认态，失焦自动退出）。
  */
 
-import { useState } from "react";
-import { useApp } from "../state/AppState";
+import { useMemo, useState } from "react";
+import { useWorkspaceSession } from "../state/WorkspaceSessionContext";
 import { Dialog } from "./ui/Dialog";
 import { EmptyState } from "./ui/EmptyState";
 import { IconTrash, PageIcon } from "./ui/icons";
@@ -18,9 +18,15 @@ interface TrashPanelProps {
 
 /** 回收站面板：列出已删除页面，支持恢复、永久删除与清空。 */
 export function TrashPanel({ onClose }: TrashPanelProps) {
-  const { trashedPages, restorePage, purgePage, emptyTrash } = useApp();
+  const { pages, restorePage, purgePage, emptyTrash } = useWorkspaceSession();
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [confirmEmpty, setConfirmEmpty] = useState(false);
+
+  // 回收站页面本地派生（R003 §6.5：派生状态不放入 Context）。
+  const trashedPages = useMemo(
+    () => pages.filter((p) => p.deletedAt !== null),
+    [pages],
+  );
 
   // 只展示回收站的“根”：父级也在回收站的子页面随父级一起恢复/删除。
   const trashedIds = new Set(trashedPages.map((p) => p.id));

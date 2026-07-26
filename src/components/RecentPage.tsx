@@ -4,15 +4,12 @@
  * 本身只提供页头与容器。
  */
 
+import { useOverlay } from "../state/OverlayContext";
 import { ActivityList } from "./ActivityList";
 
-interface RecentPageProps {
-  /** 打开窄屏抽屉式文档树的回调，由 MainArea 透传。 */
-  onOpenTree(): void;
-}
-
 /** 全局“最近”视图：跨知识库的最近编辑与最近浏览。 */
-export function RecentPage({ onOpenTree }: RecentPageProps) {
+export function RecentPage() {
+  const { openTreeDrawer } = useOverlay();
   return (
     <div className="start-page">
       <div className="start-page__inner">
@@ -21,7 +18,7 @@ export function RecentPage({ onOpenTree }: RecentPageProps) {
             type="button"
             className="icon-button tree-toggle"
             aria-label="打开文档树"
-            onClick={onOpenTree}
+            onClick={openTreeDrawer}
           >
             ☰
           </button>

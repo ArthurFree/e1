@@ -23,7 +23,10 @@ import {
   parseDocumentContent,
   sanitizeDocumentContent,
 } from "../domain/validation/documentContent";
-import { useApp } from "../state/AppState";
+import { useWorkspaceSession } from "../state/WorkspaceSessionContext";
+import { useNavigation } from "../state/NavigationContext";
+import { usePreferences } from "../state/PreferencesContext";
+import { useOverlay } from "../state/OverlayContext";
 import { Button } from "./ui/Button";
 import { TitleEditor } from "./TitleEditor";
 import { TagPicker } from "./TagPicker";
@@ -48,11 +51,6 @@ import {
   IconSun,
 } from "./ui/icons";
 
-interface MainAreaProps {
-  /** 打开窄屏抽屉式文档树的回调，由 AppShell 注入。 */
-  onOpenTree(): void;
-}
-
 /** 新建文档的初始空内容（尚无 IndexedDB 内容行时使用）。 */
 function emptyContent(pageId: string): DocumentContent {
   return {
@@ -64,23 +62,25 @@ function emptyContent(pageId: string): DocumentContent {
 }
 
 /** 主栏：按视图渲染开始首页 / 知识库首页 / 文档编辑区。 */
-export function MainArea({ onOpenTree }: MainAreaProps) {
+export function MainArea() {
   const services = useAppServices();
   const {
     pages,
-    selectedPageId,
-    view,
     renamePage,
-    preferences,
-    setTheme,
     markOpened,
     togglePageFavorite,
-    titleFocusPageId,
-    clearTitleFocus,
     workspaceStatus,
     workspaceError,
     retryLoad,
-  } = useApp();
+  } = useWorkspaceSession();
+  const {
+    view,
+    selectedPageId,
+    titleFocusPageId,
+    clearTitleFocus,
+  } = useNavigation();
+  const { preferences, setTheme } = usePreferences();
+  const { openTreeDrawer } = useOverlay();
   const page = pages.find((p) => p.id === selectedPageId) ?? null;
   const [content, setContent] = useState<DocumentContent | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
@@ -262,28 +262,28 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
   if (view === "start") {
     return (
       <main className="main">
-        <StartPage onOpenTree={onOpenTree} />
+        <StartPage />
       </main>
     );
   }
   if (view === "recent") {
     return (
       <main className="main">
-        <RecentPage onOpenTree={onOpenTree} />
+        <RecentPage />
       </main>
     );
   }
   if (view === "favorites") {
     return (
       <main className="main">
-        <FavoritesPage onOpenTree={onOpenTree} />
+        <FavoritesPage />
       </main>
     );
   }
   if (view === "workspace") {
     return (
       <main className="main">
-        <WorkspaceHome onOpenTree={onOpenTree} />
+        <WorkspaceHome />
       </main>
     );
   }
@@ -295,7 +295,7 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
           type="button"
           className="icon-button tree-toggle"
           aria-label="打开文档树"
-          onClick={onOpenTree}
+          onClick={openTreeDrawer}
         >
           <IconMenu />
         </button>

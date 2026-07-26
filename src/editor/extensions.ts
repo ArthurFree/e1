@@ -31,8 +31,11 @@ import { createSlashSuggestion } from "./slashSuggestion";
  * 构建交互态编辑器扩展所需的外部依赖，由编辑器宿主（DocumentEditor）注入。
  */
 export interface EditorExtensionsOptions {
-  /** @ 提及候选：当前工作区的文档页面。 */
-  mentionPages: Page[];
+  /**
+   * @ 提及候选的读取函数：弹层每次查询时调用（R003 阶段 6）。
+   * 页面新建/重命名后候选立即更新，无需重建编辑器实例。
+   */
+  getMentionPages(): Page[];
   /** 延迟取 editor：@ 弹层在交互时才需要实例。 */
   getEditor(): Editor;
 }
@@ -77,7 +80,7 @@ export function buildEditorExtensions(options: EditorExtensionsOptions): AnyExte
     Placeholder.configure({ placeholder: "输入正文，键入 / 打开命令菜单" }),
     Mention.configure({
       HTMLAttributes: { class: "mention" },
-      suggestion: createMentionSuggestion(() => options.mentionPages, options.getEditor),
+      suggestion: createMentionSuggestion(options.getMentionPages, options.getEditor),
     }),
     createSlashSuggestion(),
   ];

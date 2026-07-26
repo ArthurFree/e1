@@ -11,10 +11,11 @@
  * （useAppServices）注入，组件不直接 import infrastructure（R003 阶段 5）。
  * 保存状态机见 R001 §8.1，状态展示由顶栏的 SaveStateIndicator 承担。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
-import { useApp } from "../../state/AppState";
+import type { Page } from "../../domain/types";
 import { useAppServices } from "../../state/AppServicesProvider";
+import { useWorkspaceSession } from "../../state/WorkspaceSessionContext";
 import { useDebouncedCallback } from "../../hooks/useDebouncedCallback";
 import { buildEditorExtensions } from "../../editor/extensions";
 import type {
@@ -60,7 +61,7 @@ export function DocumentEditor({
   onRegisterRetry,
   restoreRequestId,
 }: DocumentEditorProps) {
-  const { pages } = useApp();
+  const { pages } = useWorkspaceSession();
   const services = useAppServices();
   const editorRef = useRef<Editor | null>(null);
   const [saveState, setSaveState] = useState<SaveState>({ status: "saved", savedAt: null });
@@ -129,15 +130,17 @@ export function DocumentEditor({
   }, [pageId, flush]);
 
   // @ 提及候选只含文档页：知识库节点不可被提及链接。
-  const mentionPages = useMemo(
-    () => pages.filter((p) => p.kind === "document"),
-    [pages],
-  );
+  // 经 ref 供扩展动态读取（R003 阶段 6）：编辑器实例不随 pages 重建，
+  // 但新建/重命名页面后候选立即更新。
+  const mentionPagesRef = useRef<Page[]>([]);
+  useEffect(() => {
+    mentionPagesRef.current = pages.filter((p) => p.kind === "document");
+  }, [pages]);
 
   const editor = useEditor(
     {
       extensions: buildEditorExtensions({
-        mentionPages,
+        getMentionPages: () => mentionPagesRef.current,
         getEditor: () => editorRef.current as Editor,
       }),
       // Tiptap content 类型不含 unknown；历史数据均为合法 doc JSON，仅断言不校验。

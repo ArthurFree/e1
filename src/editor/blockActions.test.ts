@@ -16,7 +16,7 @@ function createEditor(content?: unknown) {
   const editor = new Editor({
     element: document.createElement("div"),
     extensions: buildEditorExtensions({
-      mentionPages: [],
+      getMentionPages: () => [],
       getEditor: () => holder.editor as Editor,
     }),
     content: content as never,

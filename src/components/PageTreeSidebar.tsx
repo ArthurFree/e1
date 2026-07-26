@@ -2,12 +2,15 @@
  * @file 知识库文档树侧栏组件：当前知识库页面的层级树。
  * 支持展开/折叠、新建文档与分组、行内重命名、软删除、HTML5 拖拽移动
  * （拖放合法性判定在 domain/pageTree.ts）、底部标签筛选、Markdown 文件导入，
- * 以及方向键/F2 键盘导航（R002 §11）。窄屏时由 AppShell 以抽屉方式开合。
- * 拖拽排序与树的纯逻辑都在 domain 层，本组件只做事件接线与渲染。
+ * 以及方向键/F2 键盘导航（R002 §11）。窄屏时由 AppShell 以抽屉方式开合
+ * （开关在 OverlayContext，R003 阶段 6）。
+ * 拖拽排序与树的纯逻辑都在 domain 层，本组件只做事件接线与渲染；
+ * 树主体提取为 React.memo 的 PageTreeBody：主题/宽度等偏好变化不会让
+ * 整棵页面树重新渲染（R003 阶段 6 渲染隔离）。
  */
 
-import { useCallback, useRef, useState } from "react";
-import type { Page } from "../domain/types";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
+import type { Page, PageTag } from "../domain/types";
 import {
   childrenOf,
   dropZoneAt,
@@ -16,47 +19,53 @@ import {
 } from "../domain/pageTree";
 import { jsonToText, markdownToJson } from "../editor/markdown";
 import { useAppServices } from "../state/AppServicesProvider";
-import { useApp } from "../state/AppState";
+import { useWorkspaceSession } from "../state/WorkspaceSessionContext";
+import { useNavigation } from "../state/NavigationContext";
+import { usePreferences } from "../state/PreferencesContext";
+import { useOverlay } from "../state/OverlayContext";
 import { IconHome, PageIcon } from "./ui/icons";
-
-interface PageTreeSidebarProps {
-  /** 窄屏抽屉模式下的开合状态；宽屏下恒为关闭样式、侧栏常驻。 */
-  open: boolean;
-  /** 抽屉模式下选中页面后关闭抽屉的回调。 */
-  onClose(): void;
-}
 
 /** 拖拽时放入 dataTransfer 的自定义 MIME，用于识别「树内页面」拖动。 */
 const DND_MIME = "application/x-page-id";
 
-/** 文档树侧栏：层级展示、新建、重命名、删除、拖拽移动、标签筛选、Markdown 导入。 */
-export function PageTreeSidebar({ open, onClose }: PageTreeSidebarProps) {
-  const services = useAppServices();
-  const {
-    pages,
-    selectedPageId,
-    view,
-    selectPage,
-    showWorkspaceHome,
-    createPage,
-    renamePage,
-    deletePage,
-    movePage,
-    tags,
-    pageTags,
-    deleteTag,
-    preferences,
-    setSidebarWidth,
-  } = useApp();
+interface PageTreeBodyProps {
+  pages: Page[];
+  pageTags: PageTag[];
+  /** 标签筛选：非 null 时只显示带该标签的文档（扁平列表）。 */
+  activeTagId: string | null;
+  selectedPageId: string | null;
+  selectPage(id: string | null): void;
+  createPage(kind: "document" | "group", parentId: string | null): Promise<Page | null>;
+  renamePage(id: string, title: string): Promise<void>;
+  deletePage(id: string): Promise<void>;
+  movePage(id: string, parentId: string | null, index: number): Promise<void>;
+  /** 抽屉模式下选中页面后关闭抽屉。 */
+  onPick(): void;
+  /** 请求某页面进入行内重命名（新建分组后立即改名）。 */
+  renameRequest?: Page | null;
+}
+
+/**
+ * 页面树主体（memo）：行渲染、展开/折叠、重命名、拖拽与键盘导航的全部
+ * 交互状态都收在这里；仅当其 props（会话数据/选中页/动作）变化时才重渲染。
+ */
+const PageTreeBody = memo(function PageTreeBody({
+  pages,
+  pageTags,
+  activeTagId,
+  selectedPageId,
+  selectPage,
+  createPage,
+  renamePage,
+  deletePage,
+  movePage,
+  onPick,
+  renameRequest,
+}: PageTreeBodyProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
-  const [resizing, setResizing] = useState(false);
-  const [activeTagId, setActiveTagId] = useState<string | null>(null);
-  const [importError, setImportError] = useState<string | null>(null);
   const [dropHint, setDropHint] = useState<{ id: string; zone: DropZone } | null>(null);
-  const widthRef = useRef(preferences.sidebarWidth);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   // HTML5 DnD 的 dragover 事件里读不到 dataTransfer 数据，用 ref 记下被拖页面。
   const dragIdRef = useRef<string | null>(null);
 
@@ -74,61 +83,18 @@ export function PageTreeSidebar({ open, onClose }: PageTreeSidebarProps) {
     setRenameValue(page.title);
   };
 
+  // 父级请求的重命名（新建分组后立即改名）。
+  useEffect(() => {
+    if (renameRequest) startRename(renameRequest);
+    // 只在请求对象变化时触发。
+  }, [renameRequest]);
+
   const commitRename = () => {
     if (renamingId) {
       const value = renameValue.trim();
       if (value) void renamePage(renamingId, value);
     }
     setRenamingId(null);
-  };
-
-  const onResizeStart = useCallback(
-    (event: React.PointerEvent) => {
-      event.preventDefault();
-      setResizing(true);
-      const startX = event.clientX;
-      const startWidth = widthRef.current;
-
-      const onMove = (move: PointerEvent) => {
-        // 拖动中直接改 DOM 宽度（绕过 React 渲染）保证跟手，
-        // 持久化到偏好只在松手时做一次，避免每次 move 都写 IndexedDB
-        const next = Math.min(480, Math.max(200, startWidth + move.clientX - startX));
-        widthRef.current = next;
-        const el = document.querySelector<HTMLElement>(".tree-sidebar");
-        if (el) el.style.width = `${next}px`;
-      };
-      const onUp = () => {
-        window.removeEventListener("pointermove", onMove);
-        window.removeEventListener("pointerup", onUp);
-        setResizing(false);
-        void setSidebarWidth(widthRef.current);
-      };
-      window.addEventListener("pointermove", onMove);
-      window.addEventListener("pointerup", onUp);
-    },
-    [setSidebarWidth],
-  );
-
-  const onImportFile = async (file: File) => {
-    setImportError(null);
-    try {
-      const text = await file.text();
-      // Markdown 经白名单解析成文档 JSON（不注入原始 HTML），先建空页再写入内容
-      const json = markdownToJson(text);
-      const page = await createPage("document", null);
-      if (!page) throw new Error("create failed");
-      // 以文件名（去扩展名）作为初始标题，无名文件降级为「导入文档」
-      const title = file.name.replace(/\.(md|markdown)$/i, "") || "导入文档";
-      await renamePage(page.id, title);
-      await services.content.save(page.id, json, jsonToText(json));
-      selectPage(page.id);
-    } catch (error) {
-      setImportError(
-        error instanceof Error && error.message === "无法解析该 Markdown 文件"
-          ? error.message
-          : "导入失败，请确认文件为有效的 Markdown。",
-      );
-    }
   };
 
   const onDragOverRow = (event: React.DragEvent, page: Page) => {
@@ -221,7 +187,7 @@ export function PageTreeSidebar({ open, onClose }: PageTreeSidebarProps) {
           if (isGroup) toggleCollapse(page.id);
           else {
             selectPage(page.id);
-            onClose();
+            onPick();
           }
         }}
         onKeyDown={(event) => {
@@ -351,8 +317,93 @@ export function PageTreeSidebar({ open, onClose }: PageTreeSidebarProps) {
   };
 
   return (
+    <div
+      className="tree-sidebar__body"
+      role="tree"
+      aria-label="页面树"
+      ref={treeRef}
+      onKeyDown={onTreeKeyDown}
+    >
+      {activeTagId ? renderTagFiltered() : renderTree(null)}
+    </div>
+  );
+});
+
+/** 文档树侧栏：层级展示、新建、重命名、删除、拖拽移动、标签筛选、Markdown 导入。 */
+export function PageTreeSidebar() {
+  const services = useAppServices();
+  const {
+    pages,
+    tags,
+    pageTags,
+    createPage,
+    renamePage,
+    deletePage,
+    movePage,
+    deleteTag,
+  } = useWorkspaceSession();
+  const { view, selectedPageId, selectPage, showWorkspaceHome } = useNavigation();
+  const { preferences, setSidebarWidth } = usePreferences();
+  const { treeDrawerOpen, closeTreeDrawer } = useOverlay();
+  const [renamingSeed, setRenamingSeed] = useState<Page | null>(null);
+  const [resizing, setResizing] = useState(false);
+  const [activeTagId, setActiveTagId] = useState<string | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const widthRef = useRef(preferences.sidebarWidth);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const onResizeStart = useCallback(
+    (event: React.PointerEvent) => {
+      event.preventDefault();
+      setResizing(true);
+      const startX = event.clientX;
+      const startWidth = widthRef.current;
+
+      const onMove = (move: PointerEvent) => {
+        // 拖动中直接改 DOM 宽度（绕过 React 渲染）保证跟手，
+        // 持久化到偏好只在松手时做一次，避免每次 move 都写 IndexedDB
+        const next = Math.min(480, Math.max(200, startWidth + move.clientX - startX));
+        widthRef.current = next;
+        const el = document.querySelector<HTMLElement>(".tree-sidebar");
+        if (el) el.style.width = `${next}px`;
+      };
+      const onUp = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        setResizing(false);
+        void setSidebarWidth(widthRef.current);
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    },
+    [setSidebarWidth],
+  );
+
+  const onImportFile = async (file: File) => {
+    setImportError(null);
+    try {
+      const text = await file.text();
+      // Markdown 经白名单解析成文档 JSON（不注入原始 HTML），先建空页再写入内容
+      const json = markdownToJson(text);
+      const page = await createPage("document", null);
+      if (!page) throw new Error("create failed");
+      // 以文件名（去扩展名）作为初始标题，无名文件降级为「导入文档」
+      const title = file.name.replace(/\.(md|markdown)$/i, "") || "导入文档";
+      await renamePage(page.id, title);
+      await services.content.save(page.id, json, jsonToText(json));
+      selectPage(page.id);
+    } catch (error) {
+      setImportError(
+        error instanceof Error && error.message === "无法解析该 Markdown 文件"
+          ? error.message
+          : "导入失败，请确认文件为有效的 Markdown。",
+      );
+    }
+  };
+
+  return (
     <aside
-      className={`tree-sidebar${open ? " tree-sidebar--open" : ""}`}
+      className={`tree-sidebar${treeDrawerOpen ? " tree-sidebar--open" : ""}`}
       aria-label="文档树"
       style={{ width: preferences.sidebarWidth }}
     >
@@ -362,7 +413,7 @@ export function PageTreeSidebar({ open, onClose }: PageTreeSidebarProps) {
         aria-current={view === "workspace" ? "page" : undefined}
         onClick={() => {
           showWorkspaceHome();
-          onClose();
+          closeTreeDrawer();
         }}
       >
         <IconHome size={14} /> 首页
@@ -394,10 +445,10 @@ export function PageTreeSidebar({ open, onClose }: PageTreeSidebarProps) {
             aria-label="新建分组"
             title="新建分组"
             onClick={() => {
-              // 创建后立即进入重命名状态。
+              // 创建后立即进入重命名状态（经 renamingSeed 通知树主体）。
               void (async () => {
                 const page = await createPage("group", null);
-                if (page) startRename(page);
+                if (page) setRenamingSeed(page);
               })();
             }}
           >
@@ -430,15 +481,19 @@ export function PageTreeSidebar({ open, onClose }: PageTreeSidebarProps) {
           </button>
         </div>
       )}
-      <div
-        className="tree-sidebar__body"
-        role="tree"
-        aria-label="页面树"
-        ref={treeRef}
-        onKeyDown={onTreeKeyDown}
-      >
-        {activeTagId ? renderTagFiltered() : renderTree(null)}
-      </div>
+      <PageTreeBody
+        pages={pages}
+        pageTags={pageTags}
+        activeTagId={activeTagId}
+        selectedPageId={selectedPageId}
+        selectPage={selectPage}
+        createPage={createPage}
+        renamePage={renamePage}
+        deletePage={deletePage}
+        movePage={movePage}
+        onPick={closeTreeDrawer}
+        renameRequest={renamingSeed}
+      />
       <div className="tree-tags" aria-label="标签筛选">
         <span className="tree-tags__label">标签</span>
         {tags.length === 0 ? (

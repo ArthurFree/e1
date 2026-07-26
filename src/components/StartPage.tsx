@@ -8,6 +8,7 @@
 import { useMemo, useState } from "react";
 import { isAIConfigured } from "../domain/ai";
 import { useApp } from "../state/AppState";
+import { useOverlay } from "../state/OverlayContext";
 import { ActivityList } from "./ActivityList";
 import { TargetPicker } from "./TargetPicker";
 import { CreateWorkspaceModal } from "./CreateWorkspaceModal";
@@ -15,14 +16,10 @@ import { TemplateCenter } from "./TemplateCenter";
 import { AIDraftModal } from "./AIDraftModal";
 import { IconBook, IconFile, IconSparkle, IconTemplate } from "./ui/icons";
 
-interface StartPageProps {
-  /** 打开窄屏抽屉式文档树的回调，由 MainArea 透传。 */
-  onOpenTree(): void;
-}
-
 /** 全局“开始”首页：快速操作卡片 + 跨知识库文档活动区。 */
-export function StartPage({ onOpenTree }: StartPageProps) {
-  const { workspaces, preferences, createDocumentIn, openSettings } = useApp();
+export function StartPage() {
+  const { workspaces, preferences, createDocumentIn } = useApp();
+  const { openSettings, openTreeDrawer } = useOverlay();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [createWsOpen, setCreateWsOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
@@ -58,7 +55,7 @@ export function StartPage({ onOpenTree }: StartPageProps) {
             type="button"
             className="icon-button tree-toggle"
             aria-label="打开文档树"
-            onClick={onOpenTree}
+            onClick={openTreeDrawer}
           >
             ☰
           </button>

@@ -13,7 +13,7 @@ function createEditor(text: string) {
   const editor = new Editor({
     element: document.createElement("div"),
     extensions: buildEditorExtensions({
-      mentionPages: [],
+      getMentionPages: () => [],
       getEditor: () => holder.editor as Editor,
     }),
     content: {

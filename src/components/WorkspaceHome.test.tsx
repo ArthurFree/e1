@@ -18,7 +18,7 @@ function Harness() {
   return (
     <>
       <output data-testid="view">{ready ? view : "loading"}</output>
-      {ready && <WorkspaceHome onOpenTree={() => undefined} />}
+      {ready && <WorkspaceHome />}
     </>
   );
 }

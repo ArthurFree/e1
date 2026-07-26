@@ -11,7 +11,7 @@ function Harness() {
     <>
       <output data-testid="view">{ready ? view : "loading"}</output>
       <output data-testid="page">{selectedPageId ?? ""}</output>
-      {ready && <StartPage onOpenTree={() => undefined} />}
+      {ready && <StartPage />}
     </>
   );
 }

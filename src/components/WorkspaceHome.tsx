@@ -12,15 +12,11 @@ import { formatRelativeTime, workspaceDocStats } from "../domain/activity";
 import { childrenOf } from "../domain/pageTree";
 import { useAppServices } from "../state/AppServicesProvider";
 import { useApp } from "../state/AppState";
+import { useOverlay } from "../state/OverlayContext";
 import { PageIcon } from "./ui/icons";
 
-interface WorkspaceHomeProps {
-  /** 打开窄屏抽屉式文档树的回调，由 MainArea 透传。 */
-  onOpenTree(): void;
-}
-
 /** 知识库首页：头部信息、统计、主操作与完整目录概览（不拖拽）。 */
-export function WorkspaceHome({ onOpenTree }: WorkspaceHomeProps) {
+export function WorkspaceHome() {
   const services = useAppServices();
   const {
     workspace,
@@ -29,6 +25,7 @@ export function WorkspaceHome({ onOpenTree }: WorkspaceHomeProps) {
     openDocument,
     toggleWorkspaceFavorite,
   } = useApp();
+  const { openTreeDrawer } = useOverlay();
   const [contents, setContents] = useState<DocumentContent[]>([]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [now] = useState(() => Date.now());
@@ -129,7 +126,7 @@ export function WorkspaceHome({ onOpenTree }: WorkspaceHomeProps) {
             type="button"
             className="icon-button tree-toggle"
             aria-label="打开文档树"
-            onClick={onOpenTree}
+            onClick={openTreeDrawer}
           >
             ☰
           </button>

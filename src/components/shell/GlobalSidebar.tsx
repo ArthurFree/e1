@@ -8,7 +8,9 @@
  */
 
 import { useState } from "react";
-import { useApp } from "../../state/AppState";
+import { useWorkspaceSession } from "../../state/WorkspaceSessionContext";
+import { useNavigation } from "../../state/NavigationContext";
+import { useOverlay } from "../../state/OverlayContext";
 import { SearchPanel } from "../SearchPanel";
 import { TrashPanel } from "../TrashPanel";
 import { SettingsPanel } from "../SettingsPanel";
@@ -28,22 +30,22 @@ import {
  * 全局侧栏（R002 §7.1）：账户行、搜索、主导航（开始/最近/收藏）、
  * 知识库列表与底部工具区。≥1280px 完整 240px；1024–1279px 折叠为
  * 64px 图标栏；<1024px 隐藏（窄屏导航由树抽屉承担，见 R002 偏差记录）。
+ * 面板开关统一由 OverlayContext 持有（R003 阶段 6）。
  */
 export function GlobalSidebar() {
+  const { workspaces, workspace, switchWorkspace, createWorkspace } =
+    useWorkspaceSession();
+  const { view, showStart, showRecent, showFavorites } = useNavigation();
   const {
-    workspaces,
-    workspace,
-    view,
-    showStart,
-    showRecent,
-    showFavorites,
-    switchWorkspace,
-    createWorkspace,
     settingsOpen,
+    searchOpen,
+    trashOpen,
     openSettings,
-  } = useApp();
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [trashOpen, setTrashOpen] = useState(false);
+    openSearch,
+    closeSearch,
+    openTrash,
+    closeTrash,
+  } = useOverlay();
   const [previewOpen, setPreviewOpen] = useState(false);
 
   return (
@@ -60,7 +62,7 @@ export function GlobalSidebar() {
         className="gsb__search"
         aria-label="搜索"
         title="搜索"
-        onClick={() => setSearchOpen(true)}
+        onClick={openSearch}
       >
         <IconSearch />
         <span className="gsb__label">搜索</span>
@@ -153,7 +155,7 @@ export function GlobalSidebar() {
           className="gsb__item"
           aria-label="回收站"
           title="回收站"
-          onClick={() => setTrashOpen(true)}
+          onClick={openTrash}
         >
           <IconTrash />
           <span className="gsb__label">回收站</span>
@@ -170,8 +172,8 @@ export function GlobalSidebar() {
         </button>
       </div>
 
-      {searchOpen && <SearchPanel onClose={() => setSearchOpen(false)} />}
-      {trashOpen && <TrashPanel onClose={() => setTrashOpen(false)} />}
+      {searchOpen && <SearchPanel onClose={closeSearch} />}
+      {trashOpen && <TrashPanel onClose={closeTrash} />}
       {settingsOpen && <SettingsPanel />}
     </nav>
   );

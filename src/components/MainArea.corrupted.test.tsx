@@ -46,7 +46,7 @@ async function renderWithCorruptedDoc() {
   });
   render(
     <TestApp>
-      <MainArea onOpenTree={() => undefined} />
+      <MainArea />
     </TestApp>,
   );
   return page;

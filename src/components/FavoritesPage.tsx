@@ -15,15 +15,11 @@ import {
 } from "../domain/activity";
 import { useAppServices } from "../state/AppServicesProvider";
 import { useApp } from "../state/AppState";
+import { useOverlay } from "../state/OverlayContext";
 import { PageIcon } from "./ui/icons";
 
-interface FavoritesPageProps {
-  /** 打开窄屏抽屉式文档树的回调，由 MainArea 透传。 */
-  onOpenTree(): void;
-}
-
 /** 全局“收藏”视图：先收藏的知识库，后收藏的文档，均按收藏时间倒序。 */
-export function FavoritesPage({ onOpenTree }: FavoritesPageProps) {
+export function FavoritesPage() {
   const {
     workspaces,
     openDocument,
@@ -31,6 +27,7 @@ export function FavoritesPage({ onOpenTree }: FavoritesPageProps) {
     togglePageFavorite,
     toggleWorkspaceFavorite,
   } = useApp();
+  const { openTreeDrawer } = useOverlay();
   const services = useAppServices();
   const [allPages, setAllPages] = useState<Page[]>([]);
   const [now, setNow] = useState(() => Date.now());
@@ -81,7 +78,7 @@ export function FavoritesPage({ onOpenTree }: FavoritesPageProps) {
             type="button"
             className="icon-button tree-toggle"
             aria-label="打开文档树"
-            onClick={onOpenTree}
+            onClick={openTreeDrawer}
           >
             ☰
           </button>

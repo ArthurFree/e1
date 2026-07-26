@@ -15,7 +15,7 @@ function Harness() {
           <button type="button" onClick={showRecent}>
             进入最近
           </button>
-          <RecentPage onOpenTree={() => undefined} />
+          <RecentPage />
         </>
       )}
     </>

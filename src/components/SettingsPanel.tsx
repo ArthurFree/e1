@@ -6,17 +6,19 @@
  */
 
 import { useState } from "react";
-import { useApp } from "../state/AppState";
+import { usePreferences } from "../state/PreferencesContext";
+import { useOverlay } from "../state/OverlayContext";
 import { validateAIConfig } from "../domain/ai";
 import { Dialog } from "./ui/Dialog";
 
 /**
  * 设置面板：AI 服务（OpenAI 兼容）配置。
  * API Key 只保存在本机 IndexedDB，不进入日志、同步或上报。
- * 开关状态由 AppState 管理（settingsOpen），故无 onClose 属性。
+ * 开关状态由 OverlayContext 管理（settingsOpen），故无 onClose 属性。
  */
 export function SettingsPanel() {
-  const { preferences, setAIConfig, closeSettings } = useApp();
+  const { preferences, setAIConfig } = usePreferences();
+  const { closeSettings } = useOverlay();
   const current = preferences.aiConfig;
 
   const [endpoint, setEndpoint] = useState(current?.endpoint ?? "");

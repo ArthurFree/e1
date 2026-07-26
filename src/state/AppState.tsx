@@ -16,7 +16,6 @@
  *   启动时恢复，覆盖 R001 的开始首页 / 最近 / 收藏 / 知识库首页 / 文档视图。
  */
 import {
-  createContext,
   useCallback,
   useContext,
   useEffect,
@@ -42,9 +41,25 @@ import { parseRoute, serializeRoute, type AppRoute } from "../domain/route";
 import type { WorkspaceSessionData } from "../application/services/WorkspaceSessionService";
 import { PreferencesService } from "../application/services/PreferencesService";
 import { useAppServices } from "./AppServicesProvider";
+import {
+  WorkspaceSessionContext,
+  type WorkspaceSessionContextValue,
+  type WorkspaceSessionStatus,
+} from "./WorkspaceSessionContext";
+import {
+  NavigationContext,
+  type MainView,
+  type NavigationContextValue,
+} from "./NavigationContext";
+import {
+  PreferencesContext,
+  type PreferencesContextValue,
+} from "./PreferencesContext";
+import { OverlayProvider, useOverlay } from "./OverlayContext";
 
-/** 知识库会话加载状态。 */
-export type WorkspaceSessionStatus = "idle" | "loading" | "ready" | "error";
+// 类型在各自 Context 文件中定义，此处re-export保持既有导入路径兼容。
+export type { MainView } from "./NavigationContext";
+export type { WorkspaceSessionStatus } from "./WorkspaceSessionContext";
 
 /** 知识库会话：四类数据必须同批次提交，由 reducer 保证原子性。 */
 interface WorkspaceSessionState {
@@ -220,12 +235,6 @@ interface AppState {
   closeSettings(): void;
 }
 
-// 默认 null：配合 useApp() 的守卫，让 Provider 外的误用在开发期直接抛错。
-const AppContext = createContext<AppState | null>(null);
-
-/** 主区域视图种类：与持久化路由 AppRoute.view 一一对应。 */
-export type MainView = "start" | "recent" | "favorites" | "workspace" | "document";
-
 /** 全局状态 Provider：挂载时加载知识库与偏好并恢复上次路由。 */
 export function AppProvider({ children }: { children: ReactNode }) {
   // 应用能力一律来自服务容器（R003 阶段 5）：不再直接 import infrastructure。
@@ -250,7 +259,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [view, setView] = useState<MainView>("start");
   const [titleFocusPageId, setTitleFocusPageId] = useState<string | null>(null);
   const [preferences, setPreferences] = useState<Preferences>(DEFAULT_PREFERENCES);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   // 路由持久化状态（R003 阶段 3）：偏好异步写入错误可观测。
   const [routePersistenceStatus, setRoutePersistenceStatus] = useState<
     "idle" | "error"
@@ -385,7 +393,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [loadSession, loadKey]);
 
   const workspace = workspaces.find((w) => w.id === workspaceId) ?? null;
-  const trashedPages = pages.filter((p) => p.deletedAt !== null);
 
   const retryLoad = useCallback(() => {
     setReady(false);
@@ -750,41 +757,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [preferencesService],
   );
 
-  const openSettings = useCallback(() => {
-    setSettingsOpen(true);
-  }, []);
+  // —— 按域 memo 四份 value，分别注入四个窄 Context（R003 阶段 6）——
+  // 单一状态所有者：actions 可自由跨域；窄 Context 保证消费端渲染隔离。
 
-  const closeSettings = useCallback(() => {
-    setSettingsOpen(false);
-  }, []);
-
-  const value = useMemo<AppState>(
+  const sessionValue = useMemo<WorkspaceSessionContextValue>(
     () => ({
       ready,
       error,
+      retryLoad,
       workspaces,
       workspace,
       workspaceStatus: session.status,
       workspaceError: session.error,
       pages,
-      selectedPageId,
-      view,
-      titleFocusPageId,
-      preferences,
-      routePersistenceStatus,
       tags,
       pageTags,
-      trashedPages,
-      selectPage,
-      showStart,
-      showRecent,
-      showFavorites,
-      showWorkspaceHome,
-      clearTitleFocus,
-      openDocument,
-      locatePage,
-      markOpened,
-      togglePageFavorite,
+      switchWorkspace,
+      createWorkspace,
       toggleWorkspaceFavorite,
       createDocumentIn,
       createPage,
@@ -797,43 +786,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
       createTag,
       deleteTag,
       setPageTags,
+      togglePageFavorite,
+      markOpened,
       search,
-      retryLoad,
-      createWorkspace,
-      switchWorkspace,
-      setTheme,
-      setSidebarWidth,
-      setAIConfig,
-      settingsOpen,
-      openSettings,
-      closeSettings,
     }),
     [
       ready,
       error,
+      retryLoad,
       workspaces,
       workspace,
       session.status,
       session.error,
       pages,
-      selectedPageId,
-      view,
-      titleFocusPageId,
-      preferences,
-      routePersistenceStatus,
       tags,
       pageTags,
-      trashedPages,
-      selectPage,
-      showStart,
-      showRecent,
-      showFavorites,
-      showWorkspaceHome,
-      clearTitleFocus,
-      openDocument,
-      locatePage,
-      markOpened,
-      togglePageFavorite,
+      switchWorkspace,
+      createWorkspace,
       toggleWorkspaceFavorite,
       createDocumentIn,
       createPage,
@@ -846,25 +815,91 @@ export function AppProvider({ children }: { children: ReactNode }) {
       createTag,
       deleteTag,
       setPageTags,
+      togglePageFavorite,
+      markOpened,
       search,
-      retryLoad,
-      createWorkspace,
-      switchWorkspace,
-      setTheme,
-      setSidebarWidth,
-      setAIConfig,
-      settingsOpen,
-      openSettings,
-      closeSettings,
     ],
   );
 
-  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
+  const navigationValue = useMemo<NavigationContextValue>(
+    () => ({
+      view,
+      selectedPageId,
+      titleFocusPageId,
+      routePersistenceStatus,
+      selectPage,
+      openDocument,
+      locatePage,
+      showStart,
+      showRecent,
+      showFavorites,
+      showWorkspaceHome,
+      clearTitleFocus,
+    }),
+    [
+      view,
+      selectedPageId,
+      titleFocusPageId,
+      routePersistenceStatus,
+      selectPage,
+      openDocument,
+      locatePage,
+      showStart,
+      showRecent,
+      showFavorites,
+      showWorkspaceHome,
+      clearTitleFocus,
+    ],
+  );
+
+  const preferencesValue = useMemo<PreferencesContextValue>(
+    () => ({
+      preferences,
+      setTheme,
+      setSidebarWidth,
+      setAIConfig,
+    }),
+    [preferences, setTheme, setSidebarWidth, setAIConfig],
+  );
+
+  return (
+    <WorkspaceSessionContext.Provider value={sessionValue}>
+      <NavigationContext.Provider value={navigationValue}>
+        <PreferencesContext.Provider value={preferencesValue}>
+          <OverlayProvider>{children}</OverlayProvider>
+        </PreferencesContext.Provider>
+      </NavigationContext.Provider>
+    </WorkspaceSessionContext.Provider>
+  );
 }
 
-/** 读取全局状态；在 AppProvider 外调用直接抛错，尽早暴露用法错误。 */
+/**
+ * 兼容聚合门面（R003 阶段 6）：读取四个窄 Context 并聚合为原 AppState
+ * 全集。新代码请优先使用 useWorkspaceSession / useNavigation /
+ * usePreferences / useOverlay 窄 hook 以获得渲染隔离；
+ * 未迁移组件与本项目的既有测试经此门面零改动运行。
+ */
 export function useApp(): AppState {
-  const ctx = useContext(AppContext);
-  if (!ctx) throw new Error("useApp 必须在 AppProvider 内使用");
-  return ctx;
+  const session = useContext(WorkspaceSessionContext);
+  const navigation = useContext(NavigationContext);
+  const preferencesCtx = useContext(PreferencesContext);
+  const overlay = useOverlay();
+  // 派生字段：回收站页面由会话 pages 派生（R003 §6.5 派生状态本地化）。
+  const sessionPages = session?.pages;
+  const trashedPages = useMemo(
+    () => (sessionPages ?? []).filter((p) => p.deletedAt !== null),
+    [sessionPages],
+  );
+  if (!session || !navigation || !preferencesCtx) {
+    throw new Error("useApp 必须在 AppProvider 内使用");
+  }
+  return {
+    ...session,
+    ...navigation,
+    ...preferencesCtx,
+    trashedPages,
+    settingsOpen: overlay.settingsOpen,
+    openSettings: overlay.openSettings,
+    closeSettings: overlay.closeSettings,
+  };
 }

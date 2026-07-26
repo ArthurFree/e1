@@ -25,5 +25,8 @@
 | use-case 承载方式（R003 阶段 5） | 不另建 25 个 use-case 类；用例编排由 AppState actions + application 服务（SaveCoordinator/WorkspaceSessionService/PreferencesService）承载 | 同义类是投机性重复；既有服务已可独立单测 |
 | 内存仓储（R003 阶段 5） | `infrastructure/memory/` 实现全部 7 个 port，复用 domain/pageTree，与 IndexedDB 版共用不变量断言 | 作为可替换性证明与未来存储后端参照 |
 | 架构约束检查（R003 阶段 5） | vitest + `import.meta.glob` 源码扫描（`src/test/architecture.test.ts`），不引入 ESLint | 项目无 ESLint 依赖；R003 允许「ESLint 或脚本」 |
+| 状态域拆分（R003 阶段 6） | 单一状态所有者（AppProvider）+ 四个窄 Context 分发（WorkspaceSession/Navigation/Preferences/Overlay）；`useApp()` 保留为兼容聚合门面 | actions 天然跨域，四个独立 Provider 会撕裂动作编排；窄 Context 已提供渲染隔离（probe 测试强制） |
+| 面板开关统一（R003 阶段 6） | OverlayContext 自包含持有 settings/search/trash/treeDrawer 开关，删除 onOpenTree prop 链 | 三处分散的局部状态统一；prop drilling 消除 |
+| 提及候选更新（R003 阶段 6） | 扩展经 `getMentionPages` 函数 + ref 动态读取候选，编辑器不随 pages 重建 | 闭包快照曾导致新建/重命名后 @ 候选过期 |
 
 任何会改变以上结论的需求，应先更新本文件及受影响的需求、架构和测试文档。
