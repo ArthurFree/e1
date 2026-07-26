@@ -2,7 +2,7 @@
 
 一个独立的 Web 笔记应用：以 Tiptap 的 Notion-like 模板为交互和视觉参考，提供本地优先（离线可用）的知识库、页面树和块编辑能力。面向简体中文个人用户。
 
-**当前状态：v0.2（R001 语雀式知识库结构与编辑区增强）已完成，待验收。**
+**当前状态：R003 架构整改全部八个阶段已完成——保存协调器（串行 + 代次 + 恢复缓冲）、工作区会话原子加载、偏好事务化、正文白名单校验与领域错误码、AppServices 依赖注入与内存仓储、四状态域 Context、IndexedDB v3 与搜索索引、架构文档（architecture/ + adr/）与开发诊断。**
 
 ## 功能
 
@@ -48,16 +48,20 @@ Playwright 浏览器二进制安装在项目内（`PLAYWRIGHT_BROWSERS_PATH=0`�
 
 ```text
 src/
-├── components/          # 应用壳：工作区轨道、页面树侧栏、搜索/回收站/设置面板、主栏
-│   └── editor/          # 编辑器 UI：浮动工具栏、块把手、表格工具条、AI 面板、目录
+├── components/          # 应用壳：全局侧栏、页面树侧栏、搜索/回收站/设置面板、主栏
+│   └── editor/          # 编辑器 UI：常驻/浮动工具栏、块把手、表格工具条、AI 面板、目录
 ├── editor/              # 编辑器内核：扩展组合、统一命令注册表、/@ 浮层、
 │                        #   块操作、表格工具、Markdown 转换、AI 事件桥
-├── state/AppState.tsx   # 领域状态 Provider：UI 只通过它和仓储接口取数
-├── domain/              # 纯逻辑：实体类型、页面树、搜索、AI（校验/prompt/错误映射）、仓储接口
-└── infrastructure/      # IndexedDB 实现、种子数据、OpenAI 兼容 AI provider
+├── state/               # AppServicesProvider + 四状态域 Context
+│                        #   （WorkspaceSession/Navigation/Preferences/Overlay）+ useApp 兼容门面
+├── application/         # 应用服务：保存协调器、会话加载、搜索索引、偏好写入、
+│                        #   恢复缓冲、损坏诊断、AppServices 容器接口
+├── domain/              # 纯逻辑：实体类型、页面树、搜索、AI、校验与错误码、仓储接口
+└── infrastructure/      # IndexedDB 实现（DB v3）、种子数据、OpenAI 兼容 AI provider、
+                         #   浏览器服务装配根、内存仓储
 ```
 
-界面只依赖仓储接口和领域状态；Tiptap 仅通过编辑器适配层（`DocumentEditor`）与页面内容交互。基础设施层（IndexedDB、Markdown 转换、AI provider）可整体替换而不重写界面。
+界面只依赖仓储接口和领域状态，生产代码不直接 import infrastructure：应用能力经 `AppServices` 容器注入（装配根 `browserServices.ts`，测试可换内存仓储）。Tiptap 仅通过编辑器适配层（`DocumentEditor`）与页面内容交互。基础设施层（IndexedDB、Markdown 转换、AI provider）可整体替换而不重写界面。
 
 ### 数据模型
 
@@ -73,15 +77,15 @@ src/
 | `Preferences` | `theme`, `sidebarWidth`, `aiConfig` | 浏览器本地偏好 |
 | `TrashRecord` | `pageId`, `deletedAt`, `originalParentId` | 用于恢复原始位置 |
 
-文档内容 JSON 是唯一编辑真相；`textSnapshot` 仅用于搜索与 Markdown 导出。仓储读取含损坏数据降级（字段缺失/形状不符时跳过或回退默认值）。DB v1→v2 迁移将 `folder` 原地改写为 `group` 并补齐新字段，在 upgrade 事务内完成。
+文档内容 JSON 是唯一编辑真相（读入前经白名单运行时校验）；`textSnapshot` 仅用于搜索与 Markdown 导出。仓储读取含损坏数据降级（字段缺失/形状不符时跳过或回退默认值）。数据库当前版本 v3，迁移按 oldVersion 分支在 upgrade 事务内完成（v1→v2 将 `folder` 原地改写为 `group` 并补齐新字段；v2→v3 新增复合索引）；搜索使用会话加载时构建的工作区级内存索引。
 
 ### 编辑器组合
 
-- 基础：StarterKit（标题 1–6、链接）、TextStyle、Color、Highlight、TextAlign、Typography、Image（base64 内嵌）、Subscript/Superscript、Mathematics
+- 基础：StarterKit（标题 1–6、链接）、TextStyleKit、Highlight、TextAlign、Typography、Image（base64 内嵌）、Subscript/Superscript、Mathematics
 - 块：TaskList、BulletList、OrderedList、Table、代码块（lowlight 离线高亮 + 语言属性）、附件节点
-- 交互：Suggestion 驱动 `/` 与 `@` 浮层，BubbleMenu 驱动文本工具栏，Floating UI 定位；块拖拽把手与目录为自实现（DragHandle/TableOfContents 是 Pro 能力，未使用）
+- 交互：Suggestion 驱动 `/` 与 `@` 浮层（@ 候选经 `getMentionPages` 动态读取），BubbleMenu 驱动文本工具栏，Floating UI 定位；块拖拽把手与目录为自实现（DragHandle/TableOfContents 是 Pro 能力，未使用）
 - 统一命令注册表（`src/editor/commands.ts`）驱动 `/` 菜单；常驻工具栏经 `format.ts` 共用同一执行函数，AI 命令经 `aiBridge` 事件桥打开面板，避免功能分叉
-- 保存：变更经 800ms 防抖写入 IndexedDB，切换文档或页面卸载（beforeunload）时强制落盘；保存状态机实时反馈，保存成功后按 5 分钟间隔生成自动版本（去重、上限 100）
+- 保存：`DocumentSaveCoordinator` 串行队列 + 代次管理（800ms 防抖、切换文档强制落盘、latest-wins 附件清理与自动版本、失败重试）；localStorage 恢复缓冲兜底未落盘内容，启动时提示恢复；保存成功后按 5 分钟间隔生成自动版本（去重、上限 100）
 
 ### AI 接口
 
@@ -107,7 +111,7 @@ interface AIProvider {
 - 单元/组件：页面树、仓储（含迁移与降级）、搜索、Markdown、AI 校验与错误映射、面板交互（Vitest + jsdom + fake-indexeddb）
 - 端到端：功能流程（含 mock endpoint 验证「AI 结果确认后才写入」）、1440 × 900 截图基线（动态内容 mask）、1024/768/375 响应式冒烟（Playwright）
 
-更完整的架构说明见 [docs/architecture.md](./docs/architecture.md)。
+更完整的架构说明见 [docs/architecture.md](./docs/architecture.md)（索引，拆分后的主题文档在 [docs/architecture/](./docs/architecture/)，重大决策 ADR 在 [docs/adr/](./docs/adr/)）。
 
 ## 隐私说明
 

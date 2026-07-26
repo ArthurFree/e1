@@ -7,6 +7,8 @@
  * 安全约定：与 IndexedDB 正文同属本地数据源，不扩大暴露面。
  */
 
+import { increment } from "../devDiagnostics";
+
 /** 一条损坏诊断记录。 */
 export interface CorruptedDocumentDiagnostic {
   pageId: string;
@@ -27,6 +29,8 @@ function keyOf(pageId: string): string {
 export function writeCorruptedDiagnostic(
   record: CorruptedDocumentDiagnostic,
 ): void {
+  // 开发诊断：损坏事件计数（仅 pageId，R003 §8.3）。
+  increment("corrupted-content", record.pageId);
   try {
     localStorage.setItem(keyOf(record.pageId), JSON.stringify(record));
   } catch (err) {

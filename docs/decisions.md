@@ -32,5 +32,9 @@
 | 搜索索引（R003 阶段 7） | 会话加载时构建工作区级内存索引；页面写操作 syncPages/upsertPage、正文保存经协调器 onSaved 增量更新 | 查询不再全扫 pages + content.listAll；语义与 searchPages 等价由测试强制 |
 | 页面树邻接表（R003 阶段 7） | `buildChildrenByParent` 一次 O(n) 构建，collectSubtreeIds 与树渲染共用 | 原逐层全数组 filter 为 O(n²) |
 | 清空回收站（R003 阶段 7） | 单事务跨六 store 级联删除，不再逐根页面循环 purge | 中性数据量下避免 N 个独立事务与 N 次全量读 |
+| 开发诊断（R003 阶段 8） | `devDiagnostics` 只记录指标名/毫秒/计数，默认仅 Vite dev 启用（生产与测试静默） | 性能与损坏可观测，同时不泄漏文档正文与密钥 |
+| 文档结构（R003 阶段 8） | 架构文档拆分为 `docs/architecture/` 六主题 + `docs/adr/` 四 ADR + `docs/migrations/`；本表保持全部决策的汇总地位 | 单文件架构文档已无法承载现状；新开发者可按主题定位 |
+
+重大架构决策另有 ADR 详述（背景/替代方案），见 [adr/](./adr/)。
 
 任何会改变以上结论的需求，应先更新本文件及受影响的需求、架构和测试文档。

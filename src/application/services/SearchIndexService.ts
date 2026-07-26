@@ -8,6 +8,7 @@
  * 条目同时保存原文（snippet 用）与小写化文本（匹配用）。
  */
 import { makeSnippet } from "../../domain/search";
+import { trackTiming } from "../devDiagnostics";
 import type {
   DocumentContent,
   Page,
@@ -111,6 +112,7 @@ export class SearchIndexService {
 
   /** 查询：语义与 searchPages 一致（标题命中在前，组内保持构建顺序）。 */
   query(workspaceId: string, query: string): SearchResult[] {
+    const t0 = performance.now();
     const q = query.trim().toLowerCase();
     if (q === "") return [];
     const entries = this.byWorkspace.get(workspaceId);
@@ -133,6 +135,7 @@ export class SearchIndexService {
         });
       }
     }
+    trackTiming("search-query", performance.now() - t0);
     return [...titleHits, ...bodyHits];
   }
 }

@@ -1,4 +1,5 @@
 import { openDB, type IDBPDatabase } from "idb";
+import { increment } from "../application/devDiagnostics";
 
 /**
  * db.ts —— IndexedDB 连接与 schema 定义。
@@ -156,10 +157,17 @@ async function upgradeToV3(_db: IDBPDatabase, tx: { objectStore(name: string): u
  */
 export function getDB(): Promise<IDBPDatabase> {
   dbPromise ??= openDB(DB_NAME, DB_VERSION, {
-    async upgrade(db, oldVersion, _newVersion, tx) {
-      if (oldVersion < 1) createV1Schema(db);
-      if (oldVersion < 2) await upgradeToV2(db, tx);
-      if (oldVersion < 3) await upgradeToV3(db, tx);
+    async upgrade(db, oldVersion, newVersion, tx) {
+      try {
+        if (oldVersion < 1) createV1Schema(db);
+        if (oldVersion < 2) await upgradeToV2(db, tx);
+        if (oldVersion < 3) await upgradeToV3(db, tx);
+        // 开发诊断：迁移结果（仅版本号，R003 §8.3）。
+        increment("db-migration", `v${oldVersion}→v${newVersion ?? DB_VERSION}`);
+      } catch (err) {
+        increment("db-migration", `v${oldVersion} 迁移失败`);
+        throw err;
+      }
     },
   });
   return dbPromise;

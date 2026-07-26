@@ -40,6 +40,7 @@ import { searchPages } from "../domain/search";
 import { parseRoute, serializeRoute, type AppRoute } from "../domain/route";
 import type { WorkspaceSessionData } from "../application/services/WorkspaceSessionService";
 import { PreferencesService } from "../application/services/PreferencesService";
+import { trackTiming } from "../application/devDiagnostics";
 import { useAppServices } from "./AppServicesProvider";
 import {
   WorkspaceSessionContext,
@@ -291,7 +292,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const requestId = ++sessionRequestRef.current;
       dispatchSession({ type: "session/load-start", requestId, workspaceId: wsId });
       try {
+        const t0 = performance.now();
         const data = await sessionService.load(wsId);
+        trackTiming("workspace-load", performance.now() - t0);
         if (requestId !== sessionRequestRef.current) return null;
         dispatchSession({ type: "session/load-success", requestId, data });
         // 搜索索引随会话加载构建（R003 阶段 7）。

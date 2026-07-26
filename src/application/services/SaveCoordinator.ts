@@ -26,6 +26,7 @@ import {
   shouldCreateIntervalRevision,
 } from "../../domain/revisions";
 import { collectAttachmentIds } from "../../editor/attachment";
+import { increment, trackTiming } from "../devDiagnostics";
 import type { DocumentRecoveryRecord } from "./documentRecovery";
 
 /** 待保存快照；generation 由协调器在入队时盖章。 */
@@ -133,6 +134,8 @@ export class DocumentSaveCoordinator {
       textSnapshot: input.textSnapshot,
     };
     this.pending = snapshot;
+    // 开发诊断：保存队列长度（1 = 无排队积压，R003 阶段 8）。
+    increment("save-queue", this.running ? "2+" : "1");
     this.deps.recovery?.write({
       pageId: this.pageId,
       contentJson: snapshot.contentJson,
@@ -217,11 +220,13 @@ export class DocumentSaveCoordinator {
   }
 
   private async runSave(snapshot: SaveSnapshot): Promise<void> {
+    const t0 = performance.now();
     await this.deps.content.save(
       snapshot.pageId,
       snapshot.contentJson,
       snapshot.textSnapshot,
     );
+    trackTiming("idb-save", performance.now() - t0);
     this.savedGeneration = snapshot.generation;
     const isLatest = snapshot.generation === this.generation;
     const now = Date.now();
