@@ -6,12 +6,22 @@
  * AI 操作不直接改文档，而是经 editor/aiBridge 打开 AIAssistantPanel，
  * 生成结果须用户确认后才写入（AGENTS.md 安全要求）。
  */
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import type { Editor } from "@tiptap/core";
 import { openAIAssistant } from "../../editor/aiBridge";
 import type { AIMode } from "../../domain/ai";
-import { IconHighlighter, IconLink, IconSparkle } from "../ui/icons";
+import {
+  IconBold,
+  IconCodeInline,
+  IconHighlighter,
+  IconItalic,
+  IconLink,
+  IconSparkle,
+  IconStrikethrough,
+  IconTextColor,
+  IconUnderline,
+} from "../ui/icons";
 import {
   HIGHLIGHT_COLORS,
   TEXT_COLORS,
@@ -75,15 +85,15 @@ export function BubbleToolbar({ editor }: BubbleToolbarProps) {
   const formatButtons: {
     id: string;
     label: string;
-    icon: string;
+    icon: ReactNode;
     active: boolean;
     run(): void;
   }[] = [
-    { id: "bold", label: "加粗", icon: "B", active: editor.isActive("bold"), run: () => editor.chain().focus().toggleBold().run() },
-    { id: "italic", label: "斜体", icon: "I", active: editor.isActive("italic"), run: () => editor.chain().focus().toggleItalic().run() },
-    { id: "underline", label: "下划线", icon: "U", active: editor.isActive("underline"), run: () => editor.chain().focus().toggleUnderline().run() },
-    { id: "strike", label: "删除线", icon: "S", active: editor.isActive("strike"), run: () => editor.chain().focus().toggleStrike().run() },
-    { id: "code", label: "行内代码", icon: "</>", active: editor.isActive("code"), run: () => editor.chain().focus().toggleCode().run() },
+    { id: "bold", label: "加粗", icon: <IconBold />, active: editor.isActive("bold"), run: () => editor.chain().focus().toggleBold().run() },
+    { id: "italic", label: "斜体", icon: <IconItalic />, active: editor.isActive("italic"), run: () => editor.chain().focus().toggleItalic().run() },
+    { id: "underline", label: "下划线", icon: <IconUnderline />, active: editor.isActive("underline"), run: () => editor.chain().focus().toggleUnderline().run() },
+    { id: "strike", label: "删除线", icon: <IconStrikethrough />, active: editor.isActive("strike"), run: () => editor.chain().focus().toggleStrike().run() },
+    { id: "code", label: "行内代码", icon: <IconCodeInline />, active: editor.isActive("code"), run: () => editor.chain().focus().toggleCode().run() },
   ];
 
   return (
@@ -141,7 +151,7 @@ export function BubbleToolbar({ editor }: BubbleToolbarProps) {
           className="bubble-toolbar__button"
           onClick={() => setPanel(panel === "color" ? "none" : "color")}
         >
-          A
+          <IconTextColor />
         </button>
         <button
           type="button"

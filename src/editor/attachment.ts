@@ -11,6 +11,7 @@
 import { Node } from "@tiptap/core";
 import type { Editor } from "@tiptap/core";
 import type { AttachmentRepository } from "../domain/repositories";
+import { paperclipSvgString } from "../components/ui/icons";
 
 /** 附件大小上限：Blob 整体存 IndexedDB，超限直接拒绝（R001 §7.6）。 */
 export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
@@ -154,7 +155,8 @@ export const Attachment = Node.create({
 
       const icon = document.createElement("span");
       icon.className = "attachment-block__icon";
-      icon.textContent = "📎";
+      // 静态 SVG 字符串（无用户输入），与 IconPaperclip 共用同一份路径数据。
+      icon.innerHTML = paperclipSvgString(20);
 
       const info = document.createElement("span");
       info.className = "attachment-block__info";

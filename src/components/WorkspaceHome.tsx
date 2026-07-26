@@ -13,7 +13,15 @@ import { buildChildrenByParent } from "../domain/pageTree";
 import { useAppServices } from "../state/AppServicesProvider";
 import { useApp } from "../state/AppState";
 import { useOverlay } from "../state/OverlayContext";
-import { PageIcon } from "./ui/icons";
+import {
+  IconBook,
+  IconChevronDown,
+  IconChevronRight,
+  IconMenu,
+  IconStar,
+  IconStarFilled,
+  PageIcon,
+} from "./ui/icons";
 
 /** 知识库首页：头部信息、统计、主操作与完整目录概览（不拖拽）。 */
 export function WorkspaceHome() {
@@ -106,7 +114,9 @@ export function WorkspaceHome() {
             aria-expanded={!isCollapsed}
             onClick={() => toggleCollapse(page.id)}
           >
-            <span aria-hidden="true">{isCollapsed ? "▸" : "▾"}</span>
+            <span aria-hidden="true">
+              {isCollapsed ? <IconChevronRight size={12} /> : <IconChevronDown size={12} />}
+            </span>
             <PageIcon icon={page.icon} kind="group" size={14} />
             {page.title || "未命名分组"}
           </button>
@@ -134,10 +144,10 @@ export function WorkspaceHome() {
             aria-label="打开文档树"
             onClick={openTreeDrawer}
           >
-            ☰
+            <IconMenu />
           </button>
           <span className="ws-home__icon" aria-hidden="true">
-            {workspace.icon ?? "📚"}
+            {workspace.icon ?? <IconBook size={20} />}
           </span>
           <div className="ws-home__heading">
             <h1 className="ws-home__name">{workspace.name}</h1>
@@ -154,7 +164,7 @@ export function WorkspaceHome() {
             title={favorite ? "取消收藏" : "收藏"}
             onClick={() => void toggleWorkspaceFavorite(workspace.id)}
           >
-            {favorite ? "★" : "☆"}
+            {favorite ? <IconStarFilled /> : <IconStar />}
           </button>
         </header>
 

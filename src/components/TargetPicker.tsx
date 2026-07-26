@@ -9,7 +9,7 @@ import type { Page } from "../domain/types";
 import { buildPickerTargets, type PickerTarget } from "../domain/picker";
 import { useAppServices } from "../state/AppServicesProvider";
 import { useApp } from "../state/AppState";
-import { IconFolder } from "./ui/icons";
+import { IconBook, IconFolder } from "./ui/icons";
 
 interface TargetPickerProps {
   /** 选中某个目标（知识库根目录或分组）时的回调。 */
@@ -54,6 +54,7 @@ export function TargetPicker({ onSelect, className }: TargetPickerProps) {
           onClick={() => onSelect(target)}
         >
           {target.depth > 0 && <IconFolder size={14} />}
+          {target.depth === 0 && !target.icon && <IconBook size={14} />}
           {target.label}
         </button>
       ))}

@@ -1,11 +1,12 @@
 /**
  * @file 文档标签选择器：渲染在文档标题下方。
- * 已选标签以 chip 展示、可单独移除；「＋标签」弹出面板支持勾选切换与即时新建，
+ * 已选标签以 chip 展示、可单独移除；「标签」按钮弹出面板支持勾选切换与即时新建，
  * 新建标签的颜色从 TAG_COLORS 轮换分配。点击面板外或 Escape 关闭弹层。
  */
 
 import { useEffect, useRef, useState } from "react";
 import { useApp } from "../state/AppState";
+import { IconCheck, IconClose, IconPlus, IconTag } from "./ui/icons";
 
 /** 新标签的候选颜色，按已有标签数量轮换。 */
 export const TAG_COLORS = [
@@ -81,7 +82,7 @@ export function TagPicker({ pageId }: TagPickerProps) {
             aria-label={`移除标签「${tag.name}」`}
             onClick={() => toggle(tag.id)}
           >
-            ✕
+            <IconClose size={10} />
           </button>
         </span>
       ))}
@@ -92,7 +93,7 @@ export function TagPicker({ pageId }: TagPickerProps) {
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >
-        🏷 标签
+        <IconTag size={12} /> 标签
       </button>
       {open && (
         <div className="tag-picker__panel" role="menu" aria-label="标签列表">
@@ -112,7 +113,11 @@ export function TagPicker({ pageId }: TagPickerProps) {
               >
                 <span className="tag-chip__dot" style={{ background: tag.color }} />
                 <span className="tag-picker__name">{tag.name}</span>
-                {checked && <span aria-hidden="true">✓</span>}
+                {checked && (
+                  <span aria-hidden="true">
+                    <IconCheck size={14} />
+                  </span>
+                )}
               </button>
             );
           })}
@@ -133,7 +138,7 @@ export function TagPicker({ pageId }: TagPickerProps) {
               disabled={!newName.trim()}
               onClick={submitNew}
             >
-              ＋
+              <IconPlus />
             </button>
           </div>
         </div>

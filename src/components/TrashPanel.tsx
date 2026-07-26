@@ -9,7 +9,7 @@ import { useMemo, useState } from "react";
 import { useWorkspaceSession } from "../state/WorkspaceSessionContext";
 import { Dialog } from "./ui/Dialog";
 import { EmptyState } from "./ui/EmptyState";
-import { IconTrash, PageIcon } from "./ui/icons";
+import { IconRestore, IconTrash, PageIcon } from "./ui/icons";
 
 interface TrashPanelProps {
   /** 关闭面板（Escape、点击遮罩时触发）。 */
@@ -83,7 +83,7 @@ export function TrashPanel({ onClose }: TrashPanelProps) {
                   title="恢复"
                   onClick={() => void restorePage(page.id)}
                 >
-                  ↩
+                  <IconRestore size={14} />
                 </button>
                 <button
                   type="button"

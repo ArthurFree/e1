@@ -2729,7 +2729,10 @@
 }
 
 .attachment-block__icon {
-  font-size: 20px;
+  /* 内联 SVG 回形针（系统 Emoji 清零）：inline-flex 避免基线下方空隙。 */
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-text-secondary);
 }
 
 .attachment-block__info {

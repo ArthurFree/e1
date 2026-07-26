@@ -16,7 +16,7 @@ import {
 import { useAppServices } from "../state/AppServicesProvider";
 import { useApp } from "../state/AppState";
 import { useOverlay } from "../state/OverlayContext";
-import { PageIcon } from "./ui/icons";
+import { IconMenu, IconStarFilled, PageIcon } from "./ui/icons";
 
 /** 全局“收藏”视图：先收藏的知识库，后收藏的文档，均按收藏时间倒序。 */
 export function FavoritesPage() {
@@ -80,7 +80,7 @@ export function FavoritesPage() {
             aria-label="打开文档树"
             onClick={openTreeDrawer}
           >
-            ☰
+            <IconMenu />
           </button>
           <h1 className="start-page__title">收藏</h1>
         </header>
@@ -111,7 +111,7 @@ export function FavoritesPage() {
                     title="取消收藏"
                     onClick={() => void toggleWorkspaceFavorite(ws.id)}
                   >
-                    ★
+                    <IconStarFilled />
                   </button>
                 </li>
               ))}
@@ -152,7 +152,7 @@ export function FavoritesPage() {
                     title="取消收藏"
                     onClick={() => onTogglePage(page)}
                   >
-                    ★
+                    <IconStarFilled />
                   </button>
                 </li>
               ))}

@@ -5,9 +5,11 @@
  */
 import type { Editor } from "@tiptap/core";
 import type { MentionOptions } from "@tiptap/extension-mention";
+import { createElement } from "react";
 import type { Page } from "../domain/types";
 import { createPopupRenderer, type CommandListItem } from "./popupRenderer";
 import { CommandList } from "../components/editor/CommandList";
+import { IconFile } from "../components/ui/icons";
 
 /**
  * 创建 `@` 提及的 suggestion 配置。
@@ -33,7 +35,9 @@ export function createMentionSuggestion(
             id: p.id,
             title: p.title || "无标题",
             label: p.title || "无标题",
-            icon: p.icon ?? "📄",
+            // 用户自定义 Emoji 原样展示；未设置时回退 IconFile（候选列表经
+            // ReactRenderer 渲染，icon 为 ReactNode，不能用 SVG 字符串）。
+            icon: p.icon ?? createElement(IconFile, { size: 14 }),
           }),
         );
     },

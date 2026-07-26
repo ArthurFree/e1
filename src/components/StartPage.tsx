@@ -14,7 +14,14 @@ import { TargetPicker } from "./TargetPicker";
 import { CreateWorkspaceModal } from "./CreateWorkspaceModal";
 import { TemplateCenter } from "./TemplateCenter";
 import { AIDraftModal } from "./AIDraftModal";
-import { IconBook, IconFile, IconSparkle, IconTemplate } from "./ui/icons";
+import {
+  IconBook,
+  IconChevronDown,
+  IconFile,
+  IconMenu,
+  IconSparkle,
+  IconTemplate,
+} from "./ui/icons";
 
 /** 全局“开始”首页：快速操作卡片 + 跨知识库文档活动区。 */
 export function StartPage() {
@@ -57,7 +64,7 @@ export function StartPage() {
             aria-label="打开文档树"
             onClick={openTreeDrawer}
           >
-            ☰
+            <IconMenu />
           </button>
           <h1 className="start-page__title">开始</h1>
         </header>
@@ -86,7 +93,7 @@ export function StartPage() {
               disabled={workspaces.length === 0}
               onClick={() => setPickerOpen((open) => !open)}
             >
-              ▾
+              <IconChevronDown />
             </button>
             {pickerOpen && (
               <TargetPicker

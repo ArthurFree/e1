@@ -23,7 +23,18 @@ import { useWorkspaceSession } from "../state/WorkspaceSessionContext";
 import { useNavigation } from "../state/NavigationContext";
 import { usePreferences } from "../state/PreferencesContext";
 import { useOverlay } from "../state/OverlayContext";
-import { IconHome, PageIcon } from "./ui/icons";
+import {
+  IconChevronDown,
+  IconChevronRight,
+  IconClose,
+  IconFolderPlus,
+  IconHome,
+  IconImport,
+  IconPencil,
+  IconPlus,
+  IconTrash,
+  PageIcon,
+} from "./ui/icons";
 
 /** 拖拽时放入 dataTransfer 的自定义 MIME，用于识别「树内页面」拖动。 */
 const DND_MIME = "application/x-page-id";
@@ -208,7 +219,7 @@ const PageTreeBody = memo(function PageTreeBody({
               toggleCollapse(page.id);
             }}
           >
-            {isCollapsed ? "▸" : "▾"}
+            {isCollapsed ? <IconChevronRight size={12} /> : <IconChevronDown size={12} />}
           </button>
         ) : (
           <span className="tree-row__toggle" aria-hidden="true" />
@@ -248,7 +259,7 @@ const PageTreeBody = memo(function PageTreeBody({
               void createPage("document", page.id);
             }}
           >
-            ＋
+            <IconPlus size={14} />
           </button>
           <button
             type="button"
@@ -260,7 +271,7 @@ const PageTreeBody = memo(function PageTreeBody({
               startRename(page);
             }}
           >
-            ✏️
+            <IconPencil size={14} />
           </button>
           <button
             type="button"
@@ -272,7 +283,7 @@ const PageTreeBody = memo(function PageTreeBody({
               void deletePage(page.id);
             }}
           >
-            🗑️
+            <IconTrash size={14} />
           </button>
         </span>
       </div>
@@ -290,7 +301,7 @@ const PageTreeBody = memo(function PageTreeBody({
   const renderTree = (parentId: string | null) => {
     const nodes = liveChildren(parentId);
     if (parentId === null && nodes.length === 0) {
-      return <div className="tree-empty">还没有页面，点击上方 ＋ 新建。</div>;
+      return <div className="tree-empty">还没有页面，点击上方「新建文档」开始。</div>;
     }
     return nodes.map((page) => {
       const children = liveChildren(page.id);
@@ -436,7 +447,7 @@ export function PageTreeSidebar() {
             title="导入 Markdown"
             onClick={() => fileInputRef.current?.click()}
           >
-            📥
+            <IconImport />
           </button>
           <button
             type="button"
@@ -445,7 +456,7 @@ export function PageTreeSidebar() {
             title="新建文档"
             onClick={() => void createPage("document", null)}
           >
-            ＋
+            <IconPlus />
           </button>
           <button
             type="button"
@@ -460,7 +471,7 @@ export function PageTreeSidebar() {
               })();
             }}
           >
-            📁
+            <IconFolderPlus />
           </button>
         </span>
         <input
@@ -485,7 +496,7 @@ export function PageTreeSidebar() {
             aria-label="关闭错误提示"
             onClick={() => setImportError(null)}
           >
-            ✕
+            <IconClose size={12} />
           </button>
         </div>
       )}
@@ -534,7 +545,7 @@ export function PageTreeSidebar() {
                   void deleteTag(tag.id);
                 }}
               >
-                ✕
+                <IconClose size={10} />
               </button>
             </span>
           ))

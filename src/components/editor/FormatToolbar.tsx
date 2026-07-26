@@ -27,7 +27,31 @@ import {
   setFontSize,
 } from "../../editor/format";
 import { EmojiPicker } from "./EmojiPicker";
-import { IconLink } from "../ui/icons";
+import {
+  IconAlignCenter,
+  IconAlignJustify,
+  IconAlignLeft,
+  IconAlignRight,
+  IconBold,
+  IconBulletList,
+  IconChevronDown,
+  IconCodeInline,
+  IconIndent,
+  IconItalic,
+  IconLink,
+  IconOrderedList,
+  IconOutdent,
+  IconParagraph,
+  IconRedo,
+  IconRemoveFormat,
+  IconStrikethrough,
+  IconSubscript,
+  IconSuperscript,
+  IconTaskList,
+  IconTextColor,
+  IconUnderline,
+  IconUndo,
+} from "../ui/icons";
 
 /** FormatToolbar 入参。 */
 interface FormatToolbarProps {
@@ -90,7 +114,9 @@ function Dropdown({
         onClick={() => setOpen((v) => !v)}
       >
         {label}
-        <span aria-hidden="true" className="ft-dropdown__caret">▾</span>
+        <span aria-hidden="true" className="ft-dropdown__caret">
+          <IconChevronDown size={10} />
+        </span>
       </button>
       {open && (
         <div
@@ -142,10 +168,10 @@ function ToolbarButton({
 /** 对齐与缩进按钮组（1024px 以下收进“更多”）。 */
 function AlignIndentButtons({ editor }: { editor: Editor }) {
   const aligns = [
-    { id: "left", label: "左对齐", icon: "≡" },
-    { id: "center", label: "居中对齐", icon: "≣" },
-    { id: "right", label: "右对齐", icon: "≡" },
-    { id: "justify", label: "两端对齐", icon: "☰" },
+    { id: "left", label: "左对齐", icon: <IconAlignLeft /> },
+    { id: "center", label: "居中对齐", icon: <IconAlignCenter /> },
+    { id: "right", label: "右对齐", icon: <IconAlignRight /> },
+    { id: "justify", label: "两端对齐", icon: <IconAlignJustify /> },
   ] as const;
   return (
     <>
@@ -161,12 +187,12 @@ function AlignIndentButtons({ editor }: { editor: Editor }) {
       <span className="ft-divider" aria-hidden="true" />
       <ToolbarButton
         label="增加缩进"
-        icon="⇥"
+        icon={<IconIndent />}
         onClick={() => editor.chain().focus().indent().run()}
       />
       <ToolbarButton
         label="减少缩进"
-        icon="⇤"
+        icon={<IconOutdent />}
         onClick={() => editor.chain().focus().outdent().run()}
       />
     </>
@@ -179,12 +205,12 @@ function CleanupButtons({ editor }: { editor: Editor }) {
     <>
       <ToolbarButton
         label="清除行内格式"
-        icon="⌫"
+        icon={<IconRemoveFormat />}
         onClick={() => clearInlineFormat(editor)}
       />
       <ToolbarButton
         label="重置为正文"
-        icon="¶"
+        icon={<IconParagraph />}
         onClick={() => resetBlockToParagraph(editor)}
       />
     </>
@@ -215,19 +241,19 @@ export function FormatToolbar({ editor }: FormatToolbarProps) {
   };
 
   const inlineMarks = [
-    { id: "bold", label: "加粗", icon: "B", run: () => editor.chain().focus().toggleBold().run() },
-    { id: "italic", label: "斜体", icon: "I", run: () => editor.chain().focus().toggleItalic().run() },
-    { id: "underline", label: "下划线", icon: "U", run: () => editor.chain().focus().toggleUnderline().run() },
-    { id: "strike", label: "删除线", icon: "S", run: () => editor.chain().focus().toggleStrike().run() },
-    { id: "code", label: "行内代码", icon: "</>", run: () => editor.chain().focus().toggleCode().run() },
-    { id: "superscript", label: "上标", icon: "x²", run: () => editor.chain().focus().toggleSuperscript().run() },
-    { id: "subscript", label: "下标", icon: "x₂", run: () => editor.chain().focus().toggleSubscript().run() },
+    { id: "bold", label: "加粗", icon: <IconBold />, run: () => editor.chain().focus().toggleBold().run() },
+    { id: "italic", label: "斜体", icon: <IconItalic />, run: () => editor.chain().focus().toggleItalic().run() },
+    { id: "underline", label: "下划线", icon: <IconUnderline />, run: () => editor.chain().focus().toggleUnderline().run() },
+    { id: "strike", label: "删除线", icon: <IconStrikethrough />, run: () => editor.chain().focus().toggleStrike().run() },
+    { id: "code", label: "行内代码", icon: <IconCodeInline />, run: () => editor.chain().focus().toggleCode().run() },
+    { id: "superscript", label: "上标", icon: <IconSuperscript />, run: () => editor.chain().focus().toggleSuperscript().run() },
+    { id: "subscript", label: "下标", icon: <IconSubscript />, run: () => editor.chain().focus().toggleSubscript().run() },
   ];
 
   const lists = [
-    { id: "bulletList", label: "项目列表", icon: "•≡", run: () => editor.chain().focus().toggleBulletList().run() },
-    { id: "orderedList", label: "编号列表", icon: "1≡", run: () => editor.chain().focus().toggleOrderedList().run() },
-    { id: "taskList", label: "任务列表", icon: "☑", run: () => editor.chain().focus().toggleTaskList().run() },
+    { id: "bulletList", label: "项目列表", icon: <IconBulletList />, run: () => editor.chain().focus().toggleBulletList().run() },
+    { id: "orderedList", label: "编号列表", icon: <IconOrderedList />, run: () => editor.chain().focus().toggleOrderedList().run() },
+    { id: "taskList", label: "任务列表", icon: <IconTaskList />, run: () => editor.chain().focus().toggleTaskList().run() },
   ];
 
   const insertItems: { id: string | null; title: string; disabled?: boolean }[] = [
@@ -272,13 +298,13 @@ export function FormatToolbar({ editor }: FormatToolbarProps) {
       <span className="ft-divider" aria-hidden="true" />
       <ToolbarButton
         label="撤销"
-        icon="↩"
+        icon={<IconUndo />}
         disabled={!editor.can().undo()}
         onClick={() => editor.chain().focus().undo().run()}
       />
       <ToolbarButton
         label="重做"
-        icon="↪"
+        icon={<IconRedo />}
         disabled={!editor.can().redo()}
         onClick={() => editor.chain().focus().redo().run()}
       />
@@ -367,7 +393,7 @@ export function FormatToolbar({ editor }: FormatToolbarProps) {
           </div>
         )}
       </div>
-      <Dropdown label="A" ariaLabel="颜色与高亮">
+      <Dropdown label={<IconTextColor />} ariaLabel="颜色与高亮">
         <div className="ft-palette__label">文本颜色</div>
         {TEXT_COLORS.map((c) => (
           <button

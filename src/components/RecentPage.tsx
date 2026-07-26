@@ -6,6 +6,7 @@
 
 import { useOverlay } from "../state/OverlayContext";
 import { ActivityList } from "./ActivityList";
+import { IconMenu } from "./ui/icons";
 
 /** 全局“最近”视图：跨知识库的最近编辑与最近浏览。 */
 export function RecentPage() {
@@ -20,7 +21,7 @@ export function RecentPage() {
             aria-label="打开文档树"
             onClick={openTreeDrawer}
           >
-            ☰
+            <IconMenu />
           </button>
           <h1 className="start-page__title">最近</h1>
         </header>

@@ -41,8 +41,8 @@ import { TocPanel } from "./editor/TocPanel";
 import { WordCount } from "./editor/WordCount";
 import { SaveStateIndicator } from "./editor/SaveStateIndicator";
 import {
-  IconClock,
   IconExport,
+  IconHistory,
   IconList,
   IconMenu,
   IconMoon,
@@ -331,7 +331,7 @@ export function MainArea() {
             disabled={!liveEditor}
             onClick={() => setVersionsOpen((v) => !v)}
           >
-            <IconClock />
+            <IconHistory />
           </button>
         )}
         <button

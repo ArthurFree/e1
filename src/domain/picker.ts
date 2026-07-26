@@ -13,8 +13,10 @@ export interface PickerTarget {
   workspaceName: string;
   /** 目标父级：null 表示直接建在知识库根下。 */
   parentId: string | null;
-  /** 展示文案：知识库条目带图标前缀，分组为标题。 */
+  /** 展示文案：知识库条目带用户自定义图标前缀（未设置时由组件层回退 SVG），分组为标题。 */
   label: string;
+  /** 知识库条目的用户自定义图标（Emoji）；分组条目与未设置时为 null。 */
+  icon: string | null;
   /** 缩进层级：知识库为 0，其下分组从 1 起递增。 */
   depth: number;
 }
@@ -30,7 +32,9 @@ export function buildPickerTargets(
       workspaceId: ws.id,
       workspaceName: ws.name,
       parentId: null,
-      label: `${ws.icon ?? "📚"} ${ws.name}`,
+      // 空 icon 不在 domain 层回退 Emoji：由组件层渲染 IconBook（系统字形清零）。
+      label: ws.icon ? `${ws.icon} ${ws.name}` : ws.name,
+      icon: ws.icon,
       depth: 0,
     });
     const walk = (parentId: string | null, depth: number) => {
@@ -42,6 +46,7 @@ export function buildPickerTargets(
           workspaceName: ws.name,
           parentId: page.id,
           label: page.title || "未命名分组",
+          icon: null,
           depth,
         });
         walk(page.id, depth + 1);

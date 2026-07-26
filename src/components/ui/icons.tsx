@@ -201,6 +201,239 @@ export const IconGrip = (p: IconProps) => (
   </Svg>
 );
 
+/* ---------- 以下为图标整改（系统字形清零）新增 ---------- */
+
+export const IconPencil = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z" />
+  </Svg>
+);
+
+export const IconFolderPlus = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 10v6M9 13h6" />
+    <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z" />
+  </Svg>
+);
+
+export const IconImport = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 3v12" />
+    <path d="m7 10 5 5 5-5" />
+    <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+  </Svg>
+);
+
+export const IconTag = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12.59 2.59A2 2 0 0 0 11.17 2H4a2 2 0 0 0-2 2v7.17a2 2 0 0 0 .59 1.42l8.7 8.7a2.43 2.43 0 0 0 3.42 0l6.58-6.58a2.43 2.43 0 0 0 0-3.42z" />
+    <circle cx="7.5" cy="7.5" r="1" />
+  </Svg>
+);
+
+/** 回形针路径：React 图标与非 React 内联 SVG 字符串共用同一份数据。 */
+const PAPERCLIP_PATH =
+  "m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48";
+
+export const IconPaperclip = (p: IconProps) => (
+  <Svg {...p}>
+    <path d={PAPERCLIP_PATH} />
+  </Svg>
+);
+
+/**
+ * 非 React 环境（Tiptap NodeView 原生 DOM）使用的回形针内联 SVG 字符串；
+ * 图形与 IconPaperclip 共用 PAPERCLIP_PATH，避免两份实现漂移。
+ */
+export function paperclipSvgString(size = 16): string {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${PAPERCLIP_PATH}"/></svg>`;
+}
+
+export const IconClose = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M18 6 6 18M6 6l12 12" />
+  </Svg>
+);
+
+export const IconCheck = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M20 6 9 17l-5-5" />
+  </Svg>
+);
+
+/** 恢复（回收站）：逆时针回旋箭头（rotate-ccw 风格）。 */
+export const IconRestore = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+    <path d="M3 3v5h5" />
+  </Svg>
+);
+
+export const IconChevronRight = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="m9 18 6-6-6-6" />
+  </Svg>
+);
+
+/** 版本历史：时钟 + 逆时针回卷（Lucide history 风格），与 IconClock（最近）区分语义。 */
+export const IconHistory = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+    <path d="M3 3v5h5" />
+    <path d="M12 7v5l4 2" />
+  </Svg>
+);
+
+export const IconAlignLeft = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M21 6H3M15 12H3M17 18H3" />
+  </Svg>
+);
+
+export const IconAlignCenter = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M21 6H3M17 12H7M19 18H5" />
+  </Svg>
+);
+
+export const IconAlignRight = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M21 6H3M21 12H9M21 18H7" />
+  </Svg>
+);
+
+export const IconAlignJustify = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3 6h18M3 12h18M3 18h18" />
+  </Svg>
+);
+
+export const IconBold = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8" />
+  </Svg>
+);
+
+export const IconItalic = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M19 4h-9M14 20H5M15 4 9 20" />
+  </Svg>
+);
+
+export const IconUnderline = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M6 4v6a6 6 0 0 0 12 0V4" />
+    <path d="M4 20h16" />
+  </Svg>
+);
+
+export const IconStrikethrough = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M16 4H9a3 3 0 0 0-2.83 4" />
+    <path d="M14 12a4 4 0 0 1 0 8H6" />
+    <path d="M4 12h16" />
+  </Svg>
+);
+
+export const IconCodeInline = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="m16 18 6-6-6-6" />
+    <path d="m8 6-6 6 6 6" />
+  </Svg>
+);
+
+export const IconSuperscript = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="m4 11 8 8" />
+    <path d="m4 19 8-8" />
+    <path d="M17 7c0-1.7 3-1.7 3 0 0 1.5-3 2-3 3h3" />
+  </Svg>
+);
+
+export const IconSubscript = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="m4 5 8 8" />
+    <path d="m4 13 8-8" />
+    <path d="M17 15c0-1.7 3-1.7 3 0 0 1.5-3 2-3 3h3" />
+  </Svg>
+);
+
+/** 项目列表：图形与 IconList 相同，作为「项目列表」语义别名，避免两份路径漂移。 */
+export const IconBulletList = (p: IconProps) => <IconList {...p} />;
+
+export const IconOrderedList = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M10 6h11M10 12h11M10 18h11" />
+    <path d="M4 6h1v4M4 10h2" />
+    <path d="M6 18H4c0-1 2-1.5 2-2.5S5 14 4 14" />
+  </Svg>
+);
+
+export const IconTaskList = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="3" y="4" width="6" height="6" rx="1" />
+    <path d="m3 17 2 2 4-4" />
+    <path d="M13 6h8M13 12h8M13 18h8" />
+  </Svg>
+);
+
+export const IconIndent = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="m3 8 4 4-4 4" />
+    <path d="M21 6H3M21 12H11M21 18H3" />
+  </Svg>
+);
+
+export const IconOutdent = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="m7 8-4 4 4 4" />
+    <path d="M21 6H3M21 12H11M21 18H3" />
+  </Svg>
+);
+
+/** 清除行内格式：字母横杆 + 斜向叉（remove-formatting 风格）。 */
+export const IconRemoveFormat = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 7V4h16v3" />
+    <path d="M5 20h6" />
+    <path d="M13 4 8 20" />
+    <path d="m15 15 5 5" />
+    <path d="m20 15-5 5" />
+  </Svg>
+);
+
+export const IconParagraph = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M13 4v16M17 4v16" />
+    <path d="M19 4H9.5a4.5 4.5 0 0 0 0 9H13" />
+  </Svg>
+);
+
+/** 撤销：左向回旋箭头（undo-2 风格）。 */
+export const IconUndo = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M9 14 4 9l5-5" />
+    <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+  </Svg>
+);
+
+/** 重做：右向回旋箭头（redo-2 风格）。 */
+export const IconRedo = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="m15 14 5-5-5-5" />
+    <path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5 5.5 5.5 0 0 0 9.5 20H13" />
+  </Svg>
+);
+
+/** 文本颜色：字母 A + 底部色条（Lucide 无对应图标，按通用画法自绘）。 */
+export const IconTextColor = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M5 16 12 4l7 12" />
+    <path d="M7.5 12h9" />
+    <path d="M4 20h16" />
+  </Svg>
+);
+
 /**
  * 页面/知识库图标：用户自定义 Emoji 原样展示（R002 §6 允许），
  * 未设置时按 kind 回退到统一的 SVG 默认图标（文档 / 分组 / 知识库）。

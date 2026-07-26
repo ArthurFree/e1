@@ -40,7 +40,9 @@ describe("buildPickerTargets", () => {
       ["ws2", null, 0],
       ["ws2", "g4", 1],
     ]);
-    expect(targets[0].label).toBe("📚 库一");
+    expect(targets[0].label).toBe("库一");
+    expect(targets[0].icon).toBeNull();
     expect(targets[3].label).toBe("🛠️ 库二");
+    expect(targets[3].icon).toBe("🛠️");
   });
 });

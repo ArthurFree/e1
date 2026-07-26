@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { Button } from "./Button";
 import { IconButton } from "./IconButton";
+import { IconStar, IconStarFilled } from "./icons";
 
 describe("Button", () => {
   beforeEach(() => cleanup());
@@ -27,7 +28,7 @@ describe("Button", () => {
 describe("IconButton", () => {
   beforeEach(() => cleanup());
   it("label 同时用于无障碍名称与 Tooltip", () => {
-    render(<IconButton label="收藏">☆</IconButton>);
+    render(<IconButton label="收藏"><IconStar /></IconButton>);
     const button = screen.getByRole("button", { name: "收藏" });
     expect(button).toHaveAttribute("title", "收藏");
     expect(button).toHaveAttribute("aria-pressed", "false");
@@ -36,7 +37,7 @@ describe("IconButton", () => {
   it("激活态同步 aria-pressed 与样式", () => {
     render(
       <IconButton label="收藏" active>
-        ★
+        <IconStarFilled />
       </IconButton>,
     );
     const button = screen.getByRole("button", { name: "收藏" });
