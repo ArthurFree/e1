@@ -54,7 +54,7 @@
 - `docs/test-plan.md`：单元、组件、端到端与视觉回归测试计划及发布前验收。
 - `docs/implementation-plan.md`：五个实现阶段及各阶段完成标准。
 - `docs/decisions.md`：决策记录表；**任何改变这些结论的需求，须先更新本表及受影响的文档，再改代码。**
-- `docs/requirements/R003.md`：架构整改实施规划（已全部完成）。
+- `docs/requirements/R003.md`：架构整改实施规划（已全部完成，实施报告见 `docs/r003-implementation-report.md`）。
 
 ## 开始实现时的架构约束
 
