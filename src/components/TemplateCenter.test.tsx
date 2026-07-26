@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { AppProvider, useApp } from "../state/AppState";
+import { useApp } from "../state/AppState";
+import { TestApp } from "../test/TestApp";
 import { resetDB } from "../infrastructure/db";
 import {
   contentRepository,
@@ -27,9 +28,9 @@ describe("TemplateCenter", () => {
 
   it("选择模板与位置后创建普通文档并打开", async () => {
     render(
-      <AppProvider>
+      <TestApp>
         <Harness />
-      </AppProvider>,
+      </TestApp>,
     );
     // 六个模板卡片可见。
     expect(await screen.findByText("会议纪要")).toBeInTheDocument();
@@ -56,9 +57,9 @@ describe("TemplateCenter", () => {
 
   it("取消流程不创建任何文档", async () => {
     render(
-      <AppProvider>
+      <TestApp>
         <Harness />
-      </AppProvider>,
+      </TestApp>,
     );
     fireEvent.click(await screen.findByText("周报"));
     await screen.findByRole("menuitem", { name: /我的知识库/ });

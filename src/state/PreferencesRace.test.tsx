@@ -7,7 +7,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, waitFor } from "@testing-library/react";
-import { AppProvider, useApp } from "./AppState";
+import { useApp } from "./AppState";
+import { TestApp } from "../test/TestApp";
 import { resetDB } from "../infrastructure/db";
 import { preferencesRepository } from "../infrastructure/repositories";
 
@@ -31,9 +32,9 @@ describe("偏好并发更新", () => {
 
   it("主题/侧栏宽度/路由并发更新互不覆盖", async () => {
     render(
-      <AppProvider>
+      <TestApp>
         <Probe />
-      </AppProvider>,
+      </TestApp>,
     );
     await waitFor(() => expect(host.app?.ready).toBe(true), { timeout: 3000 });
 

@@ -7,29 +7,20 @@
  * 间隔自动版本只跟随最新快照、localStorage 恢复缓冲兜底。
  *
  * 架构位置：持久化流程在 application 层的协调器中，组件只负责监听
- * Tiptap 更新、生成快照、提交快照与展示保存状态；仓储经协调器构造函数
- * 注入（domain port），本文件是唯一的仓储装配点。
+ * Tiptap 更新、生成快照、提交快照与展示保存状态；仓储经服务容器
+ * （useAppServices）注入，组件不直接 import infrastructure（R003 阶段 5）。
  * 保存状态机见 R001 §8.1，状态展示由顶栏的 SaveStateIndicator 承担。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
-import {
-  attachmentRepository,
-  contentRepository,
-  revisionRepository,
-} from "../../infrastructure/repositories";
 import { useApp } from "../../state/AppState";
+import { useAppServices } from "../../state/AppServicesProvider";
 import { useDebouncedCallback } from "../../hooks/useDebouncedCallback";
 import { buildEditorExtensions } from "../../editor/extensions";
-import {
+import type {
   DocumentSaveCoordinator,
-  type SaveCoordinatorState,
-  type RecoveryStore,
+  SaveCoordinatorState,
 } from "../../application/services/SaveCoordinator";
-import {
-  clearRecovery,
-  writeRecovery,
-} from "../../application/services/documentRecovery";
 import { BubbleToolbar } from "./BubbleToolbar";
 import { BlockHandle } from "./BlockHandle";
 import { TableToolbar } from "./TableToolbar";
@@ -37,12 +28,6 @@ import { AIAssistantPanel } from "./AIAssistantPanel";
 
 /** 保存状态机（R001 §8.1）：saved → dirty → saving → saved / error。 */
 export type SaveState = SaveCoordinatorState;
-
-/** 生产环境恢复缓冲：localStorage 实现（见 documentRecovery.ts 的安全约定）。 */
-const localStorageRecoveryStore: RecoveryStore = {
-  write: writeRecovery,
-  clear: clearRecovery,
-};
 
 /** DocumentEditor 入参。 */
 interface DocumentEditorProps {
@@ -76,29 +61,27 @@ export function DocumentEditor({
   restoreRequestId,
 }: DocumentEditorProps) {
   const { pages } = useApp();
+  const services = useAppServices();
   const editorRef = useRef<Editor | null>(null);
   const [saveState, setSaveState] = useState<SaveState>({ status: "saved", savedAt: null });
   // 每个文档一个保存协调器；pageIdRef 先于渲染更新，供回调判断「当前文档」。
   const coordinatorsRef = useRef(new Map<string, DocumentSaveCoordinator>());
   const pageIdRef = useRef(pageId);
 
-  const getCoordinator = useCallback((pid: string) => {
-    let coordinator = coordinatorsRef.current.get(pid);
-    if (!coordinator) {
-      coordinator = new DocumentSaveCoordinator(pid, {
-        content: contentRepository,
-        revisions: revisionRepository,
-        attachments: attachmentRepository,
-        recovery: localStorageRecoveryStore,
-        onStateChange: (state) => {
+  const getCoordinator = useCallback(
+    (pid: string) => {
+      let coordinator = coordinatorsRef.current.get(pid);
+      if (!coordinator) {
+        coordinator = services.createSaveCoordinator(pid, (state) => {
           // 只有当前文档的协调器驱动 UI；旧协调器排空期间的状态不外发。
           if (pid === pageIdRef.current) setSaveState(state);
-        },
-      });
-      coordinatorsRef.current.set(pid, coordinator);
-    }
-    return coordinator;
-  }, []);
+        });
+        coordinatorsRef.current.set(pid, coordinator);
+      }
+      return coordinator;
+    },
+    [services],
+  );
 
   useEffect(() => {
     onSaveStateChange?.(saveState);
@@ -173,15 +156,18 @@ export function DocumentEditor({
 
   useEffect(() => {
     editorRef.current = editor;
-    // 供附件类命令读取当前文档 ID（附件记录归属页面）。
     if (editor) {
-      (editor.storage as unknown as Record<string, unknown>).attachmentPageId = pageId;
+      const storage = editor.storage as unknown as Record<string, unknown>;
+      // 供附件类命令读取当前文档 ID（附件记录归属页面）与附件仓储
+      // （R003 阶段 5：扩展经 storage 通道取仓储，不 import infrastructure）。
+      storage.attachmentPageId = pageId;
+      storage.attachmentRepository = services.attachment;
     }
     onEditorReady(editor);
     return () => {
       onEditorReady(null);
     };
-  }, [editor, pageId, onEditorReady]);
+  }, [editor, pageId, onEditorReady, services]);
 
   // 恢复缓冲应用后：对恢复内容立即执行一次保存（每个编辑器实例最多一次）。
   const restoreHandledRef = useRef(0);

@@ -9,7 +9,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Editor } from "@tiptap/core";
 import type { DocumentContent } from "../domain/types";
 import { jsonToMarkdown } from "../editor/markdown";
-import { contentRepository } from "../infrastructure/repositories";
+import { useAppServices } from "../state/AppServicesProvider";
 import {
   discardRecovery,
   readRecovery,
@@ -65,6 +65,7 @@ function emptyContent(pageId: string): DocumentContent {
 
 /** 主栏：按视图渲染开始首页 / 知识库首页 / 文档编辑区。 */
 export function MainArea({ onOpenTree }: MainAreaProps) {
+  const services = useAppServices();
   const {
     pages,
     selectedPageId,
@@ -104,7 +105,7 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
     setCorrupted(null);
     pendingExitToBodyRef.current = false;
     if (view === "document" && page?.kind === "document") {
-      void contentRepository.get(page.id).then((result) => {
+      void services.content.get(page.id).then((result) => {
         if (cancelled) return;
         // 新建文档尚无内容行：以空文档作为初始内容，首次编辑即落盘。
         const base = result ?? emptyContent(page.id);
@@ -132,7 +133,7 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
     return () => {
       cancelled = true;
     };
-  }, [view, page?.id, page?.kind]);
+  }, [view, page?.id, page?.kind, services]);
 
   const onEditorReady = useCallback((instance: Editor | null) => {
     setEditor(instance);
@@ -194,7 +195,7 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
   // 损坏正文：以空白文档覆盖（原始 JSON 已保留在诊断记录中，可先导出）。
   const blankCorrupted = useCallback(async () => {
     if (!page) return;
-    await contentRepository.save(
+    await services.content.save(
       page.id,
       { type: "doc", content: [{ type: "paragraph" }] },
       "",
@@ -203,7 +204,7 @@ export function MainArea({ onOpenTree }: MainAreaProps) {
     setCorrupted(null);
     setContent(emptyContent(page.id));
     setContentEpoch((e) => e + 1);
-  }, [page]);
+  }, [page, services]);
 
   // 文档在主区域完成渲染后记录最近浏览时间（仅打开，不含搜索预览）。
   useEffect(() => {

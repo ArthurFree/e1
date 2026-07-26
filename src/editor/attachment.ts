@@ -1,15 +1,29 @@
 /**
  * 附件块扩展（对应 R001 §7.6 附件块）。
  * 文档节点只保存附件元数据（ID/名称/类型/大小），二进制 Blob 存 IndexedDB
- * attachments store，经 attachmentRepository 读写；下载走本地 Blob URL。
+ * attachments store；下载走本地 Blob URL。
  * 另有插入、校验、引用收集等工具函数供命令注册表与保存流程使用。
+ *
+ * 仓储注入（R003 阶段 5）：本模块不 import infrastructure；附件仓储由
+ * 编辑器宿主（DocumentEditor）写入 `editor.storage.attachmentRepository`，
+ * 经 getAttachmentRepository 读取。
  */
 import { Node } from "@tiptap/core";
 import type { Editor } from "@tiptap/core";
-import { attachmentRepository } from "../infrastructure/repositories";
+import type { AttachmentRepository } from "../domain/repositories";
 
 /** 附件大小上限：Blob 整体存 IndexedDB，超限直接拒绝（R001 §7.6）。 */
 export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+
+/** 从 editor.storage 读取附件仓储（由编辑器宿主装配时注入）。 */
+export function getAttachmentRepository(editor: Editor): AttachmentRepository {
+  const repository = (editor.storage as unknown as Record<string, unknown>)
+    .attachmentRepository as AttachmentRepository | undefined;
+  if (!repository) {
+    throw new Error("附件仓储未装配：editor.storage.attachmentRepository 缺失");
+  }
+  return repository;
+}
 
 /** 字节数的人性化展示（B/KB/MB，一位小数），用于附件块元信息。 */
 export function formatBytes(size: number): string {
@@ -41,7 +55,7 @@ export async function insertAttachmentFile(
   }
   let record;
   try {
-    record = await attachmentRepository.add({
+    record = await getAttachmentRepository(editor).add({
       pageId,
       name: file.name,
       mimeType: file.type || "application/octet-stream",
@@ -161,7 +175,7 @@ export const Attachment = Node.create({
       download.addEventListener("click", () => {
         void (async () => {
           status.textContent = "";
-          const record = await attachmentRepository
+          const record = await getAttachmentRepository(editor)
             .get(node.attrs.attachmentId as string)
             .catch(() => undefined);
           if (!record || !(record.blob instanceof Blob) || record.blob.size === 0) {

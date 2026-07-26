@@ -8,7 +8,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import type { Editor } from "@tiptap/core";
-import { AppProvider, useApp } from "../../state/AppState";
+import { useApp } from "../../state/AppState";
+import { TestApp } from "../../test/TestApp";
 import { resetDB } from "../../infrastructure/db";
 import {
   attachmentRepository,
@@ -80,9 +81,9 @@ describe("DocumentEditor 附件清理竞态", () => {
 
   it("旧快照的保存完成不得误删新插入的附件", async () => {
     render(
-      <AppProvider>
+      <TestApp>
         <Harness />
-      </AppProvider>,
+      </TestApp>,
     );
     await waitFor(() => expect(host.editor).not.toBeNull(), { timeout: 3000 });
     const editor = host.editor!;

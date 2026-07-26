@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import type { Editor } from "@tiptap/core";
-import { AppProvider, useApp } from "../../state/AppState";
+import { useApp } from "../../state/AppState";
+import { TestApp } from "../../test/TestApp";
 import { resetDB } from "../../infrastructure/db";
 import {
   contentRepository,
@@ -64,9 +65,9 @@ describe("DocumentEditor 保存状态与自动版本", () => {
 
   it("编辑后依次进入 未保存/保存中/已保存，并生成首个自动版本", async () => {
     render(
-      <AppProvider>
+      <TestApp>
         <Harness />
-      </AppProvider>,
+      </TestApp>,
     );
     await waitFor(() => expect(host.editor).not.toBeNull(), { timeout: 3000 });
     const editor = host.editor!;
@@ -94,9 +95,9 @@ describe("DocumentEditor 保存状态与自动版本", () => {
 
   it("保存失败进入错误态，重试后恢复已保存", async () => {
     render(
-      <AppProvider>
+      <TestApp>
         <Harness />
-      </AppProvider>,
+      </TestApp>,
     );
     await waitFor(() => expect(host.editor).not.toBeNull(), { timeout: 3000 });
     const editor = host.editor!;

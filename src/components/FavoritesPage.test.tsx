@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { AppProvider, useApp } from "../state/AppState";
+import { useApp } from "../state/AppState";
+import { TestApp } from "../test/TestApp";
 import { resetDB } from "../infrastructure/db";
 import {
   pageRepository,
@@ -26,9 +27,9 @@ describe("FavoritesPage", () => {
 
   it("无收藏时显示空态", async () => {
     render(
-      <AppProvider>
+      <TestApp>
         <Harness />
-      </AppProvider>,
+      </TestApp>,
     );
     expect(await screen.findByText("还没有收藏的知识库")).toBeInTheDocument();
     expect(screen.getByText("还没有收藏的文档")).toBeInTheDocument();
@@ -45,9 +46,9 @@ describe("FavoritesPage", () => {
     await pageRepository.setFavorite(welcome.id, 3000);
 
     render(
-      <AppProvider>
+      <TestApp>
         <Harness />
-      </AppProvider>,
+      </TestApp>,
     );
     const welcomeBtn = (await screen.findAllByRole("button", { name: /欢迎使用/ }))[0];
     expect(screen.getAllByRole("button", { name: /任务清单/ })[0]).toBeInTheDocument();
@@ -74,9 +75,9 @@ describe("FavoritesPage", () => {
     const [ws] = await workspaceRepository.list();
     await workspaceRepository.setFavorite(ws.id, 1000);
     render(
-      <AppProvider>
+      <TestApp>
         <Harness />
-      </AppProvider>,
+      </TestApp>,
     );
     const wsBtn = (await screen.findAllByRole("button", { name: /我的知识库/ }))[0];
     fireEvent.click(wsBtn);

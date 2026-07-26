@@ -11,11 +11,14 @@ import { attachmentRepository } from "../infrastructure/repositories";
 import { resetDB } from "../infrastructure/db";
 
 function createEditor(content?: unknown) {
-  return new Editor({
+  const editor = new Editor({
     element: document.createElement("div"),
     extensions: buildDocumentExtensions(),
     content: content as never,
   });
+  (editor.storage as unknown as Record<string, unknown>).attachmentRepository =
+    attachmentRepository;
+  return editor;
 }
 
 describe("附件工具函数", () => {

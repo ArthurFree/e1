@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { AppProvider, useApp } from "../state/AppState";
+import { useApp } from "../state/AppState";
+import { TestApp } from "../test/TestApp";
 import { resetDB } from "../infrastructure/db";
 import { StartPage } from "./StartPage";
 
@@ -23,9 +24,9 @@ describe("StartPage", () => {
 
   it("显示四个快速入口与编辑过活动列表", async () => {
     render(
-      <AppProvider>
+      <TestApp>
         <Harness />
-      </AppProvider>,
+      </TestApp>,
     );
     expect(await screen.findByText("新建文档")).toBeInTheDocument();
     expect(screen.getByText("新建知识库")).toBeInTheDocument();
@@ -39,9 +40,9 @@ describe("StartPage", () => {
 
   it("浏览过页签在无浏览记录时显示空态", async () => {
     render(
-      <AppProvider>
+      <TestApp>
         <Harness />
-      </AppProvider>,
+      </TestApp>,
     );
     await screen.findByText(/欢迎使用/);
     fireEvent.click(screen.getByRole("tab", { name: "浏览过" }));
@@ -50,9 +51,9 @@ describe("StartPage", () => {
 
   it("点击新建文档主区域在最近知识库创建并打开", async () => {
     render(
-      <AppProvider>
+      <TestApp>
         <Harness />
-      </AppProvider>,
+      </TestApp>,
     );
     // 等待最近使用标记落地（lastOpenedAt 异步写入后提示文案变化）。
     const create = await screen.findByRole("button", {
@@ -67,9 +68,9 @@ describe("StartPage", () => {
 
   it("下拉选择目标分组创建文档", async () => {
     render(
-      <AppProvider>
+      <TestApp>
         <Harness />
-      </AppProvider>,
+      </TestApp>,
     );
     const caret = await screen.findByRole("button", { name: "选择目标知识库或分组" });
     fireEvent.click(caret);
@@ -82,9 +83,9 @@ describe("StartPage", () => {
 
   it("点击归属路径定位到知识库", async () => {
     render(
-      <AppProvider>
+      <TestApp>
         <Harness />
-      </AppProvider>,
+      </TestApp>,
     );
     const path = await screen.findByText("我的知识库 / 产品资料");
     fireEvent.click(path);

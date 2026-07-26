@@ -9,8 +9,7 @@
 import { useState } from "react";
 import type { PickerTarget } from "../domain/picker";
 import { jsonToText, markdownToJson } from "../editor/markdown";
-import { createOpenAICompatibleProvider } from "../infrastructure/aiProvider";
-import { contentRepository, pageRepository } from "../infrastructure/repositories";
+import { useAppServices } from "../state/AppServicesProvider";
 import { useApp } from "../state/AppState";
 import { Dialog } from "./ui/Dialog";
 import { TargetPicker } from "./TargetPicker";
@@ -31,6 +30,7 @@ type Step = "input" | "generating" | "preview" | "error";
  * 取消或关闭不产生任何文档。
  */
 export function AIDraftModal({ onClose }: AIDraftModalProps) {
+  const services = useAppServices();
   const { preferences, openDocument, openSettings } = useApp();
   const [topic, setTopic] = useState("");
   const [draftType, setDraftType] = useState<string>(DRAFT_TYPES[0]);
@@ -69,7 +69,7 @@ export function AIDraftModal({ onClose }: AIDraftModalProps) {
     setStep("generating");
     setError("");
     try {
-      const provider = createOpenAICompatibleProvider(config);
+      const provider = services.createAIProvider(config);
       const result = await provider.complete({
         prompt: topic.trim(),
         mode: "draft",
@@ -85,7 +85,7 @@ export function AIDraftModal({ onClose }: AIDraftModalProps) {
 
   const confirmCreate = async () => {
     if (!target) return;
-    const page = await pageRepository.create({
+    const page = await services.page.create({
       workspaceId: target.workspaceId,
       parentId: target.parentId,
       kind: "document",
@@ -93,7 +93,7 @@ export function AIDraftModal({ onClose }: AIDraftModalProps) {
     });
     // AI 返回的 Markdown 经编辑器白名单解析后落盘。
     const json = markdownToJson(draft);
-    await contentRepository.save(page.id, json, jsonToText(json));
+    await services.content.save(page.id, json, jsonToText(json));
     onClose();
     await openDocument(page.id);
   };

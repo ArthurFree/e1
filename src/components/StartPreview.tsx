@@ -11,7 +11,7 @@ import {
   formatRelativeTime,
   type ActivityTab,
 } from "../domain/activity";
-import { pageRepository } from "../infrastructure/repositories";
+import { useAppServices } from "../state/AppServicesProvider";
 import { useApp } from "../state/AppState";
 import { PageIcon } from "./ui/icons";
 
@@ -25,6 +25,7 @@ const PREVIEW_LIMIT = 5;
 
 /** 侧栏“开始”入口的悬停/聚焦预览：最多 5 条最近文档，只用于快速打开。 */
 export function StartPreview({ onClose }: StartPreviewProps) {
+  const services = useAppServices();
   const { workspaces, openDocument } = useApp();
   const [allPages, setAllPages] = useState<Page[]>([]);
   const [tab, setTab] = useState<ActivityTab>("edited");
@@ -32,7 +33,7 @@ export function StartPreview({ onClose }: StartPreviewProps) {
 
   useEffect(() => {
     let cancelled = false;
-    void pageRepository
+    void services.page
       .listAll()
       .then((pages) => {
         if (!cancelled) setAllPages(pages);
@@ -41,7 +42,7 @@ export function StartPreview({ onClose }: StartPreviewProps) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [services]);
 
   const rows = useMemo(
     () => buildActivityRows({ pages: allPages, workspaces, tab }).slice(0, PREVIEW_LIMIT),

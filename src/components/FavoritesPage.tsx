@@ -13,7 +13,7 @@ import {
   favoriteWorkspaces,
   formatRelativeTime,
 } from "../domain/activity";
-import { pageRepository } from "../infrastructure/repositories";
+import { useAppServices } from "../state/AppServicesProvider";
 import { useApp } from "../state/AppState";
 import { PageIcon } from "./ui/icons";
 
@@ -31,12 +31,13 @@ export function FavoritesPage({ onOpenTree }: FavoritesPageProps) {
     togglePageFavorite,
     toggleWorkspaceFavorite,
   } = useApp();
+  const services = useAppServices();
   const [allPages, setAllPages] = useState<Page[]>([]);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     let cancelled = false;
-    void pageRepository
+    void services.page
       .listAll()
       .then((pages) => {
         if (!cancelled) {
@@ -49,7 +50,7 @@ export function FavoritesPage({ onOpenTree }: FavoritesPageProps) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [services]);
 
   const favWorkspaces = useMemo(() => favoriteWorkspaces(workspaces), [workspaces]);
   const favPages = useMemo(() => favoritePages(allPages), [allPages]);

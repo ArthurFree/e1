@@ -11,7 +11,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Editor, JSONContent } from "@tiptap/core";
 import { useApp } from "../../state/AppState";
 import { isAIConfigured, type AIMode } from "../../domain/ai";
-import { createOpenAICompatibleProvider } from "../../infrastructure/aiProvider";
+import { useAppServices } from "../../state/AppServicesProvider";
 import { markdownToJson } from "../../editor/markdown";
 import { Dialog } from "../ui/Dialog";
 import {
@@ -45,6 +45,7 @@ const REPLACE_MODES: ReadonlySet<AIMode> = new Set(["polish", "rewrite"]);
  * 结果先预览，经用户确认「应用」后才写入文档（经编辑器白名单解析）。
  */
 export function AIAssistantPanel({ editor }: AIAssistantPanelProps) {
+  const services = useAppServices();
   const { preferences, openSettings } = useApp();
   const configured = isAIConfigured(preferences.aiConfig);
 
@@ -64,7 +65,7 @@ export function AIAssistantPanel({ editor }: AIAssistantPanelProps) {
       setStatus("loading");
       setError("");
       try {
-        const provider = createOpenAICompatibleProvider(config);
+        const provider = services.createAIProvider(config);
         const text = await provider.complete({
           mode: req.mode,
           prompt: userPrompt,
@@ -80,7 +81,7 @@ export function AIAssistantPanel({ editor }: AIAssistantPanelProps) {
         setStatus("error");
       }
     },
-    [editor, preferences.aiConfig],
+    [editor, preferences.aiConfig, services],
   );
 
   const close = useCallback(() => {

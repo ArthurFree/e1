@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { AppProvider } from "../state/AppState";
+import { TestApp } from "../test/TestApp";
 import { resetDB } from "../infrastructure/db";
 import { SearchPanel } from "./SearchPanel";
 
@@ -14,9 +14,9 @@ describe("SearchPanel", () => {
   it("输入关键词后显示匹配文档，Enter 选中并关闭", async () => {
     const onClose = vi.fn();
     render(
-      <AppProvider>
+      <TestApp>
         <SearchPanel onClose={onClose} />
-      </AppProvider>,
+      </TestApp>,
     );
     const input = screen.getByLabelText("搜索文档");
     fireEvent.change(input, { target: { value: "本地优先" } });
@@ -36,9 +36,9 @@ describe("SearchPanel", () => {
 
   it("无匹配时显示空结果态", async () => {
     render(
-      <AppProvider>
+      <TestApp>
         <SearchPanel onClose={() => undefined} />
-      </AppProvider>,
+      </TestApp>,
     );
     fireEvent.change(screen.getByLabelText("搜索文档"), {
       target: { value: "肯定不存在的关键词xyz" },
@@ -50,9 +50,9 @@ describe("SearchPanel", () => {
 
   it("未输入时显示提示而非结果", () => {
     render(
-      <AppProvider>
+      <TestApp>
         <SearchPanel onClose={() => undefined} />
-      </AppProvider>,
+      </TestApp>,
     );
     expect(screen.getByText("输入关键词，按标题与正文查找文档。")).toBeInTheDocument();
   });

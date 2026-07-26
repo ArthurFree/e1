@@ -10,7 +10,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { useState } from "react";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import type { Editor } from "@tiptap/core";
-import { AppProvider, useApp } from "../../state/AppState";
+import { useApp } from "../../state/AppState";
+import { TestApp } from "../../test/TestApp";
 import { resetDB } from "../../infrastructure/db";
 import {
   contentRepository,
@@ -69,9 +70,9 @@ describe("DocumentEditor 文档切换时的挂起保存", () => {
 
   it("挂起编辑落盘到旧文档，不写入新文档", async () => {
     render(
-      <AppProvider>
+      <TestApp>
         <Harness />
-      </AppProvider>,
+      </TestApp>,
     );
     await waitFor(
       () => {

@@ -9,7 +9,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Editor } from "@tiptap/core";
 import type { DocumentRevision, RevisionReason } from "../domain/types";
 import { parseDocumentContent } from "../domain/validation/documentContent";
-import { contentRepository, revisionRepository } from "../infrastructure/repositories";
+import { useAppServices } from "../state/AppServicesProvider";
 import { Dialog } from "./ui/Dialog";
 import { EmptyState } from "./ui/EmptyState";
 
@@ -34,6 +34,7 @@ const REASON_LABEL: Record<RevisionReason, string> = {
  * 恢复前先把当前内容存为「恢复前」版本，再写回选中版本。
  */
 export function VersionPanel({ pageId, editor, onClose }: VersionPanelProps) {
+  const services = useAppServices();
   const [revisions, setRevisions] = useState<DocumentRevision[]>([]);
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
@@ -41,8 +42,8 @@ export function VersionPanel({ pageId, editor, onClose }: VersionPanelProps) {
   const [restoreError, setRestoreError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
-    setRevisions(await revisionRepository.listByPage(pageId));
-  }, [pageId]);
+    setRevisions(await services.revision.listByPage(pageId));
+  }, [pageId, services]);
 
   useEffect(() => {
     void reload();
@@ -58,7 +59,7 @@ export function VersionPanel({ pageId, editor, onClose }: VersionPanelProps) {
     }
     setRestoreError(null);
     // 恢复前保存当前版本，避免二次丢失。
-    await revisionRepository.add(
+    await services.revision.add(
       pageId,
       editor.getJSON(),
       editor.getText(),
@@ -66,7 +67,7 @@ export function VersionPanel({ pageId, editor, onClose }: VersionPanelProps) {
     );
     // 先替换编辑器内容再落盘，防止 DocumentEditor 的防抖保存把旧内容盖回来
     editor.commands.setContent(parsed.value as never);
-    await contentRepository.save(pageId, parsed.value, revision.textSnapshot);
+    await services.content.save(pageId, parsed.value, revision.textSnapshot);
     setConfirmId(null);
     onClose();
   };

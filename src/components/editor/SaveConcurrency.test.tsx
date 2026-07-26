@@ -10,8 +10,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import type { Editor } from "@tiptap/core";
-import { AppProvider, useApp } from "../../state/AppState";
+import { useApp } from "../../state/AppState";
 import { resetDB } from "../../infrastructure/db";
+import { TestApp } from "../../test/TestApp";
 import {
   contentRepository,
   pageRepository,
@@ -80,9 +81,9 @@ describe("DocumentEditor 并发保存", () => {
 
   it("后发起的保存先完成时，旧保存不得覆盖新内容", async () => {
     render(
-      <AppProvider>
+      <TestApp>
         <Harness />
-      </AppProvider>,
+      </TestApp>,
     );
     await waitFor(() => expect(host.editor).not.toBeNull(), { timeout: 3000 });
     const editor = host.editor!;
@@ -110,9 +111,9 @@ describe("DocumentEditor 并发保存", () => {
 
   it("旧保存完成时仍有未保存内容，不得显示已保存", async () => {
     render(
-      <AppProvider>
+      <TestApp>
         <Harness />
-      </AppProvider>,
+      </TestApp>,
     );
     await waitFor(() => expect(host.editor).not.toBeNull(), { timeout: 3000 });
     const editor = host.editor!;

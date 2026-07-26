@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Page } from "../domain/types";
 import { buildPickerTargets, type PickerTarget } from "../domain/picker";
-import { pageRepository } from "../infrastructure/repositories";
+import { useAppServices } from "../state/AppServicesProvider";
 import { useApp } from "../state/AppState";
 import { IconFolder } from "./ui/icons";
 
@@ -20,12 +20,13 @@ interface TargetPickerProps {
 
 /** 创建位置选择器：知识库根目录 + 全部分组，跨知识库列出。 */
 export function TargetPicker({ onSelect, className }: TargetPickerProps) {
+  const services = useAppServices();
   const { workspaces } = useApp();
   const [allPages, setAllPages] = useState<Page[]>([]);
 
   useEffect(() => {
     let cancelled = false;
-    void pageRepository
+    void services.page
       .listAll()
       .then((pages) => {
         if (!cancelled) setAllPages(pages);
@@ -34,7 +35,7 @@ export function TargetPicker({ onSelect, className }: TargetPickerProps) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [services]);
 
   const targets = useMemo(
     () => buildPickerTargets(workspaces, allPages),

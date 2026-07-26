@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { AppProvider, useApp } from "../state/AppState";
+import { useApp } from "../state/AppState";
+import { TestApp } from "../test/TestApp";
 import { resetDB } from "../infrastructure/db";
 import { preferencesRepository } from "../infrastructure/repositories";
 import { SettingsPanel } from "./SettingsPanel";
@@ -19,18 +20,18 @@ describe("SettingsPanel", () => {
 
   it("未配置时显示未配置状态", async () => {
     render(
-      <AppProvider>
+      <TestApp>
         <ReadySettingsPanel />
-      </AppProvider>,
+      </TestApp>,
     );
     expect(await screen.findByText("AI 未配置")).toBeInTheDocument();
   });
 
   it("非法 Endpoint 保存时显示校验错误", async () => {
     render(
-      <AppProvider>
+      <TestApp>
         <ReadySettingsPanel />
-      </AppProvider>,
+      </TestApp>,
     );
     fireEvent.change(await screen.findByLabelText("Endpoint"), {
       target: { value: "not-a-url" },
@@ -47,9 +48,9 @@ describe("SettingsPanel", () => {
 
   it("合法配置保存后写入 IndexedDB 并可清除", async () => {
     render(
-      <AppProvider>
+      <TestApp>
         <ReadySettingsPanel />
-      </AppProvider>,
+      </TestApp>,
     );
     fireEvent.change(await screen.findByLabelText("Endpoint"), {
       target: { value: "https://api.openai.com/v1" },

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { AppProvider } from "../state/AppState";
+import { TestApp } from "../test/TestApp";
 import { resetDB } from "../infrastructure/db";
 import { pageRepository, workspaceRepository } from "../infrastructure/repositories";
 import { TrashPanel } from "./TrashPanel";
@@ -13,9 +13,9 @@ describe("TrashPanel", () => {
 
   it("回收站为空时显示空态", async () => {
     render(
-      <AppProvider>
+      <TestApp>
         <TrashPanel onClose={() => undefined} />
-      </AppProvider>,
+      </TestApp>,
     );
     expect(await screen.findByText("回收站是空的。")).toBeInTheDocument();
   });
@@ -31,9 +31,9 @@ describe("TrashPanel", () => {
     await pageRepository.remove(page.id);
 
     render(
-      <AppProvider>
+      <TestApp>
         <TrashPanel onClose={() => undefined} />
-      </AppProvider>,
+      </TestApp>,
     );
     const restore = await screen.findByLabelText("恢复「待恢复」");
     fireEvent.click(restore);
@@ -51,9 +51,9 @@ describe("TrashPanel", () => {
     await pageRepository.remove(page.id);
 
     render(
-      <AppProvider>
+      <TestApp>
         <TrashPanel onClose={() => undefined} />
-      </AppProvider>,
+      </TestApp>,
     );
     const purge = await screen.findByLabelText("彻底删除「待删除」");
     fireEvent.click(purge);

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { Editor } from "@tiptap/core";
-import { AppProvider } from "../../state/AppState";
+import { TestApp } from "../../test/TestApp";
 import { resetDB } from "../../infrastructure/db";
 import { preferencesRepository } from "../../infrastructure/repositories";
 import { buildEditorExtensions } from "../../editor/extensions";
@@ -50,9 +50,9 @@ describe("AIAssistantPanel", () => {
   it("未配置 AI 时安全降级，提供设置入口", async () => {
     const editor = createEditor("正文");
     render(
-      <AppProvider>
+      <TestApp>
         <AIAssistantPanel editor={editor} />
-      </AppProvider>,
+      </TestApp>,
     );
     act(() => openAIAssistant({ mode: "ask", from: 1, to: 1 }));
     expect(await screen.findByText(/尚未配置 AI 服务/)).toBeInTheDocument();
@@ -67,9 +67,9 @@ describe("AIAssistantPanel", () => {
     mockFetchResult("AI 回答内容");
     const editor = createEditor("正文");
     render(
-      <AppProvider>
+      <TestApp>
         <AIAssistantPanel editor={editor} />
-      </AppProvider>,
+      </TestApp>,
     );
     const end = editor.state.doc.content.size;
     act(() => openAIAssistant({ mode: "ask", from: end, to: end }));
@@ -94,9 +94,9 @@ describe("AIAssistantPanel", () => {
     mockFetchResult("润色后的文字");
     const editor = createEditor("这是一段需要润色的文字");
     render(
-      <AppProvider>
+      <TestApp>
         <AIAssistantPanel editor={editor} />
-      </AppProvider>,
+      </TestApp>,
     );
     act(() =>
       openAIAssistant({ mode: "polish", selection: "需要润色", from: 5, to: 9 }),
@@ -122,9 +122,9 @@ describe("AIAssistantPanel", () => {
     );
     const editor = createEditor("正文");
     render(
-      <AppProvider>
+      <TestApp>
         <AIAssistantPanel editor={editor} />
-      </AppProvider>,
+      </TestApp>,
     );
     act(() => openAIAssistant({ mode: "summarize", selection: "正文", from: 1, to: 3 }));
     expect(await screen.findByText("API Key 无效或没有权限")).toBeInTheDocument();

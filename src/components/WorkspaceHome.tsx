@@ -10,7 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { DocumentContent, Page } from "../domain/types";
 import { formatRelativeTime, workspaceDocStats } from "../domain/activity";
 import { childrenOf } from "../domain/pageTree";
-import { contentRepository } from "../infrastructure/repositories";
+import { useAppServices } from "../state/AppServicesProvider";
 import { useApp } from "../state/AppState";
 import { PageIcon } from "./ui/icons";
 
@@ -21,6 +21,7 @@ interface WorkspaceHomeProps {
 
 /** 知识库首页：头部信息、统计、主操作与完整目录概览（不拖拽）。 */
 export function WorkspaceHome({ onOpenTree }: WorkspaceHomeProps) {
+  const services = useAppServices();
   const {
     workspace,
     pages,
@@ -35,13 +36,13 @@ export function WorkspaceHome({ onOpenTree }: WorkspaceHomeProps) {
   // 总字数统计需要正文快照，页面元数据里没有，只能额外取内容行
   useEffect(() => {
     let cancelled = false;
-    void contentRepository.listAll().then((list) => {
+    void services.content.listAll().then((list) => {
       if (!cancelled) setContents(list);
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [services]);
 
   const stats = useMemo(
     () => (workspace ? workspaceDocStats(pages, contents, workspace.id) : null),

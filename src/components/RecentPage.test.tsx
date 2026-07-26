@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { AppProvider, useApp } from "../state/AppState";
+import { useApp } from "../state/AppState";
+import { TestApp } from "../test/TestApp";
 import { resetDB } from "../infrastructure/db";
 import { RecentPage } from "./RecentPage";
 
@@ -29,9 +30,9 @@ describe("RecentPage", () => {
 
   it("显示最近编辑列表并可切换最近浏览", async () => {
     render(
-      <AppProvider>
+      <TestApp>
         <Harness />
-      </AppProvider>,
+      </TestApp>,
     );
     expect(await screen.findByText(/欢迎使用/)).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "编辑过" })).toHaveAttribute(
@@ -45,9 +46,9 @@ describe("RecentPage", () => {
 
   it("打开文档后出现在最近浏览中", async () => {
     render(
-      <AppProvider>
+      <TestApp>
         <Harness />
-      </AppProvider>,
+      </TestApp>,
     );
     const title = await screen.findByRole("button", { name: /任务清单/ });
     fireEvent.click(title);

@@ -1,7 +1,8 @@
 import { useEffect, useRef } from "react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { AppProvider, useApp } from "../state/AppState";
+import { useApp } from "../state/AppState";
+import { TestApp } from "../test/TestApp";
 import { resetDB } from "../infrastructure/db";
 import { WorkspaceHome } from "./WorkspaceHome";
 
@@ -30,9 +31,9 @@ describe("WorkspaceHome", () => {
 
   it("显示知识库头部、统计与完整目录概览", async () => {
     render(
-      <AppProvider>
+      <TestApp>
         <Harness />
-      </AppProvider>,
+      </TestApp>,
     );
     expect(await screen.findByText("我的知识库")).toBeInTheDocument();
     // 种子数据：3 篇文档（分组不计入），总字数大于 0。
@@ -46,9 +47,9 @@ describe("WorkspaceHome", () => {
 
   it("分组可展开收起，点击文档进入编辑", async () => {
     render(
-      <AppProvider>
+      <TestApp>
         <Harness />
-      </AppProvider>,
+      </TestApp>,
     );
     const groupHeader = await screen.findByRole("button", { name: /产品资料/ });
     fireEvent.click(groupHeader);
@@ -64,9 +65,9 @@ describe("WorkspaceHome", () => {
 
   it("收藏切换与新建分组", async () => {
     render(
-      <AppProvider>
+      <TestApp>
         <Harness />
-      </AppProvider>,
+      </TestApp>,
     );
     const favorite = await screen.findByRole("button", { name: "收藏知识库" });
     fireEvent.click(favorite);

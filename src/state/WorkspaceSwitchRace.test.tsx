@@ -8,8 +8,9 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, waitFor } from "@testing-library/react";
-import { AppProvider, useApp } from "./AppState";
+import { useApp } from "./AppState";
 import { resetDB } from "../infrastructure/db";
+import { TestApp } from "../test/TestApp";
 import {
   pageRepository,
   tagRepository,
@@ -58,9 +59,9 @@ describe("工作区切换竞态", () => {
 
   it("快速连切时只有最后一次切换生效", async () => {
     render(
-      <AppProvider>
+      <TestApp>
         <Probe />
-      </AppProvider>,
+      </TestApp>,
     );
     await waitFor(() => expect(host.app?.ready).toBe(true), { timeout: 3000 });
 

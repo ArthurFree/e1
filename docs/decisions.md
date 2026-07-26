@@ -21,5 +21,9 @@
 | 正文 JSON 校验（R003 阶段 4） | 读路径经 `parseDocumentContent` 白名单校验，损坏不进编辑器；「尝试恢复」用 sanitize 尽力保留合法内容，原始 JSON 可导出 | 损坏数据曾可让编辑器白屏；白名单与 extensions.ts 的同步由 schema 测试强制 |
 | 领域错误码（R003 阶段 4） | 统一 `DomainError` + 稳定 code（PAGE_NOT_FOUND / CROSS_WORKSPACE_PARENT / CORRUPTED_DOCUMENT 等），message 保留中文文案 | code 供程序判断，UI 不解析错误字符串 |
 | 页面/标签关系约束（R003 阶段 4） | 仓储层强制：父级存在/同知识库/未删除、标签与页面同知识库、kind 与标题入参校验 | 约束放在仓储层才能覆盖全部写入口（UI、模板、AI、未来的同步适配器） |
+| 服务容器注入（R003 阶段 5） | `AppServices` 容器 + `AppServicesProvider`；生产装 `createBrowserAppServices`（IndexedDB），测试可换内存容器；Tiptap 扩展经 `editor.storage` 取仓储 |  UI/状态层不再 import infrastructure， IndexedDB 可整体替换 |
+| use-case 承载方式（R003 阶段 5） | 不另建 25 个 use-case 类；用例编排由 AppState actions + application 服务（SaveCoordinator/WorkspaceSessionService/PreferencesService）承载 | 同义类是投机性重复；既有服务已可独立单测 |
+| 内存仓储（R003 阶段 5） | `infrastructure/memory/` 实现全部 7 个 port，复用 domain/pageTree，与 IndexedDB 版共用不变量断言 | 作为可替换性证明与未来存储后端参照 |
+| 架构约束检查（R003 阶段 5） | vitest + `import.meta.glob` 源码扫描（`src/test/architecture.test.ts`），不引入 ESLint | 项目无 ESLint 依赖；R003 允许「ESLint 或脚本」 |
 
 任何会改变以上结论的需求，应先更新本文件及受影响的需求、架构和测试文档。

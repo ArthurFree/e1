@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import type { Editor } from "@tiptap/core";
-import { AppProvider, useApp } from "../../state/AppState";
+import { useApp } from "../../state/AppState";
+import { TestApp } from "../../test/TestApp";
 import { resetDB } from "../../infrastructure/db";
 import {
   attachmentRepository,
@@ -48,9 +49,9 @@ describe("DocumentEditor 附件孤儿清理", () => {
 
   it("移除附件块并保存后清理附件记录", async () => {
     render(
-      <AppProvider>
+      <TestApp>
         <Harness />
-      </AppProvider>,
+      </TestApp>,
     );
     await waitFor(() => expect(host.editor).not.toBeNull(), { timeout: 3000 });
     const editor = host.editor!;

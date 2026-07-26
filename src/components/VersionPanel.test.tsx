@@ -3,6 +3,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { Editor } from "@tiptap/core";
 import { resetDB } from "../infrastructure/db";
 import { contentRepository, revisionRepository } from "../infrastructure/repositories";
+import { createBrowserAppServices } from "../infrastructure/browserServices";
+import { AppServicesProvider } from "../state/AppServicesProvider";
 import { buildDocumentExtensions } from "../editor/extensions";
 import { VersionPanel } from "./VersionPanel";
 
@@ -27,7 +29,11 @@ describe("VersionPanel", () => {
 
   it("无版本时显示空态", async () => {
     const editor = createEditor("当前内容");
-    render(<VersionPanel pageId={PAGE_ID} editor={editor} onClose={() => undefined} />);
+    render(
+      <AppServicesProvider services={createBrowserAppServices()}>
+        <VersionPanel pageId={PAGE_ID} editor={editor} onClose={() => undefined} />
+      </AppServicesProvider>,
+    );
     expect(await screen.findByText(/暂无历史版本/)).toBeInTheDocument();
     editor.destroy();
   });
@@ -35,7 +41,11 @@ describe("VersionPanel", () => {
   it("列出版本时间与原因，展开显示摘要", async () => {
     await revisionRepository.add(PAGE_ID, { type: "doc", content: [] }, "旧内容摘要", "interval");
     const editor = createEditor("当前内容");
-    render(<VersionPanel pageId={PAGE_ID} editor={editor} onClose={() => undefined} />);
+    render(
+      <AppServicesProvider services={createBrowserAppServices()}>
+        <VersionPanel pageId={PAGE_ID} editor={editor} onClose={() => undefined} />
+      </AppServicesProvider>,
+    );
 
     expect(await screen.findByText("自动")).toBeInTheDocument();
     fireEvent.click(screen.getByText(/旧内容摘要/));
@@ -51,7 +61,11 @@ describe("VersionPanel", () => {
     await revisionRepository.add(PAGE_ID, oldJson, "历史版本内容", "interval");
     const editor = createEditor("当前内容");
     const onClose = () => undefined;
-    render(<VersionPanel pageId={PAGE_ID} editor={editor} onClose={onClose} />);
+    render(
+      <AppServicesProvider services={createBrowserAppServices()}>
+        <VersionPanel pageId={PAGE_ID} editor={editor} onClose={onClose} />
+      </AppServicesProvider>,
+    );
 
     fireEvent.click(await screen.findByText(/历史版本内容/));
     fireEvent.click(await screen.findByText("恢复此版本"));
@@ -75,7 +89,11 @@ describe("VersionPanel", () => {
     const badJson = { type: "doc", content: [{ type: "evilNode" }] };
     await revisionRepository.add(PAGE_ID, badJson, "损坏版本摘要", "interval");
     const editor = createEditor("当前内容");
-    render(<VersionPanel pageId={PAGE_ID} editor={editor} onClose={() => undefined} />);
+    render(
+      <AppServicesProvider services={createBrowserAppServices()}>
+        <VersionPanel pageId={PAGE_ID} editor={editor} onClose={() => undefined} />
+      </AppServicesProvider>,
+    );
 
     fireEvent.click(await screen.findByText(/损坏版本摘要/));
     fireEvent.click(await screen.findByText("恢复此版本"));

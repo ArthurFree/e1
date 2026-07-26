@@ -15,7 +15,7 @@ import {
   type DropZone,
 } from "../domain/pageTree";
 import { jsonToText, markdownToJson } from "../editor/markdown";
-import { contentRepository } from "../infrastructure/repositories";
+import { useAppServices } from "../state/AppServicesProvider";
 import { useApp } from "../state/AppState";
 import { IconHome, PageIcon } from "./ui/icons";
 
@@ -31,6 +31,7 @@ const DND_MIME = "application/x-page-id";
 
 /** 文档树侧栏：层级展示、新建、重命名、删除、拖拽移动、标签筛选、Markdown 导入。 */
 export function PageTreeSidebar({ open, onClose }: PageTreeSidebarProps) {
+  const services = useAppServices();
   const {
     pages,
     selectedPageId,
@@ -119,7 +120,7 @@ export function PageTreeSidebar({ open, onClose }: PageTreeSidebarProps) {
       // 以文件名（去扩展名）作为初始标题，无名文件降级为「导入文档」
       const title = file.name.replace(/\.(md|markdown)$/i, "") || "导入文档";
       await renamePage(page.id, title);
-      await contentRepository.save(page.id, json, jsonToText(json));
+      await services.content.save(page.id, json, jsonToText(json));
       selectPage(page.id);
     } catch (error) {
       setImportError(

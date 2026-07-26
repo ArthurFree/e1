@@ -9,7 +9,7 @@ import { useState } from "react";
 import { jsonToText } from "../editor/markdown";
 import { DOC_TEMPLATES, type DocTemplate } from "../editor/templates";
 import type { PickerTarget } from "../domain/picker";
-import { contentRepository, pageRepository } from "../infrastructure/repositories";
+import { useAppServices } from "../state/AppServicesProvider";
 import { useApp } from "../state/AppState";
 import { Dialog } from "./ui/Dialog";
 import { TargetPicker } from "./TargetPicker";
@@ -24,17 +24,18 @@ interface TemplateCenterProps {
  * 选择模板 → 选择目标知识库/分组 → 创建副本并打开；取消不产生任何文档。
  */
 export function TemplateCenter({ onClose }: TemplateCenterProps) {
+  const services = useAppServices();
   const { workspaces, openDocument } = useApp();
   const [selected, setSelected] = useState<DocTemplate | null>(null);
 
   const createFromTemplate = async (template: DocTemplate, target: PickerTarget) => {
-    const page = await pageRepository.create({
+    const page = await services.page.create({
       workspaceId: target.workspaceId,
       parentId: target.parentId,
       kind: "document",
       title: template.id === "blank" ? "无标题" : template.name,
     });
-    await contentRepository.save(page.id, template.content, jsonToText(template.content));
+    await services.content.save(page.id, template.content, jsonToText(template.content));
     onClose();
     await openDocument(page.id);
   };

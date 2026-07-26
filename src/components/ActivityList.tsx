@@ -13,7 +13,7 @@ import {
   formatRelativeTime,
   type ActivityTab,
 } from "../domain/activity";
-import { pageRepository } from "../infrastructure/repositories";
+import { useAppServices } from "../state/AppServicesProvider";
 import { useApp } from "../state/AppState";
 import { IconStar, IconStarFilled, PageIcon } from "./ui/icons";
 
@@ -22,6 +22,7 @@ import { IconStar, IconStarFilled, PageIcon } from "./ui/icons";
  * 开始首页与“最近”视图共用。
  */
 export function ActivityList() {
+  const services = useAppServices();
   const { workspaces, openDocument, locatePage, togglePageFavorite } = useApp();
   const [allPages, setAllPages] = useState<Page[]>([]);
   const [tab, setTab] = useState<ActivityTab>("edited");
@@ -33,7 +34,7 @@ export function ActivityList() {
   // AppState 只持有当前知识库的页面子集
   useEffect(() => {
     let cancelled = false;
-    void pageRepository
+    void services.page
       .listAll()
       .then((pages) => {
         if (!cancelled) {
@@ -46,7 +47,7 @@ export function ActivityList() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [services]);
 
   const rows = useMemo(
     () =>

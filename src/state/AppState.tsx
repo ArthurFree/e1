@@ -39,24 +39,9 @@ import type {
 import { DEFAULT_PREFERENCES } from "../domain/types";
 import { searchPages } from "../domain/search";
 import { parseRoute, serializeRoute, type AppRoute } from "../domain/route";
-import {
-  contentRepository,
-  pageRepository,
-  preferencesRepository,
-  tagRepository,
-  workspaceRepository,
-} from "../infrastructure/repositories";
-import {
-  WorkspaceSessionService,
-  type WorkspaceSessionData,
-} from "../application/services/WorkspaceSessionService";
+import type { WorkspaceSessionData } from "../application/services/WorkspaceSessionService";
 import { PreferencesService } from "../application/services/PreferencesService";
-
-/** 会话加载服务装配点：生产环境注入 IndexedDB 仓储实现。 */
-const sessionService = new WorkspaceSessionService({
-  pages: pageRepository,
-  tags: tagRepository,
-});
+import { useAppServices } from "./AppServicesProvider";
 
 /** 知识库会话加载状态。 */
 export type WorkspaceSessionStatus = "idle" | "loading" | "ready" | "error";
@@ -243,6 +228,17 @@ export type MainView = "start" | "recent" | "favorites" | "workspace" | "documen
 
 /** 全局状态 Provider：挂载时加载知识库与偏好并恢复上次路由。 */
 export function AppProvider({ children }: { children: ReactNode }) {
+  // 应用能力一律来自服务容器（R003 阶段 5）：不再直接 import infrastructure。
+  // 解构别名保持下文调用点不变；容器引用稳定（生产为单例），不影响 hook 依赖语义。
+  const services = useAppServices();
+  const {
+    workspace: workspaceRepository,
+    page: pageRepository,
+    content: contentRepository,
+    tag: tagRepository,
+    preferences: preferencesRepository,
+    session: sessionService,
+  } = services;
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadKey, setLoadKey] = useState(0);
@@ -269,7 +265,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setRoutePersistenceStatus("error");
         },
       }),
-    [],
+    [preferencesRepository],
   );
 
   const workspaceId = session.workspaceId;
@@ -872,6 +868,3 @@ export function useApp(): AppState {
   if (!ctx) throw new Error("useApp 必须在 AppProvider 内使用");
   return ctx;
 }
-
-/** 供文档编辑器阶段使用：读取页面正文。 */
-export { contentRepository };

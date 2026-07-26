@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { AppProvider, useApp } from "../state/AppState";
+import { useApp } from "../state/AppState";
+import { TestApp } from "../test/TestApp";
 import { resetDB } from "../infrastructure/db";
 import {
   contentRepository,
@@ -52,9 +53,9 @@ describe("AIDraftModal", () => {
 
   it("生成预览后确认才创建文档，正文经白名单解析", async () => {
     render(
-      <AppProvider>
+      <TestApp>
         <Harness />
-      </AppProvider>,
+      </TestApp>,
     );
     fireEvent.change(await screen.findByLabelText("文档主题"), {
       target: { value: "Q3 复盘" },
@@ -83,9 +84,9 @@ describe("AIDraftModal", () => {
 
   it("取消流程不创建文档", async () => {
     render(
-      <AppProvider>
+      <TestApp>
         <Harness />
-      </AppProvider>,
+      </TestApp>,
     );
     fireEvent.change(await screen.findByLabelText("文档主题"), {
       target: { value: "不要创建" },
@@ -104,9 +105,9 @@ describe("AIDraftModal", () => {
       vi.fn(async () => ({ ok: false, status: 500, json: async () => ({}) })),
     );
     render(
-      <AppProvider>
+      <TestApp>
         <Harness />
-      </AppProvider>,
+      </TestApp>,
     );
     fireEvent.change(await screen.findByLabelText("文档主题"), {
       target: { value: "失败案例" },
