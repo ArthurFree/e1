@@ -7,6 +7,7 @@
 import type { AppServices } from "../application/AppServices";
 import { DocumentSaveCoordinator } from "../application/services/SaveCoordinator";
 import { WorkspaceSessionService } from "../application/services/WorkspaceSessionService";
+import { SearchIndexService } from "../application/services/SearchIndexService";
 import {
   clearRecovery,
   writeRecovery,
@@ -30,7 +31,9 @@ export function createBrowserAppServices(): AppServices {
   const session = new WorkspaceSessionService({
     pages: pageRepository,
     tags: tagRepository,
+    content: contentRepository,
   });
+  const searchIndex = new SearchIndexService();
   instance = {
     workspace: workspaceRepository,
     page: pageRepository,
@@ -40,6 +43,7 @@ export function createBrowserAppServices(): AppServices {
     tag: tagRepository,
     preferences: preferencesRepository,
     session,
+    searchIndex,
     createAIProvider: createOpenAICompatibleProvider,
     createSaveCoordinator: (pageId, onStateChange) =>
       new DocumentSaveCoordinator(pageId, {
@@ -47,6 +51,8 @@ export function createBrowserAppServices(): AppServices {
         revisions: revisionRepository,
         attachments: attachmentRepository,
         recovery: { write: writeRecovery, clear: clearRecovery },
+        // 保存成功 → 搜索索引增量更新（R003 阶段 7）。
+        onSaved: (pid, text, at) => searchIndex.updateText(pid, text, at),
         onStateChange,
       }),
   };

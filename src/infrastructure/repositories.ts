@@ -42,6 +42,7 @@ import {
   STORE_TRASH,
   STORE_WORKSPACES,
 } from "./db";
+import type { IDBPDatabase, IDBPTransaction } from "idb";
 import { ensureSeeded } from "./seed";
 import { createId } from "./id";
 
@@ -195,16 +196,33 @@ function validateCreatePageInput(input: CreatePageInput): void {
   }
 }
 
+/** 按键直取 + normalize 的页面读取；不存在或损坏返回 null。 */
+async function getPage(db: IDBPDatabase, id: string): Promise<Page | null> {
+  return normalizePage(await db.get(STORE_PAGES, id));
+}
+
+/** 工作区页面索引查询（R003 阶段 7）：替代 getAll 全表扫描。 */
+async function listWorkspacePages(
+  db: IDBPDatabase,
+  workspaceId: string,
+): Promise<Page[]> {
+  const rows = (await db.getAllFromIndex(
+    STORE_PAGES,
+    "workspaceId",
+    workspaceId,
+  )) as unknown[];
+  return rows.map(normalizePage).filter((p): p is Page => p !== null);
+}
+
 /**
  * 父级关系约束：父级必须存在、与被操作的页面同属一个知识库、未进回收站。
- * pages 为全量规范化页面（不限工作区），用于区分「不存在」与「跨知识库」。
+ * parent 为按键直取的记录；null 表示不存在或损坏。
  */
 function assertValidParent(
-  pages: Page[],
+  parent: Page | null,
   parentId: string,
   workspaceId: string,
 ): void {
-  const parent = pages.find((p) => p.id === parentId);
   if (!parent) {
     throw new DomainError("PARENT_NOT_FOUND", `父页面不存在: ${parentId}`);
   }
@@ -225,11 +243,14 @@ export const pageRepository: PageRepository = {
   async listByWorkspace(workspaceId) {
     const db = await getDB();
     await ensureSeeded(db);
-    const all = (await db.getAll(STORE_PAGES)) as unknown[];
-    // 损坏数据降级：核心字段非法的记录跳过，缺失新字段补默认值。
-    return all
-      .map(normalizePage)
-      .filter((p): p is Page => p !== null && p.workspaceId === workspaceId);
+    // 索引查询（R003 阶段 7）：只取本知识库页面，不再全表扫描；
+    // 损坏数据降级不变：核心字段非法的记录跳过，缺失新字段补默认值。
+    const rows = (await db.getAllFromIndex(
+      STORE_PAGES,
+      "workspaceId",
+      workspaceId,
+    )) as unknown[];
+    return rows.map(normalizePage).filter((p): p is Page => p !== null);
   },
 
   async listAll() {
@@ -252,14 +273,13 @@ export const pageRepository: PageRepository = {
         `知识库不存在或数据损坏: ${input.workspaceId}`,
       );
     }
-    const all = ((await db.getAll(STORE_PAGES)) as unknown[])
-      .map(normalizePage)
-      .filter((p): p is Page => p !== null);
-    // 父级必须存在、同属本知识库、未删除。
+    // 父级必须存在、同属本知识库、未删除（按键直取，不全扫）。
     if (input.parentId !== null) {
-      assertValidParent(all, input.parentId, input.workspaceId);
+      const parent = normalizePage(await db.get(STORE_PAGES, input.parentId));
+      assertValidParent(parent, input.parentId, input.workspaceId);
     }
-    const pages = all.filter((p) => p.workspaceId === input.workspaceId);
+    // 兄弟集合走 workspaceId 索引（R003 阶段 7），position 语义不变。
+    const pages = await listWorkspacePages(db, input.workspaceId);
     const now = Date.now();
     // position 取同父级兄弟的下一个空位（追加到末尾），由 pageTree 纯函数计算。
     const page: Page = {
@@ -312,19 +332,18 @@ export const pageRepository: PageRepository = {
 
   async move(id, newParentId, index) {
     const db = await getDB();
-    const all = ((await db.getAll(STORE_PAGES)) as unknown[])
-      .map(normalizePage)
-      .filter((p): p is Page => p !== null);
-    const page = all.find((p) => p.id === id);
+    const page = await getPage(db, id);
     if (!page) throw new DomainError("PAGE_NOT_FOUND", `页面不存在或数据损坏: ${id}`);
     // 新父级必须存在、同属本知识库、未删除（R003 阶段 4：页面关系约束）。
     if (newParentId !== null) {
-      assertValidParent(all, newParentId, page.workspaceId);
+      const parent = await getPage(db, newParentId);
+      assertValidParent(parent, newParentId, page.workspaceId);
     }
-    if (wouldCreateCycle(all, id, newParentId)) {
+    // 子树/环运算只需要本知识库页面（跨库父级已被禁止），走索引查询。
+    const workspacePages = await listWorkspacePages(db, page.workspaceId);
+    if (wouldCreateCycle(workspacePages, id, newParentId)) {
       throw new DomainError("PAGE_TREE_CYCLE", "不能移动到自身或其子页面下");
     }
-    const workspacePages = all.filter((p) => p.workspaceId === page.workspaceId);
     const targetIndex =
       index ?? childrenOf(workspacePages, newParentId).filter((p) => p.id !== id).length;
     const next = movePage(workspacePages, id, newParentId, targetIndex);
@@ -344,11 +363,9 @@ export const pageRepository: PageRepository = {
 
   async remove(id) {
     const db = await getDB();
-    const all = ((await db.getAll(STORE_PAGES)) as unknown[])
-      .map(normalizePage)
-      .filter((p): p is Page => p !== null);
-    const page = all.find((p) => p.id === id);
+    const page = await getPage(db, id);
     if (!page) throw new DomainError("PAGE_NOT_FOUND", `页面不存在或数据损坏: ${id}`);
+    const all = await listWorkspacePages(db, page.workspaceId);
     const now = Date.now();
     const ids = collectSubtreeIds(all, id);
     const tx = db.transaction([STORE_PAGES, STORE_TRASH], "readwrite");
@@ -368,11 +385,9 @@ export const pageRepository: PageRepository = {
 
   async restore(id) {
     const db = await getDB();
-    const all = ((await db.getAll(STORE_PAGES)) as unknown[])
-      .map(normalizePage)
-      .filter((p): p is Page => p !== null);
-    const page = all.find((p) => p.id === id);
+    const page = await getPage(db, id);
     if (!page) throw new DomainError("PAGE_NOT_FOUND", `页面不存在或数据损坏: ${id}`);
+    const all = await listWorkspacePages(db, page.workspaceId);
     const ids = collectSubtreeIds(all, id);
     const trash = (await db.getAll(STORE_TRASH)) as {
       pageId: string;
@@ -409,59 +424,76 @@ export const pageRepository: PageRepository = {
 
   async purge(id) {
     const db = await getDB();
-    const all = ((await db.getAll(STORE_PAGES)) as unknown[])
-      .map(normalizePage)
-      .filter((p): p is Page => p !== null);
-    const page = all.find((p) => p.id === id);
+    const page = await getPage(db, id);
     if (!page) throw new DomainError("PAGE_NOT_FOUND", `页面不存在或数据损坏: ${id}`);
-    const ids = collectSubtreeIds(all, id);
+    const ids = collectSubtreeIds(
+      await listWorkspacePages(db, page.workspaceId),
+      id,
+    );
     const tx = db.transaction(
       [STORE_PAGES, STORE_CONTENTS, STORE_PAGE_TAGS, STORE_TRASH, STORE_REVISIONS, STORE_ATTACHMENTS],
       "readwrite",
     );
-    for (const pageId of ids) {
-      await tx.objectStore(STORE_PAGES).delete(pageId);
-      await tx.objectStore(STORE_CONTENTS).delete(pageId);
-      await tx.objectStore(STORE_TRASH).delete(pageId);
-      const tagKeys = await tx
-        .objectStore(STORE_PAGE_TAGS)
-        .index("pageId")
-        .getAllKeys(pageId);
-      for (const key of tagKeys) {
-        await tx.objectStore(STORE_PAGE_TAGS).delete(key);
-      }
-      // 级联：版本与附件随永久删除清理（回收站内保留以便恢复）。
-      const revisionKeys = await tx
-        .objectStore(STORE_REVISIONS)
-        .index("pageId")
-        .getAllKeys(pageId);
-      for (const key of revisionKeys) {
-        await tx.objectStore(STORE_REVISIONS).delete(key);
-      }
-      const attachmentKeys = await tx
-        .objectStore(STORE_ATTACHMENTS)
-        .index("pageId")
-        .getAllKeys(pageId);
-      for (const key of attachmentKeys) {
-        await tx.objectStore(STORE_ATTACHMENTS).delete(key);
-      }
-    }
+    await purgePagesInTx(tx, ids);
     await tx.done;
   },
 
   async purgeTrashed(workspaceId) {
-    const pages = await pageRepository.listByWorkspace(workspaceId);
-    const trashed = pages.filter((p) => p.deletedAt !== null);
-    const trashedIds = new Set(trashed.map((p) => p.id));
-    // 只从回收站的“根”开始清，避免同一子树被重复 purge。
-    const roots = trashed.filter(
-      (p) => p.parentId === null || !trashedIds.has(p.parentId),
+    // 单事务清空（R003 阶段 7）：不再逐根页面循环 purge。
+    const db = await getDB();
+    const pages = await listWorkspacePages(db, workspaceId);
+    const trashedIds = new Set(
+      pages.filter((p) => p.deletedAt !== null).map((p) => p.id),
     );
-    for (const root of roots) {
-      await pageRepository.purge(root.id);
+    if (trashedIds.size === 0) return;
+    // 已删子树的全集：软删以子树为单位写入，trashedIds 天然含后代；
+    // 再用邻接表闭包兜底历史数据中的断裂子树。
+    const ids = new Set<string>();
+    for (const pageId of trashedIds) {
+      for (const subId of collectSubtreeIds(pages, pageId)) ids.add(subId);
     }
+    const tx = db.transaction(
+      [STORE_PAGES, STORE_CONTENTS, STORE_PAGE_TAGS, STORE_TRASH, STORE_REVISIONS, STORE_ATTACHMENTS],
+      "readwrite",
+    );
+    await purgePagesInTx(tx, [...ids]);
+    await tx.done;
   },
 };
+
+/** 在一个事务内级联删除页面及其正文、标签关联、回收站记录、版本与附件。 */
+async function purgePagesInTx(
+  tx: IDBPTransaction<unknown, string[], "readwrite">,
+  ids: string[],
+): Promise<void> {
+  for (const pageId of ids) {
+    await tx.objectStore(STORE_PAGES).delete(pageId);
+    await tx.objectStore(STORE_CONTENTS).delete(pageId);
+    await tx.objectStore(STORE_TRASH).delete(pageId);
+    const tagKeys = await tx
+      .objectStore(STORE_PAGE_TAGS)
+      .index("pageId")
+      .getAllKeys(pageId);
+    for (const key of tagKeys) {
+      await tx.objectStore(STORE_PAGE_TAGS).delete(key);
+    }
+    // 级联：版本与附件随永久删除清理（回收站内保留以便恢复）。
+    const revisionKeys = await tx
+      .objectStore(STORE_REVISIONS)
+      .index("pageId")
+      .getAllKeys(pageId);
+    for (const key of revisionKeys) {
+      await tx.objectStore(STORE_REVISIONS).delete(key);
+    }
+    const attachmentKeys = await tx
+      .objectStore(STORE_ATTACHMENTS)
+      .index("pageId")
+      .getAllKeys(pageId);
+    for (const key of attachmentKeys) {
+      await tx.objectStore(STORE_ATTACHMENTS).delete(key);
+    }
+  }
+}
 
 /**
  * 文档正文仓储。contents 以 pageId 为主键，与 pages 一一对应；
@@ -643,10 +675,13 @@ function isValidTag(record: unknown): record is Tag {
 export const tagRepository: TagRepository = {
   async listByWorkspace(workspaceId) {
     const db = await getDB();
-    const all = (await db.getAll(STORE_TAGS)) as unknown[];
-    return all.filter(
-      (t): t is Tag => isValidTag(t) && t.workspaceId === workspaceId,
-    );
+    // 索引查询（R003 阶段 7）：只取本知识库标签，不再全表扫描。
+    const rows = (await db.getAllFromIndex(
+      STORE_TAGS,
+      "workspaceId",
+      workspaceId,
+    )) as unknown[];
+    return rows.filter(isValidTag);
   },
 
   async create(workspaceId, name, color) {
@@ -677,11 +712,9 @@ export const tagRepository: TagRepository = {
 
   async listWorkspacePageTags(workspaceId) {
     const db = await getDB();
+    // pages 走索引（R003 阶段 7）；pageTags 无工作区维度，按 pageId 集合内存过滤。
     const pageIds = new Set(
-      ((await db.getAll(STORE_PAGES)) as unknown[])
-        .map(normalizePage)
-        .filter((p): p is Page => p !== null && p.workspaceId === workspaceId)
-        .map((p) => p.id),
+      (await listWorkspacePages(db, workspaceId)).map((p) => p.id),
     );
     const rows = (await db.getAll(STORE_PAGE_TAGS)) as PageTag[];
     return rows.filter(

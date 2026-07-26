@@ -294,6 +294,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const data = await sessionService.load(wsId);
         if (requestId !== sessionRequestRef.current) return null;
         dispatchSession({ type: "session/load-success", requestId, data });
+        // 搜索索引随会话加载构建（R003 阶段 7）。
+        services.searchIndex.build(wsId, data.pages, data.contents);
         return data;
       } catch (err) {
         if (requestId !== sessionRequestRef.current) return null;
@@ -306,15 +308,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return null;
       }
     },
-    [],
+    [services],
   );
 
   // 当前知识库内的增量刷新：只更新页面镜像，不触碰会话其余字段。
-  const loadPages = useCallback(async (wsId: string) => {
-    const list = await pageRepository.listByWorkspace(wsId);
-    dispatchSession({ type: "pages/set", pages: list });
-    return list;
-  }, []);
+  const loadPages = useCallback(
+    async (wsId: string) => {
+      const list = await pageRepository.listByWorkspace(wsId);
+      dispatchSession({ type: "pages/set", pages: list });
+      // 页面写操作后同步搜索索引元数据（R003 阶段 7）。
+      services.searchIndex.syncPages(wsId, list);
+      return list;
+    },
+    [pageRepository, services],
+  );
 
   // 标签与页面-标签关联并行加载、同批次提交。
   const loadTags = useCallback(async (wsId: string) => {
@@ -598,15 +605,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [workspaceId, loadPages, persistRoute],
   );
 
-  const renamePage = useCallback(async (id: string, title: string) => {
-    await pageRepository.rename(id, title);
-    // 镜像中同步 updatedAt，让「最近编辑」排序立即反映本次重命名。
-    dispatchSession({
-      type: "pages/set",
-      pages: (prev) =>
-        prev.map((p) => (p.id === id ? { ...p, title, updatedAt: Date.now() } : p)),
-    });
-  }, []);
+  const renamePage = useCallback(
+    async (id: string, title: string) => {
+      await pageRepository.rename(id, title);
+      const now = Date.now();
+      // 镜像中同步 updatedAt，让「最近编辑」排序立即反映本次重命名。
+      dispatchSession({
+        type: "pages/set",
+        pages: (prev) =>
+          prev.map((p) => (p.id === id ? { ...p, title, updatedAt: now } : p)),
+      });
+      // 搜索索引同步标题（不刷新整库列表的路径）。
+      const current = pages.find((p) => p.id === id);
+      if (current) {
+        services.searchIndex.upsertPage({ ...current, title, updatedAt: now });
+      }
+    },
+    [pageRepository, pages, services],
+  );
 
   const deletePage = useCallback(
     async (id: string) => {
@@ -686,11 +702,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const search = useCallback(
     async (query: string) => {
+      // 优先走工作区级内存索引（R003 阶段 7）；索引未构建时回退全量扫描。
+      if (workspaceId && services.searchIndex.has(workspaceId)) {
+        return services.searchIndex.query(workspaceId, query);
+      }
       // 标题取内存镜像（含未落库的最新重命名），正文快照仍从仓储读取。
       const contents = await contentRepository.listAll();
       return searchPages(pages, contents, query);
     },
-    [pages],
+    [pages, workspaceId, services, contentRepository],
   );
 
   const createWorkspace = useCallback(

@@ -8,6 +8,7 @@ import type { AppServices } from "../../application/AppServices";
 import type { AIProvider } from "../../domain/ai";
 import { DocumentSaveCoordinator } from "../../application/services/SaveCoordinator";
 import { WorkspaceSessionService } from "../../application/services/WorkspaceSessionService";
+import { SearchIndexService } from "../../application/services/SearchIndexService";
 import {
   createInMemoryRepositories,
   createMemoryStore,
@@ -31,7 +32,9 @@ export function createInMemoryAppServices(options: InMemoryAppServicesOptions = 
   const session = new WorkspaceSessionService({
     pages: repos.page,
     tags: repos.tag,
+    content: repos.content,
   });
+  const searchIndex = new SearchIndexService();
   // 内存恢复缓冲：与 localStorage 版同接口，数据随容器存活。
   const recoveryData = new Map<
     string,
@@ -48,6 +51,7 @@ export function createInMemoryAppServices(options: InMemoryAppServicesOptions = 
   const services: AppServices = {
     ...repos,
     session,
+    searchIndex,
     createAIProvider:
       options.aiProvider !== undefined
         ? () => options.aiProvider as AIProvider
@@ -68,6 +72,7 @@ export function createInMemoryAppServices(options: InMemoryAppServicesOptions = 
             }
           },
         },
+        onSaved: (pid, text, at) => searchIndex.updateText(pid, text, at),
         onStateChange,
       }),
   };

@@ -28,5 +28,9 @@
 | 状态域拆分（R003 阶段 6） | 单一状态所有者（AppProvider）+ 四个窄 Context 分发（WorkspaceSession/Navigation/Preferences/Overlay）；`useApp()` 保留为兼容聚合门面 | actions 天然跨域，四个独立 Provider 会撕裂动作编排；窄 Context 已提供渲染隔离（probe 测试强制） |
 | 面板开关统一（R003 阶段 6） | OverlayContext 自包含持有 settings/search/trash/treeDrawer 开关，删除 onOpenTree prop 链 | 三处分散的局部状态统一；prop drilling 消除 |
 | 提及候选更新（R003 阶段 6） | 扩展经 `getMentionPages` 函数 + ref 动态读取候选，编辑器不随 pages 重建 | 闭包快照曾导致新建/重命名后 @ 候选过期 |
+| IndexedDB v3（R003 阶段 7） | 纯索引迁移（pages 复合索引 + trash deletedAt），不做数据迁移、不加 nullable 规范化列 | 所有回收站过滤都在工作区数据集内内存完成；纯索引零数据风险 |
+| 搜索索引（R003 阶段 7） | 会话加载时构建工作区级内存索引；页面写操作 syncPages/upsertPage、正文保存经协调器 onSaved 增量更新 | 查询不再全扫 pages + content.listAll；语义与 searchPages 等价由测试强制 |
+| 页面树邻接表（R003 阶段 7） | `buildChildrenByParent` 一次 O(n) 构建，collectSubtreeIds 与树渲染共用 | 原逐层全数组 filter 为 O(n²) |
+| 清空回收站（R003 阶段 7） | 单事务跨六 store 级联删除，不再逐根页面循环 purge | 中性数据量下避免 N 个独立事务与 N 次全量读 |
 
 任何会改变以上结论的需求，应先更新本文件及受影响的需求、架构和测试文档。

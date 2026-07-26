@@ -36,14 +36,14 @@ app shell
 | 实体 | 必要字段 | 说明 |
 | --- | --- | --- |
 | `Workspace` | `id`, `name`, `createdAt`, `updatedAt` | 知识库根对象 |
-| `Page` | `id`, `workspaceId`, `parentId`, `kind`, `title`, `icon`, `position`, `deletedAt` | `kind` 为 document 或 folder |
+| `Page` | `id`, `workspaceId`, `parentId`, `kind`, `title`, `icon`, `position`, `deletedAt` | `kind` 为 document 或 group |
 | `DocumentContent` | `pageId`, `contentJson`, `textSnapshot`, `updatedAt` | Tiptap JSON 与搜索文本快照 |
 | `Tag` | `id`, `workspaceId`, `name`, `color` | 工作区标签定义 |
 | `PageTag` | `pageId`, `tagId` | 页面与标签的关联 |
 | `Preferences` | `theme`, `sidebarWidth`, `aiConfig` | 浏览器本地偏好 |
 | `TrashRecord` | `pageId`, `deletedAt`, `originalParentId` | 用于恢复原始位置 |
 
-IndexedDB 需对 `workspaceId`、`parentId`、`deletedAt`、`updatedAt` 和 `textSnapshot` 建立适用索引。内容 JSON 是唯一编辑真相；`textSnapshot` 只用于搜索与 Markdown 导出辅助。
+数据库当前版本为 v3。索引：pages（`workspaceId`、`parentId`、`deletedAt`、`updatedAt`、复合 `workspaceId_parentId` / `workspaceId_updatedAt`）、contents（`updatedAt`、`textSnapshot`）、tags（`workspaceId`）、pageTags（`pageId`、`tagId`）、revisions（`pageId`、`pageId_createdAt`）、attachments（`pageId`）、trash（`deletedAt`）。工作区查询均走索引；搜索使用会话加载时构建的工作区级内存索引（R003 阶段 7）。内容 JSON 是唯一编辑真相；`textSnapshot` 只用于搜索与 Markdown 导出辅助。
 
 ## 编辑器组合
 

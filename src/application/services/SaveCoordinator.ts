@@ -60,6 +60,11 @@ export interface SaveCoordinatorDeps {
   attachments: AttachmentRepository;
   /** 可选恢复缓冲；每次入队写、保存成功清。 */
   recovery?: RecoveryStore;
+  /**
+   * 保存成功回调（R003 阶段 7：搜索索引增量更新）。
+   * 串行队列保证按提交顺序触发，最后一次携带最新文本。
+   */
+  onSaved?(pageId: string, textSnapshot: string, savedAt: number): void;
   onStateChange?(state: SaveCoordinatorState): void;
 }
 
@@ -246,6 +251,8 @@ export class DocumentSaveCoordinator {
       this.deps.recovery?.clear(snapshot.pageId, this.savedGeneration);
     }
     this.settleWaiters(snapshot.generation, { generation: snapshot.generation, savedAt: now }, null);
+    // 保存成功回调（搜索索引增量更新等）；按串行队列顺序触发。
+    this.deps.onSaved?.(snapshot.pageId, snapshot.textSnapshot, now);
     // 规则 4：旧代次完成不发布 saved（此时必有更新快照排队或在编辑中）。
     if (isLatest) {
       this.lastFailed = null;

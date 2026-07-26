@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DocumentContent, Page } from "../domain/types";
 import { formatRelativeTime, workspaceDocStats } from "../domain/activity";
-import { childrenOf } from "../domain/pageTree";
+import { buildChildrenByParent } from "../domain/pageTree";
 import { useAppServices } from "../state/AppServicesProvider";
 import { useApp } from "../state/AppState";
 import { useOverlay } from "../state/OverlayContext";
@@ -75,14 +75,22 @@ export function WorkspaceHome() {
     </div>
   );
 
-  const renderNodes = (parentId: string | null, depth: number) => {
-    // 概览只展示当前知识库的节点；childrenOf 保证同级的 sortOrder 排序
-    const nodes = childrenOf(pages, parentId).filter(
-      (p) => p.workspaceId === workspace.id,
+  // 邻接表（R003 阶段 7）：pages 变化时一次构建，目录概览不再逐层全数组过滤。
+  const childrenByParent = useMemo(
+    () => buildChildrenByParent(pages),
+    [pages],
+  );
+  const liveChildren = (parentId: string | null) =>
+    (childrenByParent.get(parentId) ?? []).filter(
+      (p) => p.deletedAt === null && p.workspaceId === workspace.id,
     );
+
+  const renderNodes = (parentId: string | null, depth: number) => {
+    // 概览只展示当前知识库的节点；同级按 position 排序
+    const nodes = liveChildren(parentId);
     return nodes.map((page) => {
       if (page.kind === "document") return renderDocRow(page);
-      const children = childrenOf(pages, page.id);
+      const children = liveChildren(page.id);
       const isCollapsed = collapsed.has(page.id);
       return (
         <section
@@ -113,9 +121,7 @@ export function WorkspaceHome() {
     });
   };
 
-  const topLevel = childrenOf(pages, null).filter(
-    (p) => p.workspaceId === workspace.id,
-  );
+  const topLevel = liveChildren(null);
   const favorite = workspace.favoriteAt !== null;
 
   return (

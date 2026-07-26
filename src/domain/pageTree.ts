@@ -61,6 +61,24 @@ export function childrenOf(pages: Page[], parentId: string | null): Page[] {
     .sort((a, b) => a.position - b.position);
 }
 
+/**
+ * 预构建父级 → 子页面邻接表（R003 阶段 7）：一次 O(n) 遍历，
+ * 子级按 position 升序；含已删除页面（调用方按需过滤）。
+ * 供 collectSubtreeIds 与树渲染避免反复全数组 filter 的 O(n²)。
+ */
+export function buildChildrenByParent(pages: Page[]): Map<string | null, Page[]> {
+  const map = new Map<string | null, Page[]>();
+  for (const p of pages) {
+    const list = map.get(p.parentId);
+    if (list) list.push(p);
+    else map.set(p.parentId, [p]);
+  }
+  for (const list of map.values()) {
+    list.sort((a, b) => a.position - b.position);
+  }
+  return map;
+}
+
 /** 新页面在同级中的 position：追加到末尾。 */
 export function nextPosition(pages: Page[], parentId: string | null): number {
   const siblings = pages.filter((p) => p.parentId === parentId);
@@ -86,11 +104,13 @@ export function wouldCreateCycle(
 
 /** 收集 pageId 及其全部后代 id（含已删除，供整棵子树操作）。 */
 export function collectSubtreeIds(pages: Page[], pageId: string): string[] {
+  // 邻接表一次构建（O(n)），BFS 不再逐层全数组过滤（原 O(n²)，R003 阶段 7）。
+  const childrenByParent = buildChildrenByParent(pages);
   const result = [pageId];
   const queue = [pageId];
   while (queue.length > 0) {
     const current = queue.shift() as string;
-    for (const child of pages.filter((p) => p.parentId === current)) {
+    for (const child of childrenByParent.get(current) ?? []) {
       result.push(child.id);
       queue.push(child.id);
     }

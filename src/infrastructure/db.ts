@@ -12,7 +12,7 @@ import { openDB, type IDBPDatabase } from "idb";
  * 不会留下半新半旧的 schema（见 R001 §6.3 兼容与回滚原则）。
  */
 export const DB_NAME = "notion-like-web";
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
 
 // 各 object store 名集中定义为常量，避免仓储层散落硬编码字符串。
 export const STORE_WORKSPACES = "workspaces";
@@ -129,6 +129,25 @@ async function upgradeToV2(db: IDBPDatabase, tx: { objectStore(name: string): un
 let dbPromise: Promise<IDBPDatabase> | null = null;
 
 /**
+ * v2 → v3（R003 阶段 7）：新增热点查询索引，无数据迁移。
+ * - pages 复合索引 `workspaceId_parentId` / `workspaceId_updatedAt`；
+ * - trash 增加 `deletedAt` 索引。
+ * 注意：IndexedDB 索引会排除键为 null 的记录（如 parentId 为 null 的顶层页面），
+ * 顶层兄弟查询回退到「workspaceId 索引 + 内存过滤」，不依赖复合索引覆盖顶层。
+ */
+async function upgradeToV3(_db: IDBPDatabase, tx: { objectStore(name: string): unknown }) {
+  const pages = tx.objectStore(STORE_PAGES) as {
+    createIndex(name: string, keyPath: string | string[]): void;
+  };
+  pages.createIndex("workspaceId_parentId", ["workspaceId", "parentId"]);
+  pages.createIndex("workspaceId_updatedAt", ["workspaceId", "updatedAt"]);
+  const trash = tx.objectStore(STORE_TRASH) as {
+    createIndex(name: string, keyPath: string): void;
+  };
+  trash.createIndex("deletedAt", "deletedAt");
+}
+
+/**
  * 打开数据库。schema 变更通过提升 DB_VERSION 并在 upgrade 中
  * 按 oldVersion 逐级迁移；新增 store/索引写在对应分支里。
  *
@@ -137,9 +156,10 @@ let dbPromise: Promise<IDBPDatabase> | null = null;
  */
 export function getDB(): Promise<IDBPDatabase> {
   dbPromise ??= openDB(DB_NAME, DB_VERSION, {
-    upgrade(db, oldVersion, _newVersion, tx) {
+    async upgrade(db, oldVersion, _newVersion, tx) {
       if (oldVersion < 1) createV1Schema(db);
-      if (oldVersion < 2) void upgradeToV2(db, tx);
+      if (oldVersion < 2) await upgradeToV2(db, tx);
+      if (oldVersion < 3) await upgradeToV3(db, tx);
     },
   });
   return dbPromise;

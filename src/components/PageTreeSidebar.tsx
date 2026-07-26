@@ -9,10 +9,10 @@
  * 整棵页面树重新渲染（R003 阶段 6 渲染隔离）。
  */
 
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Page, PageTag } from "../domain/types";
 import {
-  childrenOf,
+  buildChildrenByParent,
   dropZoneAt,
   resolveDrop,
   type DropZone,
@@ -279,13 +279,21 @@ const PageTreeBody = memo(function PageTreeBody({
     );
   };
 
+  // 邻接表（R003 阶段 7）：pages 变化时一次构建，树渲染不再逐层全数组过滤。
+  const childrenByParent = useMemo(
+    () => buildChildrenByParent(pages),
+    [pages],
+  );
+  const liveChildren = (parentId: string | null) =>
+    (childrenByParent.get(parentId) ?? []).filter((p) => p.deletedAt === null);
+
   const renderTree = (parentId: string | null) => {
-    const nodes = childrenOf(pages, parentId);
+    const nodes = liveChildren(parentId);
     if (parentId === null && nodes.length === 0) {
       return <div className="tree-empty">还没有页面，点击上方 ＋ 新建。</div>;
     }
     return nodes.map((page) => {
-      const children = childrenOf(pages, page.id);
+      const children = liveChildren(page.id);
       const isCollapsed = collapsed.has(page.id);
       return (
         <div key={page.id}>
@@ -312,7 +320,7 @@ const PageTreeBody = memo(function PageTreeBody({
       return <div className="tree-empty">没有带此标签的页面。</div>;
     }
     return matched.map((page) => (
-      <div key={page.id}>{renderRow(page, childrenOf(pages, page.id))}</div>
+      <div key={page.id}>{renderRow(page, liveChildren(page.id))}</div>
     ));
   };
 

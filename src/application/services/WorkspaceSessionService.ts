@@ -7,20 +7,27 @@
  *
  * 仓储经构造函数注入（domain port），本模块不依赖 IndexedDB 具体实现。
  */
-import type { PageRepository, TagRepository } from "../../domain/repositories";
-import type { Page, PageTag, Tag } from "../../domain/types";
+import type {
+  ContentRepository,
+  PageRepository,
+  TagRepository,
+} from "../../domain/repositories";
+import type { DocumentContent, Page, PageTag, Tag } from "../../domain/types";
 
-/** 一个知识库的完整会话数据：三类数据必须同批次提交到 UI。 */
+/** 一个知识库的完整会话数据：四类数据必须同批次提交到 UI。 */
 export interface WorkspaceSessionData {
   workspaceId: string;
   pages: Page[];
   tags: Tag[];
   pageTags: PageTag[];
+  /** 本工作区文档正文（搜索索引构建用，R003 阶段 7）。 */
+  contents: DocumentContent[];
 }
 
 export interface WorkspaceSessionServiceDeps {
   pages: PageRepository;
   tags: TagRepository;
+  content: ContentRepository;
 }
 
 export class WorkspaceSessionService {
@@ -28,11 +35,15 @@ export class WorkspaceSessionService {
 
   /** 原子加载知识库会话数据；失败时抛错，由调用方决定错误呈现。 */
   async load(workspaceId: string): Promise<WorkspaceSessionData> {
-    const [pages, tags, pageTags] = await Promise.all([
+    const [pages, tags, pageTags, allContents] = await Promise.all([
       this.deps.pages.listByWorkspace(workspaceId),
       this.deps.tags.listByWorkspace(workspaceId),
       this.deps.tags.listWorkspacePageTags(workspaceId),
+      this.deps.content.listAll(),
     ]);
-    return { workspaceId, pages, tags, pageTags };
+    // 正文按本工作区页面过滤（contents 无工作区维度）。
+    const pageIds = new Set(pages.map((p) => p.id));
+    const contents = allContents.filter((c) => pageIds.has(c.pageId));
+    return { workspaceId, pages, tags, pageTags, contents };
   }
 }

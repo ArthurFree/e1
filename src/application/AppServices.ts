@@ -23,6 +23,7 @@ import type {
 } from "../domain/repositories";
 import type { AIConfig } from "../domain/types";
 import type { WorkspaceSessionService } from "./services/WorkspaceSessionService";
+import type { SearchIndexService } from "./services/SearchIndexService";
 import type {
   DocumentSaveCoordinator,
   SaveCoordinatorState,
@@ -39,6 +40,8 @@ export interface AppServices {
   preferences: PreferencesRepository;
   /** 知识库会话原子加载（无状态，可共享单例）。 */
   session: WorkspaceSessionService;
+  /** 工作区级内存搜索索引（R003 阶段 7）。 */
+  searchIndex: SearchIndexService;
   /** AI provider 工厂（OpenAI 兼容协议）；未配置 AI 时不发起任何请求。 */
   createAIProvider(config: AIConfig): AIProvider;
   /**
