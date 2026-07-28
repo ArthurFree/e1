@@ -22,6 +22,7 @@ import type {
   DocumentSaveCoordinator,
   SaveCoordinatorState,
 } from "../../application/services/SaveCoordinator";
+import type { DocumentEditorController } from "../../application/services/DocumentEditorController";
 import { BubbleToolbar } from "./BubbleToolbar";
 import { BlockHandle } from "./BlockHandle";
 import { TableToolbar } from "./TableToolbar";
@@ -47,6 +48,11 @@ interface DocumentEditorProps {
    * 避免恢复的内容再次只停留在内存（R003 §1.4）。
    */
   restoreRequestId?: number;
+  /**
+   * 编辑器控制器就绪回调（R004 阶段 3）：版本恢复等外部写入经控制器
+   * 与保存协调器串行化，null 表示编辑器已销毁。
+   */
+  onControllerReady?(controller: DocumentEditorController | null): void;
 }
 
 /**
@@ -60,6 +66,7 @@ export function DocumentEditor({
   onSaveStateChange,
   onRegisterRetry,
   restoreRequestId,
+  onControllerReady,
 }: DocumentEditorProps) {
   const { pages } = useWorkspaceSession();
   const services = useAppServices();
@@ -68,6 +75,9 @@ export function DocumentEditor({
   // 每个文档一个保存协调器；pageIdRef 先于渲染更新，供回调判断「当前文档」。
   const coordinatorsRef = useRef(new Map<string, DocumentSaveCoordinator>());
   const pageIdRef = useRef(pageId);
+  // 版本恢复的 setContent 抑制（R004 阶段 3）：恢复替换编辑器内容时
+  // 不触发防抖保存，恢复只经协调器串行提交一次（INV-06）。
+  const restoreSuppressRef = useRef(false);
 
   const getCoordinator = useCallback(
     (pid: string) => {
@@ -148,6 +158,11 @@ export function DocumentEditor({
       autofocus: "end",
       onUpdate: ({ editor: e }) => {
         const coordinator = getCoordinator(pageId);
+        // 版本恢复的 setContent：跳过防抖保存（恢复经协调器单独提交）。
+        if (restoreSuppressRef.current) {
+          restoreSuppressRef.current = false;
+          return;
+        }
         // 每次编辑代次 +1：旧代次保存此后完成不得再把 UI 标记为已保存。
         coordinator.noteEdit();
         debounced(pageId, e.getJSON(), e.getText());
@@ -171,6 +186,49 @@ export function DocumentEditor({
       onEditorReady(null);
     };
   }, [editor, pageId, onEditorReady, services]);
+
+  // 编辑器控制器（R004 阶段 3）：版本恢复与保存协调器串行化——
+  // flush 防抖与队列 → before-restore 版本 → 经协调器提交目标版本 →
+  // setContent 更新编辑器（抑制其防抖保存，不产生第二次写入）。
+  useEffect(() => {
+    if (!onControllerReady) return;
+    if (!editor || editor.isDestroyed) {
+      onControllerReady(null);
+      return;
+    }
+    const controller: DocumentEditorController = {
+      getSnapshot: () => ({
+        contentJson: editor.getJSON(),
+        textSnapshot: editor.getText(),
+      }),
+      flush: async () => {
+        flush();
+        await getCoordinator(pageId).flush();
+      },
+      restore: async (target) => {
+        flush();
+        const coordinator = getCoordinator(pageId);
+        await coordinator.flush();
+        const current = {
+          contentJson: editor.getJSON(),
+          textSnapshot: editor.getText(),
+        };
+        await services.documentCommit.restoreRevision({
+          pageId,
+          current,
+          target,
+          commit: (contentJson, textSnapshot) => {
+            restoreSuppressRef.current = true;
+            editor.commands.setContent(contentJson as never);
+            coordinator.noteEdit();
+            return coordinator.enqueue({ contentJson, textSnapshot });
+          },
+        });
+      },
+    };
+    onControllerReady(controller);
+    return () => onControllerReady(null);
+  }, [editor, pageId, flush, getCoordinator, onControllerReady, services]);
 
   // 恢复缓冲应用后：对恢复内容立即执行一次保存（每个编辑器实例最多一次）。
   const restoreHandledRef = useRef(0);

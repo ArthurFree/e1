@@ -95,4 +95,42 @@ describe("AppProvider + 内存仓储", () => {
       expect(host.app!.pages.some((p) => p.title === "第一篇文章")).toBe(true),
     );
   }, 15000);
+
+  it("createDocumentWithContent 原子创建页面与正文并同步搜索索引（R004）", async () => {
+    const store = renderWithMemory();
+    await waitFor(() => expect(host.app?.ready).toBe(true), { timeout: 3000 });
+    await host.app!.createWorkspace("我的知识库");
+    await waitFor(() => expect(host.app!.workspace?.name).toBe("我的知识库"));
+    const wsId = host.app!.workspace!.id;
+
+    const contentJson = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "原子创建的正文关键词" }],
+        },
+      ],
+    };
+    const page = await host.app!.createDocumentWithContent({
+      workspaceId: wsId,
+      parentId: null,
+      title: "原子文档",
+      contentJson,
+      textSnapshot: "原子创建的正文关键词",
+    });
+    expect(page).not.toBeNull();
+
+    // 页面镜像已刷新，包含新页面。
+    await waitFor(() =>
+      expect(host.app!.pages.some((p) => p.id === page!.id)).toBe(true),
+    );
+    // 正文随创建一次落盘（非两段式）。
+    expect(store.contents.get(page!.id)?.textSnapshot).toBe(
+      "原子创建的正文关键词",
+    );
+    // 搜索索引可命中正文。
+    const results = await host.app!.search("正文关键词");
+    expect(results.some((r) => r.pageId === page!.id)).toBe(true);
+  });
 });

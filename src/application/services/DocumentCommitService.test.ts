@@ -21,6 +21,7 @@ function makeService() {
   const service = new DocumentCommitService({
     content: repos.content,
     documentWrite: repos.documentWrite,
+    revisions: repos.revision,
     searchIndex,
   });
   return { repos, searchIndex, service };
@@ -104,5 +105,38 @@ describe("DocumentCommitService", () => {
       }),
     ).rejects.toThrow();
     expect(searchIndex.query("ws-missing", "关键词")).toHaveLength(0);
+  });
+
+  it("restoreRevision：当前内容存 before-restore，目标经提交通道落盘（INV-06）", async () => {
+    const { repos, service } = makeService();
+    const ws = await repos.workspace.create("知识库");
+    const page = await repos.page.create({
+      workspaceId: ws.id,
+      parentId: null,
+      kind: "document",
+      title: "文档",
+    });
+    const current = {
+      contentJson: { type: "doc", content: [] },
+      textSnapshot: "当前内容",
+    };
+    const commits: { json: unknown; text: string }[] = [];
+    await service.restoreRevision({
+      pageId: page.id,
+      current,
+      target: { contentJson: DOC_A, textSnapshot: "历史内容" },
+      commit: (contentJson, textSnapshot) => {
+        commits.push({ json: contentJson, text: textSnapshot });
+        return Promise.resolve();
+      },
+    });
+
+    // before-restore 版本保存的是恢复前的当前内容。
+    const revisions = await repos.revision.listByPage(page.id);
+    expect(revisions).toHaveLength(1);
+    expect(revisions[0].reason).toBe("before-restore");
+    expect(revisions[0].textSnapshot).toBe("当前内容");
+    // 目标版本经调用方提交通道（保存协调器）串行落盘。
+    expect(commits).toEqual([{ json: DOC_A, text: "历史内容" }]);
   });
 });

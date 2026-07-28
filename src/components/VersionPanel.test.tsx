@@ -4,6 +4,8 @@ import { Editor } from "@tiptap/core";
 import { resetDB } from "../infrastructure/db";
 import { contentRepository, revisionRepository } from "../infrastructure/repositories";
 import { createBrowserAppServices } from "../infrastructure/browserServices";
+import type { AppServices } from "../application/AppServices";
+import type { DocumentEditorController } from "../application/services/DocumentEditorController";
 import { AppServicesProvider } from "../state/AppServicesProvider";
 import { buildDocumentExtensions } from "../editor/extensions";
 import { VersionPanel } from "./VersionPanel";
@@ -21,6 +23,39 @@ function createEditor(text: string) {
 
 const PAGE_ID = "p1";
 
+/**
+ * 手工控制器：与 DocumentEditor 的控制器同语义（恢复经保存协调器串行提交），
+ * 用于在不挂载完整编辑器宿主的情况下测试 VersionPanel 的恢复流程。
+ */
+function createController(
+  editor: Editor,
+  services: AppServices,
+): DocumentEditorController {
+  const coordinator = services.createSaveCoordinator(PAGE_ID);
+  return {
+    getSnapshot: () => ({
+      contentJson: editor.getJSON(),
+      textSnapshot: editor.getText(),
+    }),
+    flush: () => coordinator.flush(),
+    restore: async (target) => {
+      const current = {
+        contentJson: editor.getJSON(),
+        textSnapshot: editor.getText(),
+      };
+      await services.documentCommit.restoreRevision({
+        pageId: PAGE_ID,
+        current,
+        target,
+        commit: (contentJson, textSnapshot) => {
+          editor.commands.setContent(contentJson as never);
+          return coordinator.enqueue({ contentJson, textSnapshot });
+        },
+      });
+    },
+  };
+}
+
 describe("VersionPanel", () => {
   beforeEach(async () => {
     cleanup();
@@ -28,10 +63,15 @@ describe("VersionPanel", () => {
   });
 
   it("无版本时显示空态", async () => {
+    const services = createBrowserAppServices();
     const editor = createEditor("当前内容");
     render(
-      <AppServicesProvider services={createBrowserAppServices()}>
-        <VersionPanel pageId={PAGE_ID} editor={editor} onClose={() => undefined} />
+      <AppServicesProvider services={services}>
+        <VersionPanel
+          pageId={PAGE_ID}
+          controller={createController(editor, services)}
+          onClose={() => undefined}
+        />
       </AppServicesProvider>,
     );
     expect(await screen.findByText(/暂无历史版本/)).toBeInTheDocument();
@@ -40,10 +80,15 @@ describe("VersionPanel", () => {
 
   it("列出版本时间与原因，展开显示摘要", async () => {
     await revisionRepository.add(PAGE_ID, { type: "doc", content: [] }, "旧内容摘要", "interval");
+    const services = createBrowserAppServices();
     const editor = createEditor("当前内容");
     render(
-      <AppServicesProvider services={createBrowserAppServices()}>
-        <VersionPanel pageId={PAGE_ID} editor={editor} onClose={() => undefined} />
+      <AppServicesProvider services={services}>
+        <VersionPanel
+          pageId={PAGE_ID}
+          controller={createController(editor, services)}
+          onClose={() => undefined}
+        />
       </AppServicesProvider>,
     );
 
@@ -53,17 +98,21 @@ describe("VersionPanel", () => {
     editor.destroy();
   });
 
-  it("恢复版本：先存恢复前版本，再写回选中文本", async () => {
+  it("恢复版本：先存恢复前版本，再经协调器写回选中文本", async () => {
     const oldJson = {
       type: "doc",
       content: [{ type: "paragraph", content: [{ type: "text", text: "历史版本内容" }] }],
     };
     await revisionRepository.add(PAGE_ID, oldJson, "历史版本内容", "interval");
+    const services = createBrowserAppServices();
     const editor = createEditor("当前内容");
-    const onClose = () => undefined;
     render(
-      <AppServicesProvider services={createBrowserAppServices()}>
-        <VersionPanel pageId={PAGE_ID} editor={editor} onClose={onClose} />
+      <AppServicesProvider services={services}>
+        <VersionPanel
+          pageId={PAGE_ID}
+          controller={createController(editor, services)}
+          onClose={() => undefined}
+        />
       </AppServicesProvider>,
     );
 
@@ -79,7 +128,9 @@ describe("VersionPanel", () => {
     expect(
       revisions.find((r) => r.reason === "before-restore")?.textSnapshot,
     ).toContain("当前内容");
-    // 恢复结果立即落盘
+    // 恢复结果经协调器串行落盘（等待队列排空后断言）
+    const controller = createController(editor, services);
+    await controller.flush();
     const saved = await contentRepository.get(PAGE_ID);
     expect(saved?.textSnapshot).toContain("历史版本内容");
     editor.destroy();
@@ -88,10 +139,15 @@ describe("VersionPanel", () => {
   it("损坏版本拒绝恢复：提示错误且不改动编辑器与存储", async () => {
     const badJson = { type: "doc", content: [{ type: "evilNode" }] };
     await revisionRepository.add(PAGE_ID, badJson, "损坏版本摘要", "interval");
+    const services = createBrowserAppServices();
     const editor = createEditor("当前内容");
     render(
-      <AppServicesProvider services={createBrowserAppServices()}>
-        <VersionPanel pageId={PAGE_ID} editor={editor} onClose={() => undefined} />
+      <AppServicesProvider services={services}>
+        <VersionPanel
+          pageId={PAGE_ID}
+          controller={createController(editor, services)}
+          onClose={() => undefined}
+        />
       </AppServicesProvider>,
     );
 

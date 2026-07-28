@@ -239,8 +239,72 @@ test.describe("模板与 AI", () => {
   });
 });
 
-test.describe("回收站", () => {
-  test("删除进回收站并可恢复", async ({ page }) => {
+test.describe("R004 统一写入路径", () => {
+  test("模板创建后立即能搜到正文", async ({ page }) => {
+    await gotoStart(page);
+    await page.getByLabel("快速操作").getByText("模板中心").click();
+    const dialog = page.getByRole("dialog", { name: "模板中心" });
+    await dialog.getByText("会议纪要").first().click();
+    const picker = page.getByRole("menu", { name: "选择创建位置" });
+    await picker.getByRole("menuitem").first().click();
+    await expect(page.getByLabel("文档标题")).toHaveValue(/会议/);
+
+    // 原子创建已同步搜索索引：模板正文「议题一」立即可搜（INV-05）。
+    await page.getByLabel("搜索").click();
+    await page.getByLabel("搜索文档").fill("议题一");
+    await expect(page.getByText("会议纪要").first()).toBeVisible();
+  });
+
+  test("导入 Markdown 后立即能搜到正文", async ({ page }) => {
+    await gotoStart(page);
+    await page
+      .locator('input[type="file"]')
+      .setInputFiles({
+        name: "导入验证.md",
+        mimeType: "text/markdown",
+        buffer: Buffer.from("# 导入验证\n\n导入正文关键词甲"),
+      });
+    await expect(page.getByLabel("文档标题")).toHaveValue("导入验证");
+
+    await page.getByLabel("搜索").click();
+    await page.getByLabel("搜索文档").fill("导入正文关键词甲");
+    await expect(page.getByText("导入验证").first()).toBeVisible();
+  });
+
+  test("恢复版本后刷新仍是恢复版本（INV-06）", async ({ page }) => {
+    await openDoc(page, "会议纪要示例");
+    const editor = page.locator(".editor__content");
+    await editor.click();
+    await page.keyboard.press("End");
+    await page.keyboard.type("第一版标记");
+    await expect(page.getByRole("status")).toContainText("已保存", {
+      timeout: 5000,
+    });
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("第二版标记");
+    await expect(page.getByRole("status")).toContainText("已保存", {
+      timeout: 5000,
+    });
+
+    // 恢复第一版（首次保存生成的自动版本含「第一版标记」）。
+    await page.getByLabel("版本历史").click();
+    const panel = page.getByRole("dialog", { name: "版本历史" });
+    await panel.getByText(/第一版标记/).click();
+    await panel.getByRole("button", { name: "恢复此版本" }).click();
+    await panel.getByRole("button", { name: "确认恢复？" }).click();
+    await expect(panel).toBeHidden();
+    await expect(editor).toContainText("第一版标记");
+    await expect(editor).not.toContainText("第二版标记");
+
+    // 刷新后仍是恢复版本：旧防抖保存没有盖回（INV-06）。
+    await page.reload();
+    await expect(page.getByLabel("文档标题")).toHaveValue("会议纪要示例");
+    await expect(page.locator(".editor__content")).toContainText("第一版标记");
+    await expect(page.locator(".editor__content")).not.toContainText("第二版标记");
+  });
+});
+
+test.describe("回收站", () => {  test("删除进回收站并可恢复", async ({ page }) => {
     await gotoStart(page);
     await page.getByRole("button", { name: "新建文档", exact: true }).click();
     await expect(page.getByLabel("文档标题")).toHaveValue("无标题");

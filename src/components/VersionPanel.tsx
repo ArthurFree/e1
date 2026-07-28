@@ -6,9 +6,9 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import type { Editor } from "@tiptap/core";
 import type { DocumentRevision, RevisionReason } from "../domain/types";
 import { parseDocumentContent } from "../domain/validation/documentContent";
+import type { DocumentEditorController } from "../application/services/DocumentEditorController";
 import { useAppServices } from "../state/AppServicesProvider";
 import { Dialog } from "./ui/Dialog";
 import { EmptyState } from "./ui/EmptyState";
@@ -16,8 +16,8 @@ import { EmptyState } from "./ui/EmptyState";
 interface VersionPanelProps {
   /** 所属文档 ID，按它列出全部历史版本。 */
   pageId: string;
-  /** 当前文档编辑器实例：恢复版本时读取现状并存回选中内容。 */
-  editor: Editor;
+  /** 当前文档的编辑器控制器：恢复版本经它与保存协调器串行化（R004 阶段 3）。 */
+  controller: DocumentEditorController;
   /** 关闭面板（恢复成功后自动关闭）。 */
   onClose(): void;
 }
@@ -33,7 +33,7 @@ const REASON_LABEL: Record<RevisionReason, string> = {
  * 本地版本历史（R001 §8.3）：列表显示时间、原因和正文摘要；
  * 恢复前先把当前内容存为「恢复前」版本，再写回选中版本。
  */
-export function VersionPanel({ pageId, editor, onClose }: VersionPanelProps) {
+export function VersionPanel({ pageId, controller, onClose }: VersionPanelProps) {
   const services = useAppServices();
   const [revisions, setRevisions] = useState<DocumentRevision[]>([]);
   const [previewId, setPreviewId] = useState<string | null>(null);
@@ -58,16 +58,18 @@ export function VersionPanel({ pageId, editor, onClose }: VersionPanelProps) {
       return;
     }
     setRestoreError(null);
-    // 恢复前保存当前版本，避免二次丢失。
-    await services.revision.add(
-      pageId,
-      editor.getJSON(),
-      editor.getText(),
-      "before-restore",
-    );
-    // 先替换编辑器内容再落盘，防止 DocumentEditor 的防抖保存把旧内容盖回来
-    editor.commands.setContent(parsed.value as never);
-    await services.content.save(pageId, parsed.value, revision.textSnapshot);
+    // 经控制器串行化恢复（R004 INV-06）：flush 旧防抖保存 → before-restore
+    // 版本 → 协调器提交目标版本 → 更新编辑器，旧保存不可能覆盖恢复结果。
+    try {
+      await controller.restore({
+        contentJson: parsed.value,
+        textSnapshot: revision.textSnapshot,
+      });
+    } catch {
+      setRestoreError("恢复失败，请稍后重试。");
+      setConfirmId(null);
+      return;
+    }
     setConfirmId(null);
     onClose();
   };

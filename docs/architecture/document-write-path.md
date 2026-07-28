@@ -12,20 +12,19 @@ Tiptap onUpdate → noteEdit()（generation+1）→ 800ms 防抖 enqueue
 → content.save → revision.add/pruneInterval → removeOrphans → recovery.clear → 发布 saved
 ```
 
-### 绕过协调器的直写点（R004 阶段 3 迁移目标，当前共 8 处）
+### 历史直写点（R004 阶段 3 已全部迁移清零）
 
-| 位置 | 调用 | 流程 |
+以下 8 处直写已全部收敛到应用服务，架构扫描（`src/test/architecture.test.ts`）以空白名单强制——新增直写立即失败：
+
+| 位置 | 原调用 | 迁移后 |
 | --- | --- | --- |
-| `src/components/TemplateCenter.tsx:32` | `page.create` | 模板创建（两步非原子） |
-| `src/components/TemplateCenter.tsx:38` | `content.save` | 模板创建 |
-| `src/components/AIDraftModal.tsx:88` | `page.create` | AI 草稿（两步非原子） |
-| `src/components/AIDraftModal.tsx:96` | `content.save` | AI 草稿 |
-| `src/components/PageTreeSidebar.tsx:412` | `content.save` | Markdown 导入（先建空页再覆盖） |
-| `src/components/VersionPanel.tsx:62` | `revision.add` | 版本恢复（before-restore） |
-| `src/components/VersionPanel.tsx:70` | `content.save` | 版本恢复（绕过协调器，与防抖保存对抗） |
-| `src/components/MainArea.tsx:198` | `content.save` | 损坏正文「创建空白副本」 |
+| `src/components/TemplateCenter.tsx` | `page.create` + `content.save` | `createDocumentWithContent` action（原子创建） |
+| `src/components/AIDraftModal.tsx` | `page.create` + `content.save` | 同上 |
+| `src/components/PageTreeSidebar.tsx` | `content.save`（Markdown 导入） | 同上 |
+| `src/components/VersionPanel.tsx` | `revision.add` + `content.save` | `DocumentEditorController.restore`（协调器串行化，INV-06） |
+| `src/components/MainArea.tsx` | `content.save`（空白副本） | `documentCommit.replaceContent` |
 
-注：损坏正文的「尝试恢复」与「应用恢复缓冲」已走协调器（`DocumentEditor` 的 restoreRequestId effect），不在迁移清单内。附件写入经 `editor.storage.attachmentRepository` 通道（`src/editor/attachment.ts`），为 R003 认可的注入方式。
+注：损坏正文的「尝试恢复」与「应用恢复缓冲」本就走协调器（`DocumentEditor` 的 restoreRequestId effect）。附件写入经 `editor.storage.attachmentRepository` 通道（`src/editor/attachment.ts`），为 R003 认可的注入方式。
 
 ## 二、保存状态机
 

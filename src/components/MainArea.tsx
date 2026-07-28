@@ -10,6 +10,7 @@ import type { Editor } from "@tiptap/core";
 import type { DocumentContent } from "../domain/types";
 import { jsonToMarkdown } from "../editor/markdown";
 import { useAppServices } from "../state/AppServicesProvider";
+import type { DocumentEditorController } from "../application/services/DocumentEditorController";
 import {
   discardRecovery,
   readRecovery,
@@ -84,6 +85,8 @@ export function MainArea() {
   const page = pages.find((p) => p.id === selectedPageId) ?? null;
   const [content, setContent] = useState<DocumentContent | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
+  const [editorController, setEditorController] =
+    useState<DocumentEditorController | null>(null);
   const [tocOpen, setTocOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>({ status: "saved", savedAt: null });
@@ -193,13 +196,14 @@ export function MainArea() {
   }, [corrupted, page]);
 
   // 损坏正文：以空白文档覆盖（原始 JSON 已保留在诊断记录中，可先导出）。
+  // 经 DocumentCommitService 原子覆盖并同步搜索索引（R004 阶段 3）。
   const blankCorrupted = useCallback(async () => {
     if (!page) return;
-    await services.content.save(
-      page.id,
-      { type: "doc", content: [{ type: "paragraph" }] },
-      "",
-    );
+    await services.documentCommit.replaceContent({
+      pageId: page.id,
+      contentJson: { type: "doc", content: [{ type: "paragraph" }] },
+      textSnapshot: "",
+    });
     clearCorruptedDiagnostic(page.id);
     setCorrupted(null);
     setContent(emptyContent(page.id));
@@ -438,6 +442,7 @@ export function MainArea() {
                     onSaveStateChange={onSaveStateChange}
                     onRegisterRetry={onRegisterRetry}
                     restoreRequestId={contentEpoch}
+                    onControllerReady={setEditorController}
                   />
                 ) : (
                   <p className="doc-placeholder">正在加载文档…</p>
@@ -446,10 +451,10 @@ export function MainArea() {
             </div>
             {tocOpen && liveEditor && <TocPanel editor={liveEditor} />}
           </div>
-          {versionsOpen && liveEditor && (
+          {versionsOpen && editorController && (
             <VersionPanel
               pageId={page.id}
-              editor={liveEditor}
+              controller={editorController}
               onClose={() => setVersionsOpen(false)}
             />
           )}

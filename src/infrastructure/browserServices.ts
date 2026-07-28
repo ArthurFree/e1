@@ -42,6 +42,7 @@ export function createBrowserAppServices(): AppServices {
   const documentCommit = new DocumentCommitService({
     content: contentRepository,
     documentWrite: documentWriteRepository,
+    revisions: revisionRepository,
     searchIndex,
   });
   instance = {

@@ -41,6 +41,7 @@ export function createInMemoryAppServices(options: InMemoryAppServicesOptions = 
   const documentCommit = new DocumentCommitService({
     content: repos.content,
     documentWrite: repos.documentWrite,
+    revisions: repos.revision,
     searchIndex,
   });
   // 内存恢复缓冲：与 localStorage 版同接口，数据随容器存活。

@@ -13,6 +13,7 @@ import type {
   CreateDocumentWithContentInput,
   DocumentWriteRepository,
   ReplaceDocumentContentInput,
+  RevisionRepository,
 } from "../../domain/repositories";
 import type { DocumentContent, Page } from "../../domain/types";
 import { increment } from "../devDiagnostics";
@@ -32,6 +33,7 @@ export class DocumentCommitService implements DocumentContentCommitter {
     private readonly deps: {
       content: ContentRepository;
       documentWrite: DocumentWriteRepository;
+      revisions: RevisionRepository;
       searchIndex: SearchIndexService;
     },
   ) {}
@@ -71,5 +73,26 @@ export class DocumentCommitService implements DocumentContentCommitter {
     );
     increment("document-commit", "replace");
     return content;
+  }
+
+  /**
+   * 版本恢复（R004 §3.5，INV-06）：先把当前内容存为 before-restore 版本，
+   * 再经调用方提供的协调器提交通道串行落盘目标版本——与编辑器实时保存
+   * 同一串行队列，旧防抖保存不可能覆盖恢复结果；搜索索引随提交同步。
+   */
+  async restoreRevision(input: {
+    pageId: string;
+    current: { contentJson: unknown; textSnapshot: string };
+    target: { contentJson: unknown; textSnapshot: string };
+    commit: (contentJson: unknown, textSnapshot: string) => Promise<unknown>;
+  }): Promise<void> {
+    await this.deps.revisions.add(
+      input.pageId,
+      input.current.contentJson,
+      input.current.textSnapshot,
+      "before-restore",
+    );
+    await input.commit(input.target.contentJson, input.target.textSnapshot);
+    increment("document-commit", "restore");
   }
 }

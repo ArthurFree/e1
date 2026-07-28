@@ -50,6 +50,17 @@ export interface WorkspaceSessionContextValue {
   createDocumentIn(workspaceId: string, parentId: string | null): Promise<Page>;
   /** 在当前知识库新建页面；文档会打开并请求标题聚焦，分组仅加入页面树。 */
   createPage(kind: PageKind, parentId: string | null): Promise<Page | null>;
+  /**
+   * 原子创建「页面 + 初始正文」（R004：模板/AI 草稿/Markdown 导入）：
+   * 经 DocumentCommitService 单事务落盘并同步搜索索引，失败抛错由调用方处理。
+   */
+  createDocumentWithContent(input: {
+    workspaceId: string;
+    parentId: string | null;
+    title: string;
+    contentJson: unknown;
+    textSnapshot: string;
+  }): Promise<Page | null>;
   renamePage(id: string, title: string): Promise<void>;
   /** 软删页面（移入回收站）；若删除的是当前文档，主区域回到知识库首页。 */
   deletePage(id: string): Promise<void>;

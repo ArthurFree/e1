@@ -18,7 +18,6 @@ import {
   type DropZone,
 } from "../domain/pageTree";
 import { jsonToText, markdownToJson } from "../editor/markdown";
-import { useAppServices } from "../state/AppServicesProvider";
 import { useWorkspaceSession } from "../state/WorkspaceSessionContext";
 import { useNavigation } from "../state/NavigationContext";
 import { usePreferences } from "../state/PreferencesContext";
@@ -350,12 +349,13 @@ const PageTreeBody = memo(function PageTreeBody({
 
 /** 文档树侧栏：层级展示、新建、重命名、删除、拖拽移动、标签筛选、Markdown 导入。 */
 export function PageTreeSidebar() {
-  const services = useAppServices();
   const {
     pages,
     tags,
     pageTags,
+    workspace,
     createPage,
+    createDocumentWithContent,
     renamePage,
     deletePage,
     movePage,
@@ -402,14 +402,20 @@ export function PageTreeSidebar() {
     setImportError(null);
     try {
       const text = await file.text();
-      // Markdown 经白名单解析成文档 JSON（不注入原始 HTML），先建空页再写入内容
+      // Markdown 经白名单解析成文档 JSON（不注入原始 HTML）
       const json = markdownToJson(text);
-      const page = await createPage("document", null);
-      if (!page) throw new Error("create failed");
       // 以文件名（去扩展名）作为初始标题，无名文件降级为「导入文档」
       const title = file.name.replace(/\.(md|markdown)$/i, "") || "导入文档";
-      await renamePage(page.id, title);
-      await services.content.save(page.id, json, jsonToText(json));
+      if (!workspace) throw new Error("create failed");
+      // 原子创建「页面 + 正文」（R004）：不再先建空页再写正文
+      const page = await createDocumentWithContent({
+        workspaceId: workspace.id,
+        parentId: null,
+        title,
+        contentJson: json,
+        textSnapshot: jsonToText(json),
+      });
+      if (!page) throw new Error("create failed");
       selectPage(page.id);
     } catch (error) {
       setImportError(

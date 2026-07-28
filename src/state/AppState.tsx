@@ -196,6 +196,17 @@ interface AppState {
   createDocumentIn(workspaceId: string, parentId: string | null): Promise<Page>;
   /** 在当前知识库新建页面；文档会打开并请求标题聚焦，分组仅加入页面树。 */
   createPage(kind: PageKind, parentId: string | null): Promise<Page | null>;
+  /**
+   * 原子创建「页面 + 初始正文」（R004：模板/AI 草稿/Markdown 导入）：
+   * 经 DocumentCommitService 单事务落盘并同步搜索索引，失败抛错由调用方处理。
+   */
+  createDocumentWithContent(input: {
+    workspaceId: string;
+    parentId: string | null;
+    title: string;
+    contentJson: unknown;
+    textSnapshot: string;
+  }): Promise<Page | null>;
   renamePage(id: string, title: string): Promise<void>;
   /** 软删页面（移入回收站）；若删除的是当前文档，主区域回到知识库首页。 */
   deletePage(id: string): Promise<void>;
@@ -608,6 +619,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [workspaceId, loadPages, persistRoute],
   );
 
+  // 原子创建「页面 + 初始正文」（R004）：模板/AI 草稿/Markdown 导入不再
+  // 先建空页再写正文；写入与搜索索引同步在 DocumentCommitService 单点完成。
+  const createDocumentWithContent = useCallback(
+    async (input: {
+      workspaceId: string;
+      parentId: string | null;
+      title: string;
+      contentJson: unknown;
+      textSnapshot: string;
+    }) => {
+      const page = await services.documentCommit.createWithContent(input);
+      // 属于当前知识库时全量刷新页面镜像（与 createPage 同一刷新方式）。
+      if (input.workspaceId === workspaceId) {
+        await loadPages(input.workspaceId);
+      }
+      return page;
+    },
+    [workspaceId, loadPages, services],
+  );
+
   const renamePage = useCallback(
     async (id: string, title: string) => {
       await pageRepository.rename(id, title);
@@ -800,6 +831,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toggleWorkspaceFavorite,
       createDocumentIn,
       createPage,
+      createDocumentWithContent,
       renamePage,
       deletePage,
       movePage,
@@ -829,6 +861,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toggleWorkspaceFavorite,
       createDocumentIn,
       createPage,
+      createDocumentWithContent,
       renamePage,
       deletePage,
       movePage,

@@ -31,7 +31,8 @@ type Step = "input" | "generating" | "preview" | "error";
  */
 export function AIDraftModal({ onClose }: AIDraftModalProps) {
   const services = useAppServices();
-  const { preferences, openDocument, openSettings } = useApp();
+  const { preferences, openDocument, openSettings, createDocumentWithContent } =
+    useApp();
   const [topic, setTopic] = useState("");
   const [draftType, setDraftType] = useState<string>(DRAFT_TYPES[0]);
   const [target, setTarget] = useState<PickerTarget | null>(null);
@@ -85,15 +86,16 @@ export function AIDraftModal({ onClose }: AIDraftModalProps) {
 
   const confirmCreate = async () => {
     if (!target) return;
-    const page = await services.page.create({
+    // AI 返回的 Markdown 经编辑器白名单解析后落盘（原子创建「页面 + 正文」，R004）。
+    const json = markdownToJson(draft);
+    const page = await createDocumentWithContent({
       workspaceId: target.workspaceId,
       parentId: target.parentId,
-      kind: "document",
       title: topic.trim() || "无标题",
+      contentJson: json,
+      textSnapshot: jsonToText(json),
     });
-    // AI 返回的 Markdown 经编辑器白名单解析后落盘。
-    const json = markdownToJson(draft);
-    await services.content.save(page.id, json, jsonToText(json));
+    if (!page) return;
     onClose();
     await openDocument(page.id);
   };
