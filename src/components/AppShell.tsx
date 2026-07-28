@@ -1,5 +1,6 @@
 import { useEffect } from "react";
-import { useApp } from "../state/AppState";
+import { useWorkspaceSession } from "../state/WorkspaceSessionContext";
+import { usePreferences } from "../state/PreferencesContext";
 import { useOverlay } from "../state/OverlayContext";
 import { GlobalSidebar } from "./shell/GlobalSidebar";
 import { PageTreeSidebar } from "./PageTreeSidebar";
@@ -15,7 +16,8 @@ import { MainArea } from "./MainArea";
 
 /** 应用壳：全局侧栏 + 知识库侧栏（窄屏抽屉化）+ 主区。 */
 export function AppShell() {
-  const { ready, error, retryLoad, preferences } = useApp();
+  const { ready, error, retryLoad } = useWorkspaceSession();
+  const { preferences } = usePreferences();
   const { treeDrawerOpen, closeTreeDrawer } = useOverlay();
 
   // 主题切换不经过 React 渲染，直接写根元素 data-theme，让 CSS 变量即时生效

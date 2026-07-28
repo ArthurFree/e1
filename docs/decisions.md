@@ -39,6 +39,9 @@
 | 维护失败分流（R004 阶段 1） | 正文提交失败才进 error 态；维护失败经 `onMaintenanceError` 上报开发诊断，正文视为已保存 | 附件清理等失败曾让用户误以为正文未保存 |
 | 原子文档写（R004 阶段 2） | `DocumentWriteRepository.createWithContent` 单事务「校验 + 写页面 + 写正文」，正文 JSON 经白名单校验，失败整体回滚 | 模板/AI/导入的「先建空页再覆盖」两段式曾留下空文档中间态（INV-04） |
 | 正文提交单点（R004 阶段 2） | `DocumentCommitService`：commit（协调器通道）与 createWithContent/replaceContent（外部路径）统一「落盘 + 搜索索引同步」；协调器 deps 由 ContentRepository 收窄为 DocumentContentCommitter | INV-05 由单点保证；onSaved 回调随之移除 |
+| 版本恢复串行化（R004 阶段 3） | `DocumentEditorController`：flush 防抖与协调器队列 → before-restore 版本 → 协调器提交目标版本 → setContent 抑制二次保存 | 旧「setContent + 直写正文」双路径曾被防抖保存覆盖恢复结果（INV-06） |
+| 状态域 Provider 拆分（R004 阶段 4） | 四状态域各自 Provider（`AppProviders` 组合 Preferences → Workspace → Navigation → Overlay）；跨域动作：内层消费外层内部通道，外层经 `navigationBridge` 命令桥调用导航命令 | 跨域动作只有一份实现；公开 Context value 形状不变，消费方与渲染隔离测试零改动 |
+| PreferencesService 生命周期（R004 阶段 4） | `dispose()` 清防抖定时器 + 挂起宽度补写 + 队列排空；Provider 卸载时调用，挂载时 `resume()` 恢复 | StrictMode「挂载→清理→再挂载」曾让 disposed 实例整会话 no-op，路由永不落盘 |
 
 重大架构决策另有 ADR 详述（背景/替代方案），见 [adr/](./adr/)。
 

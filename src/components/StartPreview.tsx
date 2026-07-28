@@ -12,7 +12,8 @@ import {
   type ActivityTab,
 } from "../domain/activity";
 import { useAppServices } from "../state/AppServicesProvider";
-import { useApp } from "../state/AppState";
+import { useWorkspaceSession } from "../state/WorkspaceSessionContext";
+import { useNavigation } from "../state/NavigationContext";
 import { PageIcon } from "./ui/icons";
 
 interface StartPreviewProps {
@@ -26,7 +27,8 @@ const PREVIEW_LIMIT = 5;
 /** 侧栏“开始”入口的悬停/聚焦预览：最多 5 条最近文档，只用于快速打开。 */
 export function StartPreview({ onClose }: StartPreviewProps) {
   const services = useAppServices();
-  const { workspaces, openDocument } = useApp();
+  const { workspaces } = useWorkspaceSession();
+  const { openDocument } = useNavigation();
   const [allPages, setAllPages] = useState<Page[]>([]);
   const [tab, setTab] = useState<ActivityTab>("edited");
   const [now] = useState(() => Date.now());

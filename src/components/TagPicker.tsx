@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { useApp } from "../state/AppState";
+import { useWorkspaceSession } from "../state/WorkspaceSessionContext";
 import { IconCheck, IconClose, IconPlus, IconTag } from "./ui/icons";
 
 /** 新标签的候选颜色，按已有标签数量轮换。 */
@@ -25,7 +25,7 @@ interface TagPickerProps {
 
 /** 文档标签：标题下方展示已选标签 chips，弹层内勾选/新建标签。 */
 export function TagPicker({ pageId }: TagPickerProps) {
-  const { tags, pageTags, createTag, setPageTags } = useApp();
+  const { tags, pageTags, createTag, setPageTags } = useWorkspaceSession();
   const [open, setOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);

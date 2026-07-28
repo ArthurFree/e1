@@ -1,10 +1,10 @@
-import { AppProvider } from "./state/AppState";
+import { AppProviders } from "./state/AppProviders";
 import { AppShell } from "./components/AppShell";
 
 export default function App() {
   return (
-    <AppProvider>
+    <AppProviders>
       <AppShell />
-    </AppProvider>
+    </AppProviders>
   );
 }

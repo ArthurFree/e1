@@ -14,8 +14,8 @@
 
 ```text
 React Components（src/components/）
-        ↓ useApp / 窄 hook
-State（src/state/：AppServicesProvider + 四状态域 Context + AppState 门面）
+        ↓ 窄 hook（useWorkspaceSession / useNavigation / usePreferences / useOverlay）
+State（src/state/：AppServicesProvider + AppProviders 组合四状态域 Provider；legacy/useApp 仅供测试）
         ↓ AppServices 容器接口
 Application（src/application/：保存协调器、会话加载、搜索索引、偏好写入、诊断）
         ↓ domain port

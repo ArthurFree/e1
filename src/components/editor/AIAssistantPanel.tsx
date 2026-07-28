@@ -9,7 +9,8 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Editor, JSONContent } from "@tiptap/core";
-import { useApp } from "../../state/AppState";
+import { usePreferences } from "../../state/PreferencesContext";
+import { useOverlay } from "../../state/OverlayContext";
 import { isAIConfigured, type AIMode } from "../../domain/ai";
 import { useAppServices } from "../../state/AppServicesProvider";
 import { markdownToJson } from "../../editor/markdown";
@@ -46,7 +47,8 @@ const REPLACE_MODES: ReadonlySet<AIMode> = new Set(["polish", "rewrite"]);
  */
 export function AIAssistantPanel({ editor }: AIAssistantPanelProps) {
   const services = useAppServices();
-  const { preferences, openSettings } = useApp();
+  const { preferences } = usePreferences();
+  const { openSettings } = useOverlay();
   const configured = isAIConfigured(preferences.aiConfig);
 
   const [request, setRequest] = useState<AIAssistantOpen | null>(null);

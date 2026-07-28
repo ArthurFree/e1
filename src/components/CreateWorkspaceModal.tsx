@@ -4,7 +4,7 @@
  */
 
 import { useState, type FormEvent } from "react";
-import { useApp } from "../state/AppState";
+import { useWorkspaceSession } from "../state/WorkspaceSessionContext";
 import { Dialog } from "./ui/Dialog";
 
 interface CreateWorkspaceModalProps {
@@ -14,7 +14,7 @@ interface CreateWorkspaceModalProps {
 
 /** 新建知识库弹窗：必填名称，可选图标与描述；创建后进入知识库首页。 */
 export function CreateWorkspaceModal({ onClose }: CreateWorkspaceModalProps) {
-  const { createWorkspace } = useApp();
+  const { createWorkspace } = useWorkspaceSession();
   const [name, setName] = useState("");
   const [icon, setIcon] = useState("");
   const [description, setDescription] = useState("");

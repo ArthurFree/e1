@@ -11,7 +11,8 @@ import type { DocumentContent, Page } from "../domain/types";
 import { formatRelativeTime, workspaceDocStats } from "../domain/activity";
 import { buildChildrenByParent } from "../domain/pageTree";
 import { useAppServices } from "../state/AppServicesProvider";
-import { useApp } from "../state/AppState";
+import { useWorkspaceSession } from "../state/WorkspaceSessionContext";
+import { useNavigation } from "../state/NavigationContext";
 import { useOverlay } from "../state/OverlayContext";
 import {
   IconBook,
@@ -30,9 +31,9 @@ export function WorkspaceHome() {
     workspace,
     pages,
     createPage,
-    openDocument,
     toggleWorkspaceFavorite,
-  } = useApp();
+  } = useWorkspaceSession();
+  const { openDocument } = useNavigation();
   const { openTreeDrawer } = useOverlay();
   const [contents, setContents] = useState<DocumentContent[]>([]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());

@@ -14,7 +14,8 @@ import {
   type ActivityTab,
 } from "../domain/activity";
 import { useAppServices } from "../state/AppServicesProvider";
-import { useApp } from "../state/AppState";
+import { useWorkspaceSession } from "../state/WorkspaceSessionContext";
+import { useNavigation } from "../state/NavigationContext";
 import { IconStar, IconStarFilled, PageIcon } from "./ui/icons";
 
 /**
@@ -23,7 +24,8 @@ import { IconStar, IconStarFilled, PageIcon } from "./ui/icons";
  */
 export function ActivityList() {
   const services = useAppServices();
-  const { workspaces, openDocument, locatePage, togglePageFavorite } = useApp();
+  const { workspaces, togglePageFavorite } = useWorkspaceSession();
+  const { openDocument, locatePage } = useNavigation();
   const [allPages, setAllPages] = useState<Page[]>([]);
   const [tab, setTab] = useState<ActivityTab>("edited");
   const [filterWorkspaceId, setFilterWorkspaceId] = useState<string | null>(null);

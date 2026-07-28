@@ -14,7 +14,8 @@ import {
   formatRelativeTime,
 } from "../domain/activity";
 import { useAppServices } from "../state/AppServicesProvider";
-import { useApp } from "../state/AppState";
+import { useWorkspaceSession } from "../state/WorkspaceSessionContext";
+import { useNavigation } from "../state/NavigationContext";
 import { useOverlay } from "../state/OverlayContext";
 import { IconMenu, IconStarFilled, PageIcon } from "./ui/icons";
 
@@ -22,11 +23,11 @@ import { IconMenu, IconStarFilled, PageIcon } from "./ui/icons";
 export function FavoritesPage() {
   const {
     workspaces,
-    openDocument,
     switchWorkspace,
     togglePageFavorite,
     toggleWorkspaceFavorite,
-  } = useApp();
+  } = useWorkspaceSession();
+  const { openDocument } = useNavigation();
   const { openTreeDrawer } = useOverlay();
   const services = useAppServices();
   const [allPages, setAllPages] = useState<Page[]>([]);

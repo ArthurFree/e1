@@ -1,0 +1,164 @@
+/**
+ * 偏好状态 Provider（R004 阶段 4）：preferences 与路由持久化状态的
+ * 所有者。持有 PreferencesService 实例（串行写入队列），卸载时 dispose
+ * （清侧栏防抖定时器并等待写入队列排空）。
+ *
+ * 除公开的 PreferencesContext（value 形状不变）外，还提供内部路由通道
+ * PreferencesRouteContext 供导航域持久化路由、供初始加载等待偏好就绪——
+ * 嵌套顺序（Preferences → Workspace → Navigation）保证内层可消费。
+ */
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
+import type { AIConfig, Preferences } from "../domain/types";
+import { DEFAULT_PREFERENCES } from "../domain/types";
+import { serializeRoute, type AppRoute } from "../domain/route";
+import { PreferencesService } from "../application/services/PreferencesService";
+import { useAppServices } from "./AppServicesProvider";
+import {
+  PreferencesContext,
+  type PreferencesContextValue,
+} from "./PreferencesContext";
+
+/** 导航/工作区域共享的内部通道（非公开契约）：路由持久化与偏好就绪信号。 */
+export interface PreferencesRouteContextValue {
+  /** 路由写入 preferences.lastRoute（last-write-wins），内存镜像同步更新。 */
+  persistRoute(route: AppRoute): void;
+  /** 路由/偏好异步写入状态：失败时为 "error"（R003 阶段 3，错误可观测）。 */
+  routePersistenceStatus: "idle" | "error";
+  /** 首次偏好加载结果（失败则拒绝），初始加载恢复路由前必须等待。 */
+  whenLoaded: Promise<Preferences>;
+}
+
+const PreferencesRouteContext =
+  createContext<PreferencesRouteContextValue | null>(null);
+
+/** 读取内部路由通道；仅供 state 层内的 Provider 使用。 */
+export function usePreferencesRoute(): PreferencesRouteContextValue {
+  const ctx = useContext(PreferencesRouteContext);
+  if (!ctx) {
+    throw new Error("usePreferencesRoute 必须在 PreferencesProvider 内使用");
+  }
+  return ctx;
+}
+
+/** 偏好状态 Provider：挂载时加载偏好，卸载时 dispose 写入服务。 */
+export function PreferencesProvider({ children }: { children: ReactNode }) {
+  const { preferences: preferencesRepository } = useAppServices();
+  const [preferences, setPreferences] =
+    useState<Preferences>(DEFAULT_PREFERENCES);
+  // 路由持久化状态（R003 阶段 3）：偏好异步写入错误可观测。
+  const [routePersistenceStatus, setRoutePersistenceStatus] = useState<
+    "idle" | "error"
+  >("idle");
+  // 偏好写入服务：串行合并主题/侧栏宽度/AI 配置/路由更新，杜绝读-改-写竞态。
+  const preferencesService = useMemo(
+    () =>
+      new PreferencesService({
+        preferences: preferencesRepository,
+        onError: (err) => {
+          console.error("偏好写入失败", err);
+          setRoutePersistenceStatus("error");
+        },
+      }),
+    [preferencesRepository],
+  );
+
+  // 首次偏好加载：Promise 只创建一次，初始加载（路由恢复）经 whenLoaded
+  // 等待同一份结果；写入内存镜像在 effect 中执行，卸载后不再 setState。
+  const whenLoaded = useMemo(
+    () => preferencesRepository.get(),
+    [preferencesRepository],
+  );
+  useEffect(() => {
+    let cancelled = false;
+    whenLoaded.then(
+      (prefs) => {
+        if (!cancelled) setPreferences(prefs);
+      },
+      () => {
+        // 加载失败由初始加载流程降级为错误页（whenLoaded 向上拒绝），此处只兜底。
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [whenLoaded]);
+
+  // 卸载时 dispose：清侧栏防抖定时器并等待写入队列排空（R004 阶段 4）。
+  // StrictMode「挂载 → 清理 → 再挂载」会触发一次 dispose，挂载时先 resume
+  // 恢复同一实例（useMemo 不重建）的写入能力。
+  useEffect(() => {
+    preferencesService.resume();
+    return () => {
+      void preferencesService.dispose();
+    };
+  }, [preferencesService]);
+
+  // 视图/页面切换时把路由写入 preferences，刷新后恢复到同一位置；
+  // 经 PreferencesService 串行写入（last-write-wins），内存镜像同步更新。
+  const persistRoute = useCallback(
+    (route: AppRoute) => {
+      const lastRoute = serializeRoute(route);
+      preferencesService.persistRoute(lastRoute);
+      setPreferences((prev) => ({ ...prev, lastRoute }));
+    },
+    [preferencesService],
+  );
+
+  // 偏好更新统一走 PreferencesService 串行队列（R003 阶段 3）：
+  // update 返回合并后的完整偏好，直接整体替换内存镜像。
+  const setTheme = useCallback(
+    async (theme: Preferences["theme"]) => {
+      const next = await preferencesService.update({ theme });
+      setPreferences(next);
+    },
+    [preferencesService],
+  );
+
+  const setSidebarWidth = useCallback(
+    async (width: number) => {
+      // 拖动期间内存实时更新，持久化经服务 250ms 防抖（只落盘最后一次）。
+      setPreferences((prev) => ({ ...prev, sidebarWidth: width }));
+      preferencesService.updateSidebarWidthDebounced(width);
+    },
+    [preferencesService],
+  );
+
+  const setAIConfig = useCallback(
+    async (config: AIConfig | null) => {
+      const next = await preferencesService.update({ aiConfig: config });
+      setPreferences(next);
+    },
+    [preferencesService],
+  );
+
+  const value = useMemo<PreferencesContextValue>(
+    () => ({
+      preferences,
+      setTheme,
+      setSidebarWidth,
+      setAIConfig,
+    }),
+    [preferences, setTheme, setSidebarWidth, setAIConfig],
+  );
+
+  const routeValue = useMemo<PreferencesRouteContextValue>(
+    () => ({ persistRoute, routePersistenceStatus, whenLoaded }),
+    [persistRoute, routePersistenceStatus, whenLoaded],
+  );
+
+  return (
+    <PreferencesRouteContext.Provider value={routeValue}>
+      <PreferencesContext.Provider value={value}>
+        {children}
+      </PreferencesContext.Provider>
+    </PreferencesRouteContext.Provider>
+  );
+}

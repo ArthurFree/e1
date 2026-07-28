@@ -10,7 +10,10 @@ import { useState } from "react";
 import type { PickerTarget } from "../domain/picker";
 import { jsonToText, markdownToJson } from "../editor/markdown";
 import { useAppServices } from "../state/AppServicesProvider";
-import { useApp } from "../state/AppState";
+import { useWorkspaceSession } from "../state/WorkspaceSessionContext";
+import { useNavigation } from "../state/NavigationContext";
+import { usePreferences } from "../state/PreferencesContext";
+import { useOverlay } from "../state/OverlayContext";
 import { Dialog } from "./ui/Dialog";
 import { TargetPicker } from "./TargetPicker";
 
@@ -31,8 +34,10 @@ type Step = "input" | "generating" | "preview" | "error";
  */
 export function AIDraftModal({ onClose }: AIDraftModalProps) {
   const services = useAppServices();
-  const { preferences, openDocument, openSettings, createDocumentWithContent } =
-    useApp();
+  const { createDocumentWithContent } = useWorkspaceSession();
+  const { openDocument } = useNavigation();
+  const { preferences } = usePreferences();
+  const { openSettings } = useOverlay();
   const [topic, setTopic] = useState("");
   const [draftType, setDraftType] = useState<string>(DRAFT_TYPES[0]);
   const [target, setTarget] = useState<PickerTarget | null>(null);

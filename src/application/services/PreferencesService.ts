@@ -31,6 +31,8 @@ export class PreferencesService {
   /** 待写入的最新路由；连续导航只保留最后一次。 */
   private pendingRoute: string | null = null;
   private routeScheduled = false;
+  /** dispose 后防抖/路由等 fire-and-forget 入口变为 no-op。 */
+  private disposed = false;
 
   constructor(private readonly deps: PreferencesServiceDeps) {}
 
@@ -45,6 +47,7 @@ export class PreferencesService {
 
   /** 侧栏宽度：拖动期间高频调用，只在停顿后持久化最后一次。 */
   updateSidebarWidthDebounced(width: number): void {
+    if (this.disposed) return;
     this.latestSidebarWidth = width;
     if (this.sidebarTimer) clearTimeout(this.sidebarTimer);
     this.sidebarTimer = setTimeout(() => {
@@ -66,6 +69,7 @@ export class PreferencesService {
    * 写入执行时取最新的 pendingRoute，旧导航不会覆盖新导航。
    */
   persistRoute(lastRoute: string): void {
+    if (this.disposed) return;
     this.pendingRoute = lastRoute;
     if (this.routeScheduled) return;
     this.routeScheduled = true;
@@ -78,6 +82,39 @@ export class PreferencesService {
     }).catch(() => {
       // 已上报，避免未处理的 Promise rejection。
     });
+  }
+
+  /**
+   * 挂载/重挂载时恢复写入（R004 阶段 4 修正）：React StrictMode 会执行
+   * 「挂载 → 清理 → 再挂载」，清理阶段的 dispose 会让同一实例（useMemo
+   * 不重建）整会话 no-op；Provider 在 effect 挂载时调用本方法恢复。
+   */
+  resume(): void {
+    this.disposed = false;
+  }
+
+  /**
+   * 卸载清理（R004 阶段 4）：清除侧栏防抖定时器（挂起的宽度立即补写
+   * 入队，避免丢失最后一次拖动），之后的防抖/路由调用变为 no-op；
+   * 返回的 Promise 在写入队列排空后兑现。
+   */
+  dispose(): Promise<void> {
+    this.disposed = true;
+    if (this.sidebarTimer) {
+      clearTimeout(this.sidebarTimer);
+      this.sidebarTimer = null;
+      const pending = this.latestSidebarWidth;
+      this.latestSidebarWidth = null;
+      if (pending !== null) {
+        // 错误经 onError 上报；与防抖路径一致吞掉 rejection。
+        void this.enqueue(() =>
+          this.deps.preferences.update({ sidebarWidth: pending }),
+        ).catch(() => {
+          // 已上报，避免未处理的 Promise rejection。
+        });
+      }
+    }
+    return this.chain;
   }
 
   /** 把任务挂到串行链尾；失败经 onError 上报但不断链。 */

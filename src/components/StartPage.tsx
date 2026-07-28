@@ -7,7 +7,8 @@
 
 import { useMemo, useState } from "react";
 import { isAIConfigured } from "../domain/ai";
-import { useApp } from "../state/AppState";
+import { useWorkspaceSession } from "../state/WorkspaceSessionContext";
+import { usePreferences } from "../state/PreferencesContext";
 import { useOverlay } from "../state/OverlayContext";
 import { ActivityList } from "./ActivityList";
 import { TargetPicker } from "./TargetPicker";
@@ -25,7 +26,8 @@ import {
 
 /** 全局“开始”首页：快速操作卡片 + 跨知识库文档活动区。 */
 export function StartPage() {
-  const { workspaces, preferences, createDocumentIn } = useApp();
+  const { workspaces, createDocumentIn } = useWorkspaceSession();
+  const { preferences } = usePreferences();
   const { openSettings, openTreeDrawer } = useOverlay();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [createWsOpen, setCreateWsOpen] = useState(false);

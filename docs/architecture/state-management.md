@@ -1,17 +1,22 @@
 # 状态管理
 
-## 结构：单一状态所有者 + 窄 Context 分发
+## 结构：四状态域 Provider 组合（R004 阶段 4）
 
-`AppProvider`（`src/state/AppState.tsx`）是唯一状态所有者：持有全部跨域状态与 actions（动作天然跨域，如 `openDocument` 同时写会话与导航），但按域 memo 出四份 value 分别注入四个窄 Context：
+状态层已拆分为四个独立的状态所有者，由 `AppProviders`（`src/state/AppProviders.tsx`）嵌套装配，嵌套顺序即依赖方向：`PreferencesProvider → WorkspaceProvider → NavigationProvider → OverlayProvider`：
 
-| Context | 文件 | 内容 |
-| --- | --- | --- |
-| WorkspaceSession | `WorkspaceSessionContext.tsx` | ready/error/retryLoad、workspaces/workspace、会话 status、pages/tags/pageTags、全部页面/标签/知识库写操作、search |
-| Navigation | `NavigationContext.tsx` | view、selectedPageId、titleFocusPageId、routePersistenceStatus、导航动作 |
-| Preferences | `PreferencesContext.tsx` | preferences、setTheme/setSidebarWidth/setAIConfig |
-| Overlay | `OverlayContext.tsx` | settings/search/trash/treeDrawer 开关（自包含 Provider） |
+| Provider | 文件 | 拥有 | 公开 Context |
+| --- | --- | --- | --- |
+| Preferences | `PreferencesProvider.tsx` | preferences、routePersistenceStatus、`PreferencesService` 实例（卸载时 `dispose()`：清防抖定时器 + 队列排空） | `PreferencesContext.tsx` |
+| Workspace | `WorkspaceProvider.tsx` | ready/error/retryLoad、workspaces、会话（pages/tags/pageTags/status）、页面/标签 CRUD、搜索索引构建 | `WorkspaceSessionContext.tsx` |
+| Navigation | `NavigationProvider.tsx` | view、selectedPageId、titleFocusPageId、导航动作 | `NavigationContext.tsx` |
+| Overlay | `OverlayContext.tsx` | settings/search/trash/treeDrawer 开关（自包含 Provider） | 同左 |
 
-`useApp()` 是兼容聚合门面：读四个 Context 聚合为原 AppState 全集（44 字段），既有组件与测试零改动；新代码优先用窄 hook 获得渲染隔离。
+跨域动作不复制实现，经两条内部通道协作（公开 Context value 形状均不变）：
+
+- **内层消费外层**：NavigationProvider 经 `usePreferencesRoute()`（persistRoute/routePersistenceStatus/whenLoaded）与 `useWorkspaceInternals()`（loadSession/loadPages/getSnapshot）读取偏好与工作区能力；
+- **外层调用内层**：WorkspaceProvider 的跨域动作（切换/创建知识库、新建/删除页面）经 `navigationBridge` 命令桥触发导航（restoreRoute/showWorkspaceHome/openDocumentView/exitDocumentIfSelected），桥对象由 AppProviders 创建，NavigationProvider 挂载时注册。
+
+会话纯 reducer 提取至 `workspace/sessionReducer.ts`；`useApp()` 聚合门面移入 `legacy/useApp.ts` 仅供既有测试过渡，`AppState.tsx` 只剩兼容 re-export。生产代码一律使用窄 hook 获得渲染隔离。
 
 ## 知识库会话原子加载（R003 阶段 2）
 
