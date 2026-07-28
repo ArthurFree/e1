@@ -43,9 +43,7 @@ describe("AppProvider + 内存仓储", () => {
 
     // 建库并自动切换：会话原子加载完成。
     await host.app!.createWorkspace("我的知识库");
-    await waitFor(() =>
-      expect(host.app!.workspace?.name).toBe("我的知识库"),
-    );
+    await waitFor(() => expect(host.app!.workspace?.name).toBe("我的知识库"));
     expect(host.app!.workspaceStatus).toBe("ready");
     const wsId = host.app!.workspace!.id;
 
@@ -86,9 +84,7 @@ describe("AppProvider + 内存仓储", () => {
 
     // 切换知识库：会话原子替换。
     await host.app!.createWorkspace("第二知识库");
-    await waitFor(() =>
-      expect(host.app!.workspace?.name).toBe("第二知识库"),
-    );
+    await waitFor(() => expect(host.app!.workspace?.name).toBe("第二知识库"));
     expect(host.app!.pages.every((p) => p.workspaceId !== wsId)).toBe(true);
     await host.app!.switchWorkspace(wsId);
     await waitFor(() =>

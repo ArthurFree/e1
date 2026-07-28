@@ -159,7 +159,10 @@ describe("页面关系约束", () => {
       kind: "group",
       title: "乙库分组",
     });
-    await expectDomainError(pageRepository.move(page.id, other.id), "CROSS_WORKSPACE_PARENT");
+    await expectDomainError(
+      pageRepository.move(page.id, other.id),
+      "CROSS_WORKSPACE_PARENT",
+    );
   });
 
   it("移动到回收站父级被拒绝", async () => {
@@ -176,7 +179,10 @@ describe("页面关系约束", () => {
       title: "待删分组",
     });
     await pageRepository.remove(parent.id);
-    await expectDomainError(pageRepository.move(page.id, parent.id), "PARENT_IN_TRASH");
+    await expectDomainError(
+      pageRepository.move(page.id, parent.id),
+      "PARENT_IN_TRASH",
+    );
   });
 
   it("移动到不存在的父级被拒绝", async () => {
@@ -186,7 +192,10 @@ describe("页面关系约束", () => {
       kind: "document",
       title: "文档",
     });
-    await expectDomainError(pageRepository.move(page.id, "missing-parent"), "PARENT_NOT_FOUND");
+    await expectDomainError(
+      pageRepository.move(page.id, "missing-parent"),
+      "PARENT_NOT_FOUND",
+    );
   });
 
   it("移动到自身后代形成环被拒绝", async () => {
@@ -202,7 +211,10 @@ describe("页面关系约束", () => {
       kind: "group",
       title: "子",
     });
-    await expectDomainError(pageRepository.move(parent.id, child.id), "PAGE_TREE_CYCLE");
+    await expectDomainError(
+      pageRepository.move(parent.id, child.id),
+      "PAGE_TREE_CYCLE",
+    );
   });
 });
 

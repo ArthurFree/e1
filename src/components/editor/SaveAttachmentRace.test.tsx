@@ -35,6 +35,7 @@ function Harness() {
     <DocumentEditor
       pageId={host.pageId}
       initialContent={{ type: "doc", content: [{ type: "paragraph" }] }}
+      initialVersion={1}
       onEditorReady={(editor) => {
         host.editor = editor;
       }}
@@ -67,10 +68,12 @@ describe("DocumentEditor 附件清理竞态", () => {
     // 门控保存：resolve 顺序即落库顺序，由测试编排乱序完成。
     const realSave = contentRepository.save.bind(contentRepository);
     vi.spyOn(contentRepository, "save").mockImplementation(
-      (pageId, json, text) => {
+      (pageId, json, text, expectedVersion) => {
         const gate = createDeferred<void>();
         saveCalls.push(gate);
-        return gate.promise.then(() => realSave(pageId, json, text));
+        return gate.promise.then(() =>
+          realSave(pageId, json, text, expectedVersion),
+        );
       },
     );
   });

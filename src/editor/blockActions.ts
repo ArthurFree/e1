@@ -32,8 +32,14 @@ function mapIntoContent(
 ): { x: number; y: number } {
   const rect = viewDom.getBoundingClientRect();
   return {
-    x: Math.min(Math.max(clientX, rect.left + 1), Math.max(rect.left + 1, rect.right - 1)),
-    y: Math.min(Math.max(clientY, rect.top + 1), Math.max(rect.top + 1, rect.bottom - 1)),
+    x: Math.min(
+      Math.max(clientX, rect.left + 1),
+      Math.max(rect.left + 1, rect.right - 1),
+    ),
+    y: Math.min(
+      Math.max(clientY, rect.top + 1),
+      Math.max(rect.top + 1, rect.bottom - 1),
+    ),
   };
 }
 
@@ -42,7 +48,8 @@ function mapIntoContent(
  * 用于指针在左侧把手列、posAtCoords 可能落空时的拖放命中。
  */
 function findTopLevelBlockAtY(editor: Editor, clientY: number) {
-  let best: { pos: number; end: number; rect: DOMRect; dist: number } | null = null;
+  let best: { pos: number; end: number; rect: DOMRect; dist: number } | null =
+    null;
   editor.state.doc.forEach((node, offset) => {
     const dom = editor.view.nodeDOM(offset);
     if (!(dom instanceof HTMLElement)) return;
@@ -77,7 +84,11 @@ export function resolveBlockDropTarget(
     if (block) {
       const dom = editor.view.nodeDOM(block.pos);
       if (dom instanceof HTMLElement) {
-        target = { pos: block.pos, end: block.end, rect: dom.getBoundingClientRect() };
+        target = {
+          pos: block.pos,
+          end: block.end,
+          rect: dom.getBoundingClientRect(),
+        };
       }
     }
   }
@@ -100,7 +111,8 @@ export function moveBlock(editor: Editor, fromPos: number, insertPos: number) {
   const node = editor.state.doc.nodeAt(fromPos);
   if (!node) return false;
   // 目标落在块自身区间内视为无效移动（原地不动）。
-  if (insertPos >= fromPos && insertPos <= fromPos + node.nodeSize) return false;
+  if (insertPos >= fromPos && insertPos <= fromPos + node.nodeSize)
+    return false;
   const { tr } = editor.state;
   let target = insertPos;
   tr.delete(fromPos, fromPos + node.nodeSize);
@@ -143,14 +155,16 @@ export type ConvertTarget =
 /** 把选区移到指定块内并聚焦，让后续的 chain 命令作用于该块。 */
 function selectBlock(editor: Editor, pos: number) {
   const $pos = editor.state.doc.resolve(pos + 1);
-  editor.view.dispatch(
-    editor.state.tr.setSelection(TextSelection.near($pos)),
-  );
+  editor.view.dispatch(editor.state.tr.setSelection(TextSelection.near($pos)));
   editor.view.focus();
 }
 
 /** 块类型转换：复用统一命令的语义，作用于 pos 处的块。 */
-export function convertBlock(editor: Editor, pos: number, target: ConvertTarget) {
+export function convertBlock(
+  editor: Editor,
+  pos: number,
+  target: ConvertTarget,
+) {
   selectBlock(editor, pos);
   const chain = editor.chain().focus();
   switch (target) {
@@ -181,7 +195,11 @@ export function clearBlockFormatting(editor: Editor, pos: number) {
   if (!block) return false;
   const { tr } = editor.state;
   tr.setSelection(
-    TextSelection.create(editor.state.doc, block.pos + 1, Math.max(block.pos + 1, block.end - 1)),
+    TextSelection.create(
+      editor.state.doc,
+      block.pos + 1,
+      Math.max(block.pos + 1, block.end - 1),
+    ),
   );
   editor.view.dispatch(tr);
   return editor.chain().focus().unsetAllMarks().clearNodes().run();

@@ -63,7 +63,11 @@ export function TrashPanel({ onClose }: TrashPanelProps) {
           {roots.map((page) => (
             <div key={page.id} className="tree-row">
               <span className="tree-row__icon" aria-hidden="true">
-                <PageIcon icon={page.icon} kind={page.kind === "group" ? "group" : "document"} size={14} />
+                <PageIcon
+                  icon={page.icon}
+                  kind={page.kind === "group" ? "group" : "document"}
+                  size={14}
+                />
               </span>
               <span
                 className={`tree-row__title${page.title ? "" : " tree-row__title--untitled"}`}

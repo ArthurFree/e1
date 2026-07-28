@@ -35,15 +35,13 @@ export class WorkspaceSessionService {
 
   /** 原子加载知识库会话数据；失败时抛错，由调用方决定错误呈现。 */
   async load(workspaceId: string): Promise<WorkspaceSessionData> {
-    const [pages, tags, pageTags, allContents] = await Promise.all([
+    // 四类数据均按工作区索引直取（R004 阶段 5）：不再全表扫描正文与标签关联。
+    const [pages, tags, pageTags, contents] = await Promise.all([
       this.deps.pages.listByWorkspace(workspaceId),
       this.deps.tags.listByWorkspace(workspaceId),
       this.deps.tags.listWorkspacePageTags(workspaceId),
-      this.deps.content.listAll(),
+      this.deps.content.listByWorkspace(workspaceId),
     ]);
-    // 正文按本工作区页面过滤（contents 无工作区维度）。
-    const pageIds = new Set(pages.map((p) => p.id));
-    const contents = allContents.filter((c) => pageIds.has(c.pageId));
     return { workspaceId, pages, tags, pageTags, contents };
   }
 }

@@ -11,10 +11,13 @@
 import { Node } from "@tiptap/core";
 import type { Editor } from "@tiptap/core";
 import type { AttachmentRepository } from "../domain/repositories";
+import { validateAttachment } from "../domain/attachments";
+import { isDomainError, isQuotaExceededError } from "../domain/errors";
 import { paperclipSvgString } from "../components/ui/icons";
 
-/** 附件大小上限：Blob 整体存 IndexedDB，超限直接拒绝（R001 §7.6）。 */
-export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+// 单附件上限常量的唯一定义在 domain/attachments（R004 阶段 6 统一校验）；
+// 此处 re-export 保持既有引用（测试等）不破坏。
+export { MAX_ATTACHMENT_BYTES } from "../domain/attachments";
 
 /** 从 editor.storage 读取附件仓储（由编辑器宿主装配时注入）。 */
 export function getAttachmentRepository(editor: Editor): AttachmentRepository {
@@ -42,7 +45,8 @@ export interface AttachmentAttrs {
 }
 
 /**
- * 校验并写入附件记录后插入附件节点；超限立即提示且不写 IndexedDB。
+ * 校验并写入附件记录后插入附件节点；校验/写入失败立即提示且不写 IndexedDB。
+ * 校验规则（大小/总量/文件名/Blob 复核）统一在 domain/attachments（R004 阶段 6）。
  * @returns 是否成功插入；失败时已通过 alert 提示用户，文档与存储均无副作用。
  */
 export async function insertAttachmentFile(
@@ -50,22 +54,40 @@ export async function insertAttachmentFile(
   pageId: string,
   file: File,
 ): Promise<boolean> {
-  if (file.size > MAX_ATTACHMENT_BYTES) {
-    window.alert(`附件「${file.name}」超过 20MB 上限，未保存。`);
+  const repository = getAttachmentRepository(editor);
+  try {
+    const existing = await repository.listByPage(pageId);
+    const existingTotalBytes = existing.reduce((sum, a) => sum + a.size, 0);
+    validateAttachment({
+      name: file.name,
+      mimeType: file.type || "application/octet-stream",
+      blob: file,
+      existingTotalBytes,
+    });
+  } catch (err) {
+    window.alert(
+      isDomainError(err)
+        ? `${err.message}，未保存。`
+        : `附件「${file.name}」校验失败，未保存。`,
+    );
     return false;
   }
   let record;
   try {
-    record = await getAttachmentRepository(editor).add({
+    record = await repository.add({
       pageId,
       name: file.name,
       mimeType: file.type || "application/octet-stream",
       size: file.size,
       blob: file,
     });
-  } catch {
-    // 存储空间不足等写入失败：提示并中止，不产生孤儿节点。
-    window.alert(`附件「${file.name}」保存失败，可能是存储空间不足，请释放空间后重试。`);
+  } catch (err) {
+    // 存储空间不足与普通写入失败分开提示（R004 §6.3），不产生孤儿节点。
+    window.alert(
+      isQuotaExceededError(err)
+        ? "本地存储空间不足，请清理回收站或删除不需要的数据后重试。"
+        : `附件「${file.name}」保存失败，请重试。`,
+    );
     return false;
   }
   editor
@@ -100,8 +122,16 @@ export function collectAttachmentIds(doc: unknown): string[] {
   const ids: string[] = [];
   const walk = (node: unknown) => {
     if (!node || typeof node !== "object") return;
-    const record = node as { type?: string; attrs?: Record<string, unknown>; content?: unknown[] };
-    if (record.type === "attachment" && typeof record.attrs?.attachmentId === "string") {
+    const record = node as {
+      type?: string;
+      attrs?: Record<string, unknown>;
+      content?: unknown[];
+    };
+    // 附件块与本地图片（R004 阶段 6）都只以 attachmentId 引用 Blob。
+    if (
+      (record.type === "attachment" || record.type === "localImage") &&
+      typeof record.attrs?.attachmentId === "string"
+    ) {
       ids.push(record.attrs.attachmentId);
     }
     for (const child of record.content ?? []) walk(child);
@@ -173,14 +203,21 @@ export const Attachment = Node.create({
       download.type = "button";
       download.className = "attachment-block__action";
       download.textContent = "下载";
-      download.setAttribute("aria-label", `下载附件 ${node.attrs.name as string}`);
+      download.setAttribute(
+        "aria-label",
+        `下载附件 ${node.attrs.name as string}`,
+      );
       download.addEventListener("click", () => {
         void (async () => {
           status.textContent = "";
           const record = await getAttachmentRepository(editor)
             .get(node.attrs.attachmentId as string)
             .catch(() => undefined);
-          if (!record || !(record.blob instanceof Blob) || record.blob.size === 0) {
+          if (
+            !record ||
+            !(record.blob instanceof Blob) ||
+            record.blob.size === 0
+          ) {
             // Blob 缺失或损坏：提示“附件不可用”，节点可手动移除。
             status.textContent = "附件不可用";
             return;
@@ -198,7 +235,10 @@ export const Attachment = Node.create({
       remove.type = "button";
       remove.className = "attachment-block__action";
       remove.textContent = "移除";
-      remove.setAttribute("aria-label", `移除附件 ${node.attrs.name as string}`);
+      remove.setAttribute(
+        "aria-label",
+        `移除附件 ${node.attrs.name as string}`,
+      );
       remove.addEventListener("click", () => {
         const pos = typeof getPos === "function" ? getPos() : null;
         if (pos === null || pos === undefined) return;

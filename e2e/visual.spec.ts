@@ -19,7 +19,9 @@ async function openWelcome(page: Page) {
     .getByText("欢迎使用 Notion-like Web")
     .first()
     .click();
-  await expect(page.getByLabel("文档标题")).toHaveValue("欢迎使用 Notion-like Web");
+  await expect(page.getByLabel("文档标题")).toHaveValue(
+    "欢迎使用 Notion-like Web",
+  );
   await page.locator(".doc-scroll").evaluate((el) => el.scrollTo(0, 0));
 }
 
@@ -32,7 +34,9 @@ test.describe("视觉回归（1440 × 900）", () => {
   test("知识库首页", async ({ page }) => {
     await gotoStart(page);
     await page.getByLabel("知识库「我的知识库」").click();
-    await expect(page.getByRole("heading", { name: "我的知识库" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "我的知识库" }),
+    ).toBeVisible();
     await expect(page).toHaveScreenshot("workspace-home.png", {
       mask: [page.locator(".ws-home time, .ws-home [data-dynamic]")],
     });
@@ -63,7 +67,9 @@ test.describe("视觉回归（1440 × 900）", () => {
     await openWelcome(page);
     await page.getByLabel("收藏文档").click();
     await page.getByRole("button", { name: "收藏", exact: true }).click();
-    await expect(page.locator("main")).toContainText("欢迎使用 Notion-like Web");
+    await expect(page.locator("main")).toContainText(
+      "欢迎使用 Notion-like Web",
+    );
     await expect(page).toHaveScreenshot("favorites-view.png", {
       mask: [page.locator("time")],
     });
@@ -100,7 +106,9 @@ test.describe("视觉回归（1440 × 900）", () => {
     await page.locator(".editor__content").click();
     await page.keyboard.press("End");
     await page.keyboard.type("版本基线");
-    await expect(page.getByRole("status")).toContainText("已保存", { timeout: 5000 });
+    await expect(page.getByRole("status")).toContainText("已保存", {
+      timeout: 5000,
+    });
     await page.getByLabel("版本历史").click();
     const panel = page.getByRole("dialog", { name: "版本历史" });
     await expect(panel.getByText("自动").first()).toBeVisible();

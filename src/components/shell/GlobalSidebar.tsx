@@ -93,7 +93,9 @@ export function GlobalSidebar() {
             <IconHome />
             <span className="gsb__label">开始</span>
           </button>
-          {previewOpen && <StartPreview onClose={() => setPreviewOpen(false)} />}
+          {previewOpen && (
+            <StartPreview onClose={() => setPreviewOpen(false)} />
+          )}
         </div>
         <button
           type="button"

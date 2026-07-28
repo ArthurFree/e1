@@ -20,3 +20,4 @@
 ## 数据库迁移
 
 - [migrations/indexeddb-v3.md](./migrations/indexeddb-v3.md)：v2 → v3 变更、nullable 索引行为、原子性与回滚。
+- [migrations/indexeddb-v4.md](./migrations/indexeddb-v4.md)：v3 → v4 工作区字段回写与索引、孤立记录处理、写入路径约束。

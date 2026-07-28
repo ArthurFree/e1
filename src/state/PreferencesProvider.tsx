@@ -50,7 +50,8 @@ export function usePreferencesRoute(): PreferencesRouteContextValue {
 
 /** 偏好状态 Provider：挂载时加载偏好，卸载时 dispose 写入服务。 */
 export function PreferencesProvider({ children }: { children: ReactNode }) {
-  const { preferences: preferencesRepository } = useAppServices();
+  const services = useAppServices();
+  const { preferences: preferencesRepository } = services;
   const [preferences, setPreferences] =
     useState<Preferences>(DEFAULT_PREFERENCES);
   // 路由持久化状态（R003 阶段 3）：偏好异步写入错误可观测。
@@ -58,6 +59,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     "idle" | "error"
   >("idle");
   // 偏好写入服务：串行合并主题/侧栏宽度/AI 配置/路由更新，杜绝读-改-写竞态。
+  // 非路由写入落盘后广播 preferences-changed（R004 §7.2），其他标签页据此刷新。
   const preferencesService = useMemo(
     () =>
       new PreferencesService({
@@ -66,8 +68,10 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
           console.error("偏好写入失败", err);
           setRoutePersistenceStatus("error");
         },
+        onPersisted: () =>
+          services.syncChannel.post({ type: "preferences-changed" }),
       }),
-    [preferencesRepository],
+    [preferencesRepository, services],
   );
 
   // 首次偏好加载：Promise 只创建一次，初始加载（路由恢复）经 whenLoaded
@@ -100,6 +104,15 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       void preferencesService.dispose();
     };
   }, [preferencesService]);
+
+  // 其他标签页改了偏好（主题/宽度/AI 配置，R004 §7.2）：重新加载内存镜像；
+  // 自己发出的写入不回声（频道按来源 tabId 过滤），不会触发循环。
+  useEffect(() => {
+    return services.syncChannel.subscribe((event) => {
+      if (event.type !== "preferences-changed") return;
+      void preferencesRepository.get().then(setPreferences);
+    });
+  }, [services, preferencesRepository]);
 
   // 视图/页面切换时把路由写入 preferences，刷新后恢复到同一位置；
   // 经 PreferencesService 串行写入（last-write-wins），内存镜像同步更新。

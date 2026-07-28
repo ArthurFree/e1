@@ -9,7 +9,11 @@ async function gotoStart(page: Page) {
 /** 从开始首页经页面树打开指定文档。 */
 async function openDoc(page: Page, title: string) {
   await gotoStart(page);
-  await page.getByRole("tree", { name: "页面树" }).getByText(title).first().click();
+  await page
+    .getByRole("tree", { name: "页面树" })
+    .getByText(title)
+    .first()
+    .click();
   await expect(page.getByLabel("文档标题")).toHaveValue(title);
 }
 
@@ -38,9 +42,13 @@ test.describe("开始首页与知识库", () => {
   test("知识库首页：名称、收藏与目录概览", async ({ page }) => {
     await gotoStart(page);
     await page.getByLabel("知识库「我的知识库」").click();
-    await expect(page.getByRole("heading", { name: "我的知识库" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "我的知识库" }),
+    ).toBeVisible();
     await expect(page.getByLabel("收藏知识库")).toBeVisible();
-    await expect(page.getByLabel("目录概览")).toContainText("欢迎使用 Notion-like Web");
+    await expect(page.getByLabel("目录概览")).toContainText(
+      "欢迎使用 Notion-like Web",
+    );
   });
 
   test("收藏文档后出现在全局收藏视图", async ({ page }) => {
@@ -73,8 +81,12 @@ test.describe("文档编辑", () => {
     });
 
     await page.reload();
-    await expect(page.getByLabel("文档标题")).toHaveValue("欢迎使用 Notion-like Web");
-    await expect(page.locator(".editor__content")).toContainText("端到端持久化验证");
+    await expect(page.getByLabel("文档标题")).toHaveValue(
+      "欢迎使用 Notion-like Web",
+    );
+    await expect(page.locator(".editor__content")).toContainText(
+      "端到端持久化验证",
+    );
   });
 
   test("保存状态、字数统计与版本历史", async ({ page }) => {
@@ -86,7 +98,9 @@ test.describe("文档编辑", () => {
     await page.keyboard.press("End");
     await page.keyboard.type("版本历史验证");
     await expect(page.getByRole("status")).toContainText("未保存");
-    await expect(page.getByRole("status")).toContainText("已保存", { timeout: 5000 });
+    await expect(page.getByRole("status")).toContainText("已保存", {
+      timeout: 5000,
+    });
 
     // 首次保存生成自动版本
     await page.getByLabel("版本历史").click();
@@ -159,7 +173,9 @@ test.describe("文档编辑", () => {
     // 段落样式下拉选择 标题 1
     await toolbar.getByLabel("段落样式").click();
     await page.getByRole("menuitem", { name: "标题 1" }).click();
-    await expect(editor.getByRole("heading", { name: "工具栏标题" })).toBeVisible();
+    await expect(
+      editor.getByRole("heading", { name: "工具栏标题" }),
+    ).toBeVisible();
   });
 });
 
@@ -192,7 +208,9 @@ test.describe("模板与 AI", () => {
     await expect(dialog).toBeHidden();
   });
 
-  test("配置 AI 后请求目标 endpoint，结果确认后才写入文档", async ({ page }) => {
+  test("配置 AI 后请求目标 endpoint，结果确认后才写入文档", async ({
+    page,
+  }) => {
     let requested = false;
     await page.route("**/chat/completions", async (route) => {
       requested = true;
@@ -225,17 +243,26 @@ test.describe("模板与 AI", () => {
       .click();
     await page.locator(".editor__content").click();
     await page.keyboard.press("Meta+A");
-    await page.getByRole("toolbar", { name: "文本格式" }).getByLabel("AI").click();
+    await page
+      .getByRole("toolbar", { name: "文本格式" })
+      .getByLabel("AI")
+      .click();
     await page.getByRole("menuitem", { name: "润色选区" }).click();
 
     // 结果先预览，未确认前文档不变
     const dialog = page.getByRole("dialog", { name: "润色选区" });
-    await expect(dialog.getByLabel("AI 生成结果预览")).toContainText("润色结果文本");
+    await expect(dialog.getByLabel("AI 生成结果预览")).toContainText(
+      "润色结果文本",
+    );
     expect(requested).toBe(true);
-    await expect(page.locator(".editor__content")).not.toContainText("润色结果文本");
+    await expect(page.locator(".editor__content")).not.toContainText(
+      "润色结果文本",
+    );
 
     await dialog.getByRole("button", { name: "应用" }).click();
-    await expect(page.locator(".editor__content")).toContainText("润色结果文本");
+    await expect(page.locator(".editor__content")).toContainText(
+      "润色结果文本",
+    );
   });
 });
 
@@ -257,13 +284,11 @@ test.describe("R004 统一写入路径", () => {
 
   test("导入 Markdown 后立即能搜到正文", async ({ page }) => {
     await gotoStart(page);
-    await page
-      .locator('input[type="file"]')
-      .setInputFiles({
-        name: "导入验证.md",
-        mimeType: "text/markdown",
-        buffer: Buffer.from("# 导入验证\n\n导入正文关键词甲"),
-      });
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "导入验证.md",
+      mimeType: "text/markdown",
+      buffer: Buffer.from("# 导入验证\n\n导入正文关键词甲"),
+    });
     await expect(page.getByLabel("文档标题")).toHaveValue("导入验证");
 
     await page.getByLabel("搜索").click();
@@ -300,11 +325,14 @@ test.describe("R004 统一写入路径", () => {
     await page.reload();
     await expect(page.getByLabel("文档标题")).toHaveValue("会议纪要示例");
     await expect(page.locator(".editor__content")).toContainText("第一版标记");
-    await expect(page.locator(".editor__content")).not.toContainText("第二版标记");
+    await expect(page.locator(".editor__content")).not.toContainText(
+      "第二版标记",
+    );
   });
 });
 
-test.describe("回收站", () => {  test("删除进回收站并可恢复", async ({ page }) => {
+test.describe("回收站", () => {
+  test("删除进回收站并可恢复", async ({ page }) => {
     await gotoStart(page);
     await page.getByRole("button", { name: "新建文档", exact: true }).click();
     await expect(page.getByLabel("文档标题")).toHaveValue("无标题");

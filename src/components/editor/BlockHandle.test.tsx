@@ -127,13 +127,18 @@ describe("BlockHandle 块菜单键盘导航", () => {
 
     // mouseleave 不冒泡；用原生 MouseEvent 确保 relatedTarget 生效。
     e.view.dom.dispatchEvent(
-      new MouseEvent("mouseleave", { bubbles: false, relatedTarget: document.body }),
+      new MouseEvent("mouseleave", {
+        bubbles: false,
+        relatedTarget: document.body,
+      }),
     );
     expect(screen.getByRole("button", { name: "拖动块" })).toBeInTheDocument();
     act(() => {
       vi.advanceTimersByTime(200);
     });
-    expect(screen.queryByRole("button", { name: "拖动块" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "拖动块" }),
+    ).not.toBeInTheDocument();
     vi.useRealTimers();
   });
 });

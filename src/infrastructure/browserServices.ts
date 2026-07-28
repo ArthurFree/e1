@@ -10,11 +10,15 @@ import { DocumentCommitService } from "../application/services/DocumentCommitSer
 import { DocumentSaveCoordinator } from "../application/services/SaveCoordinator";
 import { WorkspaceSessionService } from "../application/services/WorkspaceSessionService";
 import { SearchIndexService } from "../application/services/SearchIndexService";
+import { SyncChannelService } from "../application/services/SyncChannelService";
+import { StorageConnectionEventBus } from "../application/services/StorageConnectionEventBus";
 import {
   clearRecovery,
   writeRecovery,
 } from "../application/services/documentRecovery";
 import { createOpenAICompatibleProvider } from "./aiProvider";
+import { createId } from "./id";
+import { setStorageConnectionCallbacks } from "./db";
 import {
   attachmentRepository,
   contentRepository,
@@ -37,13 +41,23 @@ export function createBrowserAppServices(): AppServices {
     content: contentRepository,
   });
   const searchIndex = new SearchIndexService();
+  // 跨标签页同步频道（R004 §7.2）：无 BroadcastChannel 环境降级 no-op。
+  const syncChannel = SyncChannelService.browser(createId());
+  // 存储连接事件（R004 §7.1）：db.ts 回调 → 事件总线 → UI 提示条。
+  const storageEvents = new StorageConnectionEventBus();
+  setStorageConnectionCallbacks({
+    onBlocked: () => storageEvents.emit("blocked"),
+    onVersionChange: () => storageEvents.emit("versionchange"),
+    onTerminated: () => storageEvents.emit("terminated"),
+  });
   // 文档提交服务（R004 阶段 2）：正文落盘 + 搜索索引同步单点，
-  // 保存协调器与外部文档写共用同一提交语义。
+  // 保存协调器与外部文档写共用同一提交语义；落盘成功广播 content-saved。
   const documentCommit = new DocumentCommitService({
     content: contentRepository,
     documentWrite: documentWriteRepository,
     revisions: revisionRepository,
     searchIndex,
+    syncChannel,
   });
   instance = {
     workspace: workspaceRepository,
@@ -57,17 +71,24 @@ export function createBrowserAppServices(): AppServices {
     documentCommit,
     session,
     searchIndex,
+    syncChannel,
+    storageEvents,
     createAIProvider: createOpenAICompatibleProvider,
-    createSaveCoordinator: (pageId, onStateChange) =>
-      new DocumentSaveCoordinator(pageId, {
-        committer: documentCommit,
-        revisions: revisionRepository,
-        attachments: attachmentRepository,
-        recovery: { write: writeRecovery, clear: clearRecovery },
-        // 维护失败不影响正文保存状态，只记录开发诊断（R004 阶段 1）。
-        onMaintenanceError: (stage) => increment("save-maintenance-error", stage),
-        onStateChange,
-      }),
+    createSaveCoordinator: (pageId, onStateChange, options) =>
+      new DocumentSaveCoordinator(
+        pageId,
+        {
+          committer: documentCommit,
+          revisions: revisionRepository,
+          attachments: attachmentRepository,
+          recovery: { write: writeRecovery, clear: clearRecovery },
+          // 维护失败不影响正文保存状态，只记录开发诊断（R004 阶段 1）。
+          onMaintenanceError: (stage) =>
+            increment("save-maintenance-error", stage),
+          onStateChange,
+        },
+        { initialVersion: options?.initialVersion },
+      ),
   };
   return instance;
 }

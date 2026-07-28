@@ -5,6 +5,7 @@
  * 仓储全部用内存 stub，不依赖 IndexedDB。
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { DomainError, isDomainError } from "../../domain/errors";
 import type {
   AttachmentRepository,
   RevisionRepository,
@@ -27,13 +28,13 @@ function makeStubs() {
   const recoveryClears: { pageId: string; savedGeneration: number }[] = [];
 
   const committer: DocumentContentCommitter = {
-    async commit(pageId, json, text) {
+    async commit(pageId, json, text, expectedVersion) {
       saves.push({ pageId, json, text });
       // 每次保存自动挂起，由测试按序放行，精确控制完成时机。
       const gate = createDeferred<void>();
       saveGates.push(gate);
       await gate.promise;
-      return { savedAt: Date.now() };
+      return { savedAt: Date.now(), version: expectedVersion + 1 };
     },
   };
   const revisions: RevisionRepository = {
@@ -111,13 +112,19 @@ describe("DocumentSaveCoordinator", () => {
 
   it("保存串行执行，乱序完成时最终落盘为最新快照", async () => {
     coordinator.noteEdit();
-    const first = coordinator.enqueue({ contentJson: DOC, textSnapshot: "旧内容" });
+    const first = coordinator.enqueue({
+      contentJson: DOC,
+      textSnapshot: "旧内容",
+    });
     // 第一个保存在途（门控挂起），提交第二个快照。
     await Promise.resolve();
     expect(stubs.saves).toHaveLength(1);
 
     coordinator.noteEdit();
-    const second = coordinator.enqueue({ contentJson: DOC, textSnapshot: "新内容" });
+    const second = coordinator.enqueue({
+      contentJson: DOC,
+      textSnapshot: "新内容",
+    });
     expect(stubs.saves).toHaveLength(1); // 串行：第二个保存尚未发起
 
     stubs.saveGates[0].resolve();
@@ -138,7 +145,10 @@ describe("DocumentSaveCoordinator", () => {
 
   it("旧代次保存完成时不发布 saved", async () => {
     coordinator.noteEdit();
-    const first = coordinator.enqueue({ contentJson: DOC, textSnapshot: "旧内容" });
+    const first = coordinator.enqueue({
+      contentJson: DOC,
+      textSnapshot: "旧内容",
+    });
     await Promise.resolve();
 
     // 新编辑仅 noteEdit（防抖未入队）时，旧保存完成。
@@ -151,7 +161,10 @@ describe("DocumentSaveCoordinator", () => {
 
   it("保存失败进入 error，retryLatest 重试最新内容", async () => {
     coordinator.noteEdit();
-    const failing = coordinator.enqueue({ contentJson: DOC, textSnapshot: "内容" });
+    const failing = coordinator.enqueue({
+      contentJson: DOC,
+      textSnapshot: "内容",
+    });
     await Promise.resolve();
     const err = new Error("写入失败");
     stubs.saveGates[0].reject(err);
@@ -166,6 +179,36 @@ describe("DocumentSaveCoordinator", () => {
     await retry;
     await coordinator.flush();
     expect(coordinator.getState().status).toBe("saved");
+  });
+
+  it("配额耗尽失败分类为 quota，普通失败为 generic（R004 阶段 6）", async () => {
+    // QuotaExceededError → errorKind "quota"（UI 提示「本地存储空间不足」）。
+    coordinator.noteEdit();
+    const quotaFailing = coordinator.enqueue({
+      contentJson: DOC,
+      textSnapshot: "内容",
+    });
+    await Promise.resolve();
+    stubs.saveGates[0].reject(new DOMException("full", "QuotaExceededError"));
+    await expect(quotaFailing).rejects.toThrow();
+    expect(coordinator.getState().status).toBe("error");
+    expect(coordinator.getState().errorKind).toBe("quota");
+
+    // 普通写入失败 → errorKind "generic"。
+    const genericFailing = coordinator.retryLatest();
+    await Promise.resolve();
+    stubs.saveGates[1].reject(new Error("写入失败"));
+    await expect(genericFailing).rejects.toThrow("写入失败");
+    expect(coordinator.getState().errorKind).toBe("generic");
+
+    // 恢复成功后 errorKind 复位。
+    const retry = coordinator.retryLatest();
+    await Promise.resolve();
+    stubs.saveGates[2].resolve();
+    await retry;
+    await coordinator.flush();
+    expect(coordinator.getState().status).toBe("saved");
+    expect(coordinator.getState().errorKind).toBeNull();
   });
 
   it("flush 等待队列排空", async () => {
@@ -188,7 +231,10 @@ describe("DocumentSaveCoordinator", () => {
 
   it("入队写恢复缓冲，最新快照保存成功后按代次清除", async () => {
     coordinator.noteEdit();
-    const save = coordinator.enqueue({ contentJson: DOC, textSnapshot: "内容" });
+    const save = coordinator.enqueue({
+      contentJson: DOC,
+      textSnapshot: "内容",
+    });
     await Promise.resolve();
     expect(stubs.recoveryWrites).toHaveLength(1);
     expect(stubs.recoveryWrites[0].generation).toBe(1);
@@ -196,7 +242,9 @@ describe("DocumentSaveCoordinator", () => {
     stubs.saveGates[0].resolve();
     await save;
     await coordinator.flush();
-    expect(stubs.recoveryClears).toEqual([{ pageId: "page-1", savedGeneration: 1 }]);
+    expect(stubs.recoveryClears).toEqual([
+      { pageId: "page-1", savedGeneration: 1 },
+    ]);
   });
 
   it("dispose 后排斥新的保存请求", async () => {
@@ -240,11 +288,11 @@ describe("DocumentSaveCoordinator 保存后半程竞态（R004）", () => {
     const failOrphans = { value: false };
 
     const committer: DocumentContentCommitter = {
-      async commit() {
+      async commit(_pageId, _json, _text, expectedVersion) {
         const gate = createDeferred<void>();
         saveGates.push(gate);
         await gate.promise;
-        return { savedAt: Date.now() };
+        return { savedAt: Date.now(), version: expectedVersion + 1 };
       },
     };
     const revisions: RevisionRepository = {
@@ -323,7 +371,10 @@ describe("DocumentSaveCoordinator 保存后半程竞态（R004）", () => {
     });
 
     coordinator.noteEdit();
-    const saveA = coordinator.enqueue({ contentJson: DOC, textSnapshot: "内容A" });
+    const saveA = coordinator.enqueue({
+      contentJson: DOC,
+      textSnapshot: "内容A",
+    });
     await Promise.resolve();
     // 正文 A 落盘，revision.add 挂起。
     stubs.saveGates[0].resolve();
@@ -331,7 +382,10 @@ describe("DocumentSaveCoordinator 保存后半程竞态（R004）", () => {
 
     // 挂起窗口内继续编辑 B：generation 递增、恢复缓冲写入 gen 2。
     coordinator.noteEdit();
-    const saveB = coordinator.enqueue({ contentJson: DOC, textSnapshot: "内容B" });
+    const saveB = coordinator.enqueue({
+      contentJson: DOC,
+      textSnapshot: "内容B",
+    });
     expect(stubs.recoveryWrites.at(-1)?.generation).toBe(2);
 
     // 放行 A 的后处理（未创建版本，保持 lastIntervalAt 为空，
@@ -354,7 +408,9 @@ describe("DocumentSaveCoordinator 保存后半程竞态（R004）", () => {
     await saveA;
     await coordinator.flush();
     expect(lastStatus(states)).toBe("saved");
-    expect(stubs.recoveryClears).toEqual([{ pageId: "page-1", savedGeneration: 2 }]);
+    expect(stubs.recoveryClears).toEqual([
+      { pageId: "page-1", savedGeneration: 2 },
+    ]);
   });
 
   it("removeOrphans 挂起期间继续编辑：旧快照不得发布 saved、不得清恢复缓冲", async () => {
@@ -366,7 +422,10 @@ describe("DocumentSaveCoordinator 保存后半程竞态（R004）", () => {
     });
 
     coordinator.noteEdit();
-    const saveA = coordinator.enqueue({ contentJson: DOC, textSnapshot: "内容A" });
+    const saveA = coordinator.enqueue({
+      contentJson: DOC,
+      textSnapshot: "内容A",
+    });
     await Promise.resolve();
     stubs.saveGates[0].resolve();
     await vi.waitFor(() => expect(stubs.revisionGates).toHaveLength(1));
@@ -375,7 +434,10 @@ describe("DocumentSaveCoordinator 保存后半程竞态（R004）", () => {
     await vi.waitFor(() => expect(stubs.orphanGates).toHaveLength(1));
 
     coordinator.noteEdit();
-    const saveB = coordinator.enqueue({ contentJson: DOC, textSnapshot: "内容B" });
+    const saveB = coordinator.enqueue({
+      contentJson: DOC,
+      textSnapshot: "内容B",
+    });
 
     // 放行 A 的附件清理：A 已过期。
     stubs.orphanGates[0].resolve(0);
@@ -401,7 +463,10 @@ describe("DocumentSaveCoordinator 保存后半程竞态（R004）", () => {
 
     const before = Date.now();
     coordinator.noteEdit();
-    const save = coordinator.enqueue({ contentJson: DOC, textSnapshot: "内容" });
+    const save = coordinator.enqueue({
+      contentJson: DOC,
+      textSnapshot: "内容",
+    });
     await Promise.resolve();
     stubs.saveGates[0].resolve();
     await vi.waitFor(() => expect(stubs.revisionGates).toHaveLength(1));
@@ -427,7 +492,10 @@ describe("DocumentSaveCoordinator 保存后半程竞态（R004）", () => {
     });
 
     coordinator.noteEdit();
-    const save = coordinator.enqueue({ contentJson: DOC, textSnapshot: "内容" });
+    const save = coordinator.enqueue({
+      contentJson: DOC,
+      textSnapshot: "内容",
+    });
     await Promise.resolve();
     stubs.saveGates[0].resolve();
     await vi.waitFor(() => expect(stubs.revisionGates).toHaveLength(1));
@@ -456,5 +524,108 @@ describe("DocumentSaveCoordinator 保存后半程竞态（R004）", () => {
     if (outcome.kind === "rejected") {
       expect((outcome.err as Error).message).toContain("没有可重试的保存");
     }
+  });
+});
+
+/**
+ * 乐观并发冲突（R004 阶段 7 §7.3）：
+ * DOCUMENT_CONFLICT 进入 errorKind: "conflict"、不自动重试；
+ * 「强制覆盖」经 setLoadedVersion(磁盘最新) + retryLatest 以正确
+ * expectedVersion 重试成功；initialVersion 构造参数作为首次提交的起点。
+ */
+describe("DocumentSaveCoordinator 乐观并发冲突", () => {
+  function makeConflictStubs(options?: { conflictTimes?: number }) {
+    const commits: { expectedVersion: number; text: string }[] = [];
+    let conflictLeft = options?.conflictTimes ?? Number.POSITIVE_INFINITY;
+    const committer: DocumentContentCommitter = {
+      async commit(_pageId, _json, text, expectedVersion) {
+        commits.push({ expectedVersion, text });
+        if (conflictLeft > 0) {
+          conflictLeft -= 1;
+          throw new DomainError("DOCUMENT_CONFLICT", "文档已在其他地方被修改");
+        }
+        return { savedAt: Date.now(), version: expectedVersion + 1 };
+      },
+    };
+    const states: SaveCoordinatorState[] = [];
+    const coordinator = new DocumentSaveCoordinator(
+      "page-1",
+      {
+        committer,
+        revisions: {
+          async listByPage() {
+            return [];
+          },
+          async add() {
+            return null;
+          },
+          async pruneInterval() {},
+        },
+        attachments: {
+          async get() {
+            return undefined;
+          },
+          async listByPage() {
+            return [];
+          },
+          async add() {
+            throw new Error("未使用");
+          },
+          async remove() {},
+          async removeOrphans() {
+            return 0;
+          },
+        },
+        onStateChange: (s) => states.push(s),
+      },
+      { initialVersion: 3 },
+    );
+    return { commits, states, coordinator };
+  }
+
+  it("首次提交以 initialVersion 为 expectedVersion", async () => {
+    const { commits, coordinator } = makeConflictStubs({ conflictTimes: 0 });
+    coordinator.noteEdit();
+    const save = coordinator.enqueue({ contentJson: DOC, textSnapshot: "新" });
+    await save;
+    expect(commits).toEqual([{ expectedVersion: 3, text: "新" }]);
+    // 成功后回填新版本。
+    expect(coordinator.getLoadedVersion()).toBe(4);
+  });
+
+  it("DOCUMENT_CONFLICT 进入 errorKind conflict，不自动重试", async () => {
+    const { commits, states, coordinator } = makeConflictStubs();
+    coordinator.noteEdit();
+    const save = coordinator.enqueue({ contentJson: DOC, textSnapshot: "新" });
+    await expect(save).rejects.toSatisfy((e) =>
+      isDomainError(e, "DOCUMENT_CONFLICT"),
+    );
+    const last = states[states.length - 1];
+    expect(last.status).toBe("error");
+    expect(last.errorKind).toBe("conflict");
+    // 不自动重试：等待一段时间后没有新的提交。
+    await sleep(50);
+    expect(commits).toHaveLength(1);
+    await coordinator.dispose();
+  });
+
+  it("强制覆盖：setLoadedVersion(磁盘最新) 后 retryLatest 成功", async () => {
+    const { commits, states, coordinator } = makeConflictStubs({
+      conflictTimes: 1,
+    });
+    coordinator.noteEdit();
+    await expect(
+      coordinator.enqueue({ contentJson: DOC, textSnapshot: "本地内容" }),
+    ).rejects.toSatisfy((e) => isDomainError(e, "DOCUMENT_CONFLICT"));
+
+    // 模拟冲突 UI「强制覆盖」：读到磁盘最新 version 为 8，以之为 expectedVersion 重试。
+    coordinator.setLoadedVersion(8);
+    const result = await coordinator.retryLatest();
+    expect(commits[1]).toEqual({ expectedVersion: 8, text: "本地内容" });
+    expect(result.savedAt).toBeGreaterThan(0);
+    expect(coordinator.getLoadedVersion()).toBe(9);
+    // saved 在维护段之后发布：等队列排空再断言最终状态。
+    await coordinator.flush();
+    expect(states[states.length - 1].status).toBe("saved");
   });
 });

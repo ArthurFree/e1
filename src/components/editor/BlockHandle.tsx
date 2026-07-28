@@ -105,7 +105,8 @@ export function BlockHandle({ editor }: BlockHandleProps) {
       if (!block) return null;
       const dom = editor.view.nodeDOM(block.pos);
       if (!(dom instanceof HTMLElement)) return null;
-      const containerRect = rootRef.current?.parentElement?.getBoundingClientRect();
+      const containerRect =
+        rootRef.current?.parentElement?.getBoundingClientRect();
       if (!containerRect) return null;
       const rect = dom.getBoundingClientRect();
       return { top: rect.top - containerRect.top, blockPos: block.pos };
@@ -117,8 +118,7 @@ export function BlockHandle({ editor }: BlockHandleProps) {
     const viewDom = editor.view.dom;
     // 生产环境把手与 ProseMirror 同挂在 .editor 下；测试里 view.dom 可能是独立节点。
     const parent = rootRef.current?.parentElement;
-    const hoverRoot =
-      parent && parent.contains(viewDom) ? parent : viewDom;
+    const hoverRoot = parent && parent.contains(viewDom) ? parent : viewDom;
 
     const onMouseMove = (event: MouseEvent) => {
       if (menuOpenRef.current || dragPosRef.current !== null) return;
@@ -144,7 +144,11 @@ export function BlockHandle({ editor }: BlockHandleProps) {
       if (dragPosRef.current === null) return;
       event.preventDefault();
       if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-      const target = resolveBlockDropTarget(editor, event.clientX, event.clientY);
+      const target = resolveBlockDropTarget(
+        editor,
+        event.clientX,
+        event.clientY,
+      );
       const containerRect = hoverRoot.getBoundingClientRect();
       if (!target) {
         setDropLineTop(null);
@@ -161,7 +165,11 @@ export function BlockHandle({ editor }: BlockHandleProps) {
       setMenuOpen(false);
       if (from === null) return;
       event.preventDefault();
-      const target = resolveBlockDropTarget(editor, event.clientX, event.clientY);
+      const target = resolveBlockDropTarget(
+        editor,
+        event.clientX,
+        event.clientY,
+      );
       if (!target) return;
       moveBlock(editor, from, target.insertPos);
       setHandle(null);
@@ -235,7 +243,8 @@ export function BlockHandle({ editor }: BlockHandleProps) {
     );
     if (items.length === 0) return;
     const index = items.indexOf(document.activeElement as HTMLElement);
-    const focusAt = (i: number) => items[(i + items.length) % items.length]?.focus();
+    const focusAt = (i: number) =>
+      items[(i + items.length) % items.length]?.focus();
     if (event.key === "ArrowDown") {
       event.preventDefault();
       focusAt(index + 1);
@@ -263,7 +272,11 @@ export function BlockHandle({ editor }: BlockHandleProps) {
             aria-hidden="true"
           />
         )}
-        <div ref={rootRef} className="block-handle" style={{ display: "none" }} />
+        <div
+          ref={rootRef}
+          className="block-handle"
+          style={{ display: "none" }}
+        />
       </>
     );
   }
@@ -342,7 +355,9 @@ export function BlockHandle({ editor }: BlockHandleProps) {
               type="button"
               role="menuitem"
               className="block-menu__item"
-              onClick={() => runAction(() => duplicateBlock(editor, handle.blockPos))}
+              onClick={() =>
+                runAction(() => duplicateBlock(editor, handle.blockPos))
+              }
             >
               复制
             </button>
@@ -350,7 +365,9 @@ export function BlockHandle({ editor }: BlockHandleProps) {
               type="button"
               role="menuitem"
               className="block-menu__item"
-              onClick={() => runAction(() => deleteBlock(editor, handle.blockPos))}
+              onClick={() =>
+                runAction(() => deleteBlock(editor, handle.blockPos))
+              }
             >
               删除
             </button>
@@ -358,7 +375,9 @@ export function BlockHandle({ editor }: BlockHandleProps) {
               type="button"
               role="menuitem"
               className="block-menu__item"
-              onClick={() => runAction(() => clearBlockFormatting(editor, handle.blockPos))}
+              onClick={() =>
+                runAction(() => clearBlockFormatting(editor, handle.blockPos))
+              }
             >
               清除格式
             </button>
@@ -371,7 +390,9 @@ export function BlockHandle({ editor }: BlockHandleProps) {
                 role="menuitem"
                 className="block-menu__item"
                 onClick={() =>
-                  runAction(() => convertBlock(editor, handle.blockPos, option.target))
+                  runAction(() =>
+                    convertBlock(editor, handle.blockPos, option.target),
+                  )
                 }
               >
                 {option.label}

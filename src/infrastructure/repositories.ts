@@ -19,6 +19,10 @@ import {
   wouldCreateCycle,
 } from "../domain/pageTree";
 import { DomainError } from "../domain/errors";
+import {
+  revisionContentBytes,
+  selectRevisionsToPrune,
+} from "../domain/revisions";
 import { parseDocumentContent } from "../domain/validation/documentContent";
 import {
   DEFAULT_PREFERENCES,
@@ -150,27 +154,49 @@ export const workspaceRepository: WorkspaceRepository = {
     const db = await getDB();
     const workspace = normalizeWorkspace(await db.get(STORE_WORKSPACES, id));
     if (!workspace) {
-      throw new DomainError("WORKSPACE_NOT_FOUND", `知识库不存在或数据损坏: ${id}`);
+      throw new DomainError(
+        "WORKSPACE_NOT_FOUND",
+        `知识库不存在或数据损坏: ${id}`,
+      );
     }
-    await db.put(STORE_WORKSPACES, { ...workspace, name, updatedAt: Date.now() });
+    await db.put(STORE_WORKSPACES, {
+      ...workspace,
+      name,
+      updatedAt: Date.now(),
+    });
   },
 
   async update(id, patch: UpdateWorkspaceInput) {
     const db = await getDB();
     const workspace = normalizeWorkspace(await db.get(STORE_WORKSPACES, id));
     if (!workspace) {
-      throw new DomainError("WORKSPACE_NOT_FOUND", `知识库不存在或数据损坏: ${id}`);
+      throw new DomainError(
+        "WORKSPACE_NOT_FOUND",
+        `知识库不存在或数据损坏: ${id}`,
+      );
     }
-    await db.put(STORE_WORKSPACES, { ...workspace, ...patch, id, updatedAt: Date.now() });
+    await db.put(STORE_WORKSPACES, {
+      ...workspace,
+      ...patch,
+      id,
+      updatedAt: Date.now(),
+    });
   },
 
   async setFavorite(id, favoriteAt) {
     const db = await getDB();
     const workspace = normalizeWorkspace(await db.get(STORE_WORKSPACES, id));
     if (!workspace) {
-      throw new DomainError("WORKSPACE_NOT_FOUND", `知识库不存在或数据损坏: ${id}`);
+      throw new DomainError(
+        "WORKSPACE_NOT_FOUND",
+        `知识库不存在或数据损坏: ${id}`,
+      );
     }
-    await db.put(STORE_WORKSPACES, { ...workspace, favoriteAt, updatedAt: Date.now() });
+    await db.put(STORE_WORKSPACES, {
+      ...workspace,
+      favoriteAt,
+      updatedAt: Date.now(),
+    });
   },
 
   async setLastOpened(id, at) {
@@ -187,7 +213,10 @@ const MAX_PAGE_TITLE_LENGTH = 200;
 /** 创建页面的入参校验（R003 阶段 4）：kind 合法、标题非空且不超长。 */
 function validateCreatePageInput(input: CreatePageInput): void {
   if (input.kind !== "document" && input.kind !== "group") {
-    throw new DomainError("INVALID_INPUT", `非法页面类型: ${String(input.kind)}`);
+    throw new DomainError(
+      "INVALID_INPUT",
+      `非法页面类型: ${String(input.kind)}`,
+    );
   }
   const title = input.title.trim();
   if (title.length === 0 || title.length > MAX_PAGE_TITLE_LENGTH) {
@@ -304,8 +333,11 @@ export const pageRepository: PageRepository = {
     if (page.kind === "document") {
       const content: DocumentContent = {
         pageId: page.id,
+        workspaceId: page.workspaceId,
         contentJson: { type: "doc", content: [] },
         textSnapshot: "",
+        // 新文档首版正文（R004 阶段 7）。
+        version: 1,
         updatedAt: now,
       };
       await tx.objectStore(STORE_CONTENTS).put(content);
@@ -335,7 +367,8 @@ export const pageRepository: PageRepository = {
   async move(id, newParentId, index) {
     const db = await getDB();
     const page = await getPage(db, id);
-    if (!page) throw new DomainError("PAGE_NOT_FOUND", `页面不存在或数据损坏: ${id}`);
+    if (!page)
+      throw new DomainError("PAGE_NOT_FOUND", `页面不存在或数据损坏: ${id}`);
     // 新父级必须存在、同属本知识库、未删除（R003 阶段 4：页面关系约束）。
     if (newParentId !== null) {
       const parent = await getPage(db, newParentId);
@@ -347,14 +380,18 @@ export const pageRepository: PageRepository = {
       throw new DomainError("PAGE_TREE_CYCLE", "不能移动到自身或其子页面下");
     }
     const targetIndex =
-      index ?? childrenOf(workspacePages, newParentId).filter((p) => p.id !== id).length;
+      index ??
+      childrenOf(workspacePages, newParentId).filter((p) => p.id !== id).length;
     const next = movePage(workspacePages, id, newParentId, targetIndex);
     const now = Date.now();
     // movePage 会重排受影响兄弟的 position，但只有真正变化的行才回写，
     // 避免无关页面的 updatedAt 被刷新（会影响最近浏览等活动列表排序）。
     const changed = next.filter((p) => {
       const before = workspacePages.find((w) => w.id === p.id);
-      return before && (before.parentId !== p.parentId || before.position !== p.position);
+      return (
+        before &&
+        (before.parentId !== p.parentId || before.position !== p.position)
+      );
     });
     const tx = db.transaction(STORE_PAGES, "readwrite");
     for (const p of changed) {
@@ -366,7 +403,8 @@ export const pageRepository: PageRepository = {
   async remove(id) {
     const db = await getDB();
     const page = await getPage(db, id);
-    if (!page) throw new DomainError("PAGE_NOT_FOUND", `页面不存在或数据损坏: ${id}`);
+    if (!page)
+      throw new DomainError("PAGE_NOT_FOUND", `页面不存在或数据损坏: ${id}`);
     const all = await listWorkspacePages(db, page.workspaceId);
     const now = Date.now();
     const ids = collectSubtreeIds(all, id);
@@ -375,7 +413,9 @@ export const pageRepository: PageRepository = {
       const target = all.find((p) => p.id === pageId);
       // 已在回收站的跳过：子树与祖先可能先后被删，避免覆盖首次删除时记录的 originalParentId。
       if (!target || target.deletedAt !== null) continue;
-      await tx.objectStore(STORE_PAGES).put({ ...target, deletedAt: now, updatedAt: now });
+      await tx
+        .objectStore(STORE_PAGES)
+        .put({ ...target, deletedAt: now, updatedAt: now });
       await tx.objectStore(STORE_TRASH).put({
         pageId,
         deletedAt: now,
@@ -388,7 +428,8 @@ export const pageRepository: PageRepository = {
   async restore(id) {
     const db = await getDB();
     const page = await getPage(db, id);
-    if (!page) throw new DomainError("PAGE_NOT_FOUND", `页面不存在或数据损坏: ${id}`);
+    if (!page)
+      throw new DomainError("PAGE_NOT_FOUND", `页面不存在或数据损坏: ${id}`);
     const all = await listWorkspacePages(db, page.workspaceId);
     const ids = collectSubtreeIds(all, id);
     const trash = (await db.getAll(STORE_TRASH)) as {
@@ -406,7 +447,10 @@ export const pageRepository: PageRepository = {
       let parentId = record?.originalParentId ?? null;
       // 原父级已不存在或仍在回收站时回到根，避免恢复后不可见。
       const parent = parentId ? all.find((p) => p.id === parentId) : undefined;
-      if (parentId && (!parent || (trashedIds.has(parentId) && !ids.includes(parentId)))) {
+      if (
+        parentId &&
+        (!parent || (trashedIds.has(parentId) && !ids.includes(parentId)))
+      ) {
         parentId = null;
       }
       const siblings = all.filter(
@@ -427,13 +471,21 @@ export const pageRepository: PageRepository = {
   async purge(id) {
     const db = await getDB();
     const page = await getPage(db, id);
-    if (!page) throw new DomainError("PAGE_NOT_FOUND", `页面不存在或数据损坏: ${id}`);
+    if (!page)
+      throw new DomainError("PAGE_NOT_FOUND", `页面不存在或数据损坏: ${id}`);
     const ids = collectSubtreeIds(
       await listWorkspacePages(db, page.workspaceId),
       id,
     );
     const tx = db.transaction(
-      [STORE_PAGES, STORE_CONTENTS, STORE_PAGE_TAGS, STORE_TRASH, STORE_REVISIONS, STORE_ATTACHMENTS],
+      [
+        STORE_PAGES,
+        STORE_CONTENTS,
+        STORE_PAGE_TAGS,
+        STORE_TRASH,
+        STORE_REVISIONS,
+        STORE_ATTACHMENTS,
+      ],
       "readwrite",
     );
     await purgePagesInTx(tx, ids);
@@ -455,7 +507,14 @@ export const pageRepository: PageRepository = {
       for (const subId of collectSubtreeIds(pages, pageId)) ids.add(subId);
     }
     const tx = db.transaction(
-      [STORE_PAGES, STORE_CONTENTS, STORE_PAGE_TAGS, STORE_TRASH, STORE_REVISIONS, STORE_ATTACHMENTS],
+      [
+        STORE_PAGES,
+        STORE_CONTENTS,
+        STORE_PAGE_TAGS,
+        STORE_TRASH,
+        STORE_REVISIONS,
+        STORE_ATTACHMENTS,
+      ],
       "readwrite",
     );
     await purgePagesInTx(tx, [...ids]);
@@ -500,38 +559,92 @@ async function purgePagesInTx(
 /**
  * 文档正文仓储。contents 以 pageId 为主键，与 pages 一一对应；
  * `contentJson` 是唯一编辑真相，`textSnapshot` 仅供搜索与 Markdown 导出（见 AGENTS.md 架构约束）。
+ * R004 阶段 5：记录冗余 workspaceId，写路径一律从页面取（页面不存在抛 PAGE_NOT_FOUND），
+ * 工作区查询走 `workspaceId` 索引，不再全表扫描。
  */
 export const contentRepository: ContentRepository = {
   async get(pageId) {
     const db = await getDB();
-    const content = (await db.get(STORE_CONTENTS, pageId)) as DocumentContent | undefined;
+    const content = (await db.get(STORE_CONTENTS, pageId)) as
+      DocumentContent | undefined;
     // 损坏记录按「无正文」处理，由上层走空文档逻辑，而不是把脏 JSON 塞进编辑器。
     if (!content || typeof content.pageId !== "string") return undefined;
-    return content;
+    return normalizeContent(content);
   },
 
-  async save(pageId, contentJson, textSnapshot) {
+  async save(pageId, contentJson, textSnapshot, expectedVersion) {
     const db = await getDB();
+    // 单事务读页面取 workspaceId + 读当前正文 version 再写正文（R004 阶段 7
+    // 乐观锁）：页面不存在抛 PAGE_NOT_FOUND；version 不匹配抛 DOCUMENT_CONFLICT，
+    // 多标签页并发保存时后到者显式失败而不是静默覆盖。
+    const tx = db.transaction([STORE_PAGES, STORE_CONTENTS], "readwrite");
+    const page = normalizePage(await tx.objectStore(STORE_PAGES).get(pageId));
+    if (!page) {
+      throw new DomainError(
+        "PAGE_NOT_FOUND",
+        `页面不存在或数据损坏: ${pageId}`,
+      );
+    }
+    const existing = (await tx.objectStore(STORE_CONTENTS).get(pageId)) as
+      DocumentContent | undefined;
+    // 存量记录无 version 字段：读路径视为 0（首次保存落 1），无需 schema 升级。
+    const currentVersion =
+      existing && typeof existing.version === "number" ? existing.version : 0;
+    if (currentVersion !== expectedVersion) {
+      throw new DomainError(
+        "DOCUMENT_CONFLICT",
+        `文档已在其他地方被修改（当前版本 ${currentVersion}，期望 ${expectedVersion}）`,
+      );
+    }
+    const updatedAt = Date.now();
     const content: DocumentContent = {
       pageId,
+      workspaceId: page.workspaceId,
       contentJson,
       textSnapshot,
-      updatedAt: Date.now(),
+      version: currentVersion + 1,
+      updatedAt,
     };
-    await db.put(STORE_CONTENTS, content);
+    await tx.objectStore(STORE_CONTENTS).put(content);
+    await tx.done;
+    return { version: content.version, updatedAt };
   },
 
   async listAll() {
     const db = await getDB();
     const all = (await db.getAll(STORE_CONTENTS)) as unknown[];
-    return all.filter(
-      (c): c is DocumentContent =>
-        !!c &&
-        typeof (c as DocumentContent).pageId === "string" &&
-        typeof (c as DocumentContent).textSnapshot === "string",
-    );
+    return all.filter(isValidContent).map(normalizeContent);
+  },
+
+  async listByWorkspace(workspaceId) {
+    const db = await getDB();
+    // 工作区索引直取（R004 阶段 5）：会话加载不再全表扫描正文。
+    const rows = (await db.getAllFromIndex(
+      STORE_CONTENTS,
+      "workspaceId",
+      workspaceId,
+    )) as unknown[];
+    return rows.filter(isValidContent).map(normalizeContent);
   },
 };
+
+/** 正文记录校验：核心字段非法的记录跳过（v4 迁移前的旧数据由迁移补齐 workspaceId）。 */
+function isValidContent(c: unknown): c is DocumentContent {
+  return (
+    !!c &&
+    typeof (c as DocumentContent).pageId === "string" &&
+    typeof (c as DocumentContent).workspaceId === "string" &&
+    typeof (c as DocumentContent).textSnapshot === "string"
+  );
+}
+
+/** 版本号归一化：存量记录无 version 字段（R004 阶段 7 前），读路径一律视为 0。 */
+function normalizeContent(content: DocumentContent): DocumentContent {
+  return {
+    ...content,
+    version: typeof content.version === "number" ? content.version : 0,
+  };
+}
 
 /**
  * 原子文档写仓储（R004 阶段 2，INV-04）：页面与初始正文在单个 IndexedDB
@@ -598,8 +711,11 @@ export const documentWriteRepository: DocumentWriteRepository = {
     await tx.objectStore(STORE_PAGES).put(page);
     const content: DocumentContent = {
       pageId: page.id,
+      workspaceId: page.workspaceId,
       contentJson: parsed.value,
       textSnapshot: input.textSnapshot,
+      // 新文档首版正文（R004 阶段 7）。
+      version: 1,
       updatedAt: now,
     };
     await tx.objectStore(STORE_CONTENTS).put(content);
@@ -610,10 +726,7 @@ export const documentWriteRepository: DocumentWriteRepository = {
   async replaceContent(input) {
     const parsed = parseDocumentContent(input.contentJson);
     if (!parsed.ok) {
-      throw new DomainError(
-        "CORRUPTED_DOCUMENT",
-        "正文 JSON 未通过白名单校验",
-      );
+      throw new DomainError("CORRUPTED_DOCUMENT", "正文 JSON 未通过白名单校验");
     }
     const db = await getDB();
     const tx = db.transaction([STORE_PAGES, STORE_CONTENTS], "readwrite");
@@ -626,10 +739,19 @@ export const documentWriteRepository: DocumentWriteRepository = {
         `页面不存在或数据损坏: ${input.pageId}`,
       );
     }
+    const existing = (await tx
+      .objectStore(STORE_CONTENTS)
+      .get(input.pageId)) as DocumentContent | undefined;
+    // 外部覆盖路径（导入/模板/损坏面板）：不做冲突检查，但 version 照常递增，
+    // 保证编辑器保存链路的乐观锁读到的是单调递增版本（R004 阶段 7）。
+    const currentVersion =
+      existing && typeof existing.version === "number" ? existing.version : 0;
     const content: DocumentContent = {
       pageId: input.pageId,
+      workspaceId: page.workspaceId,
       contentJson: parsed.value,
       textSnapshot: input.textSnapshot,
+      version: currentVersion + 1,
       updatedAt: Date.now(),
     };
     await tx.objectStore(STORE_CONTENTS).put(content);
@@ -645,7 +767,9 @@ function isValidRevision(record: unknown): record is DocumentRevision {
     typeof r.id === "string" &&
     typeof r.pageId === "string" &&
     typeof r.createdAt === "number" &&
-    (r.reason === "interval" || r.reason === "before-restore" || r.reason === "manual")
+    (r.reason === "interval" ||
+      r.reason === "before-restore" ||
+      r.reason === "manual")
   );
 }
 
@@ -661,16 +785,25 @@ function revisionContentKey(contentJson: unknown): string {
 export const revisionRepository: RevisionRepository = {
   async listByPage(pageId) {
     const db = await getDB();
-    const all = (await db.getAllFromIndex(STORE_REVISIONS, "pageId", pageId)) as unknown[];
+    const all = (await db.getAllFromIndex(
+      STORE_REVISIONS,
+      "pageId",
+      pageId,
+    )) as unknown[];
     // 损坏记录跳过，其余按创建时间倒序。
-    return all.filter(isValidRevision).sort((a, b) => b.createdAt - a.createdAt);
+    return all
+      .filter(isValidRevision)
+      .sort((a, b) => b.createdAt - a.createdAt);
   },
 
   async add(pageId, contentJson, textSnapshot, reason: RevisionReason) {
     const db = await getDB();
     // 与最新版本内容一致时不重复落库：防抖保存与间隔自动版本可能在没有实际编辑时触发。
     const latest = (await revisionRepository.listByPage(pageId))[0];
-    if (latest && revisionContentKey(latest.contentJson) === revisionContentKey(contentJson)) {
+    if (
+      latest &&
+      revisionContentKey(latest.contentJson) === revisionContentKey(contentJson)
+    ) {
       return null;
     }
     const revision: DocumentRevision = {
@@ -685,12 +818,21 @@ export const revisionRepository: RevisionRepository = {
     return revision;
   },
 
-  async pruneInterval(pageId, keep) {
+  async pruneInterval(pageId, keep, maxBytes) {
     const db = await getDB();
     const interval = (await revisionRepository.listByPage(pageId)).filter(
       (r) => r.reason === "interval",
     );
-    const excess = interval.slice(keep);
+    // 数量与总字节双重预算（R004 阶段 6）：裁剪规则集中在 domain/revisions，
+    // 保证两实现语义一致且可确定性测试。
+    const excess = selectRevisionsToPrune(
+      interval.map((r) => ({
+        ...r,
+        bytes: revisionContentBytes(r.contentJson),
+      })),
+      keep,
+      maxBytes ?? Number.POSITIVE_INFINITY,
+    );
     if (excess.length === 0) return;
     const tx = db.transaction(STORE_REVISIONS, "readwrite");
     for (const r of excess) {
@@ -725,7 +867,11 @@ export const attachmentRepository: AttachmentRepository = {
 
   async listByPage(pageId) {
     const db = await getDB();
-    const all = (await db.getAllFromIndex(STORE_ATTACHMENTS, "pageId", pageId)) as unknown[];
+    const all = (await db.getAllFromIndex(
+      STORE_ATTACHMENTS,
+      "pageId",
+      pageId,
+    )) as unknown[];
     return all.filter(isValidAttachment);
   },
 
@@ -757,7 +903,8 @@ export const attachmentRepository: AttachmentRepository = {
     // 新正文快照，删除会误伤（R004 INV-03）。
     const orphans = all.filter(
       (a) =>
-        !referenced.has(a.id) && (cutoff === undefined || a.createdAt <= cutoff),
+        !referenced.has(a.id) &&
+        (cutoff === undefined || a.createdAt <= cutoff),
     );
     if (orphans.length === 0) return 0;
     const db = await getDB();
@@ -808,7 +955,10 @@ export const tagRepository: TagRepository = {
     const db = await getDB();
     const tx = db.transaction([STORE_TAGS, STORE_PAGE_TAGS], "readwrite");
     await tx.objectStore(STORE_TAGS).delete(id);
-    const keys = await tx.objectStore(STORE_PAGE_TAGS).index("tagId").getAllKeys(id);
+    const keys = await tx
+      .objectStore(STORE_PAGE_TAGS)
+      .index("tagId")
+      .getAllKeys(id);
     for (const key of keys) {
       await tx.objectStore(STORE_PAGE_TAGS).delete(key);
     }
@@ -817,7 +967,11 @@ export const tagRepository: TagRepository = {
 
   async listPageTagIds(pageId) {
     const db = await getDB();
-    const rows = (await db.getAllFromIndex(STORE_PAGE_TAGS, "pageId", pageId)) as {
+    const rows = (await db.getAllFromIndex(
+      STORE_PAGE_TAGS,
+      "pageId",
+      pageId,
+    )) as {
       tagId: string;
     }[];
     return rows.map((r) => r.tagId);
@@ -825,13 +979,14 @@ export const tagRepository: TagRepository = {
 
   async listWorkspacePageTags(workspaceId) {
     const db = await getDB();
-    // pages 走索引（R003 阶段 7）；pageTags 无工作区维度，按 pageId 集合内存过滤。
-    const pageIds = new Set(
-      (await listWorkspacePages(db, workspaceId)).map((p) => p.id),
-    );
-    const rows = (await db.getAll(STORE_PAGE_TAGS)) as PageTag[];
+    // 工作区索引直取（R004 阶段 5）：不再全表扫描 + 按页面集合内存过滤。
+    const rows = (await db.getAllFromIndex(
+      STORE_PAGE_TAGS,
+      "workspaceId",
+      workspaceId,
+    )) as PageTag[];
     return rows.filter(
-      (r) => r && typeof r.pageId === "string" && pageIds.has(r.pageId),
+      (r) => r && typeof r.pageId === "string" && typeof r.tagId === "string",
     );
   },
 
@@ -840,13 +995,19 @@ export const tagRepository: TagRepository = {
     // 关系约束（R003 阶段 4）：页面存在、标签存在且与页面同属一个知识库。
     const page = normalizePage(await db.get(STORE_PAGES, pageId));
     if (!page) {
-      throw new DomainError("PAGE_NOT_FOUND", `页面不存在或数据损坏: ${pageId}`);
+      throw new DomainError(
+        "PAGE_NOT_FOUND",
+        `页面不存在或数据损坏: ${pageId}`,
+      );
     }
     const uniqueTagIds = [...new Set(tagIds)];
     for (const tagId of uniqueTagIds) {
       const tag = await db.get(STORE_TAGS, tagId);
       if (!isValidTag(tag)) {
-        throw new DomainError("TAG_NOT_FOUND", `标签不存在或数据损坏: ${tagId}`);
+        throw new DomainError(
+          "TAG_NOT_FOUND",
+          `标签不存在或数据损坏: ${tagId}`,
+        );
       }
       if (tag.workspaceId !== page.workspaceId) {
         throw new DomainError(
@@ -862,7 +1023,7 @@ export const tagRepository: TagRepository = {
       await tx.store.delete(key);
     }
     for (const tagId of uniqueTagIds) {
-      await tx.store.put({ pageId, tagId });
+      await tx.store.put({ pageId, tagId, workspaceId: page.workspaceId });
     }
     await tx.done;
   },

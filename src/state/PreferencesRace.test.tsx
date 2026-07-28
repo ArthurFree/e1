@@ -41,9 +41,7 @@ describe("偏好并发更新", () => {
     // 强制三个更新从同一旧基线合并：任何读-改-写实现都必然互相覆盖；
     // 事务化/串行化实现不经过该 get，mock 对其无影响。
     const base = await preferencesRepository.get();
-    const spy = vi
-      .spyOn(preferencesRepository, "get")
-      .mockResolvedValue(base);
+    const spy = vi.spyOn(preferencesRepository, "get").mockResolvedValue(base);
 
     void host.app!.setTheme("dark");
     void host.app!.setSidebarWidth(320);

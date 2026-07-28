@@ -28,7 +28,10 @@ export function TemplateCenter({ onClose }: TemplateCenterProps) {
   const { openDocument } = useNavigation();
   const [selected, setSelected] = useState<DocTemplate | null>(null);
 
-  const createFromTemplate = async (template: DocTemplate, target: PickerTarget) => {
+  const createFromTemplate = async (
+    template: DocTemplate,
+    target: PickerTarget,
+  ) => {
     // 原子创建「页面 + 模板正文」（R004）：不再先建空页再写正文。
     const page = await createDocumentWithContent({
       workspaceId: target.workspaceId,
@@ -62,8 +65,12 @@ export function TemplateCenter({ onClose }: TemplateCenterProps) {
                 onClick={() => setSelected(template)}
               >
                 <span className="template-card__name">{template.name}</span>
-                <span className="template-card__purpose">{template.purpose}</span>
-                <span className="template-card__preview">{template.preview}</span>
+                <span className="template-card__purpose">
+                  {template.purpose}
+                </span>
+                <span className="template-card__preview">
+                  {template.preview}
+                </span>
               </button>
             ))}
           </div>
@@ -79,7 +86,11 @@ export function TemplateCenter({ onClose }: TemplateCenterProps) {
             onSelect={(target) => void createFromTemplate(selected, target)}
           />
           <div className="modal__actions">
-            <button type="button" className="button" onClick={() => setSelected(null)}>
+            <button
+              type="button"
+              className="button"
+              onClick={() => setSelected(null)}
+            >
               返回模板列表
             </button>
             <button type="button" className="button" onClick={onClose}>

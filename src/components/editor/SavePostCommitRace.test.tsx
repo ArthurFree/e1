@@ -42,6 +42,7 @@ function Harness() {
     <DocumentEditor
       pageId={host.pageId}
       initialContent={{ type: "doc", content: [{ type: "paragraph" }] }}
+      initialVersion={1}
       onEditorReady={(editor) => {
         host.editor = editor;
       }}
@@ -76,10 +77,12 @@ describe("DocumentEditor 保存后半程竞态（R004）", () => {
     // 门控正文保存与版本创建：由测试编排后处理挂起窗口。
     const realSave = contentRepository.save.bind(contentRepository);
     vi.spyOn(contentRepository, "save").mockImplementation(
-      (pageId, json, text) => {
+      (pageId, json, text, expectedVersion) => {
         const gate = createDeferred<void>();
         saveGates.push(gate);
-        return gate.promise.then(() => realSave(pageId, json, text));
+        return gate.promise.then(() =>
+          realSave(pageId, json, text, expectedVersion),
+        );
       },
     );
     const realAdd = revisionRepository.add.bind(revisionRepository);

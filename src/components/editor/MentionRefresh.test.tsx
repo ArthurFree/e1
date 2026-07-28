@@ -24,13 +24,14 @@ function Harness() {
   const app = useApp();
   host.app = app;
   host.pageId =
-    app.pages.find((p) => p.kind === "document" && p.title === "当前文档")?.id ??
-    null;
+    app.pages.find((p) => p.kind === "document" && p.title === "当前文档")
+      ?.id ?? null;
   if (!app.ready || !host.pageId || !app.workspace) return null;
   return (
     <DocumentEditor
       pageId={host.pageId}
       initialContent={{ type: "doc", content: [{ type: "paragraph" }] }}
+      initialVersion={1}
       onEditorReady={(editor) => {
         host.editor = editor;
       }}
@@ -40,9 +41,9 @@ function Harness() {
 
 /** 读取 @ 弹层的候选标题（弹层挂在 document.body）。 */
 function mentionTitles(): string[] {
-  return Array.from(
-    document.body.querySelectorAll(".command-list__title"),
-  ).map((el) => el.textContent ?? "");
+  return Array.from(document.body.querySelectorAll(".command-list__title")).map(
+    (el) => el.textContent ?? "",
+  );
 }
 
 describe("@ 提及候选动态更新", () => {
@@ -72,9 +73,7 @@ describe("@ 提及候选动态更新", () => {
     expect(page).not.toBeNull();
     await host.app!.renamePage(page!.id, "提及目标页");
     await waitFor(() =>
-      expect(
-        host.app!.pages.some((p) => p.title === "提及目标页"),
-      ).toBe(true),
+      expect(host.app!.pages.some((p) => p.title === "提及目标页")).toBe(true),
     );
 
     // 触发 @ 弹层：候选应包含新页面（getMentionPages 动态读取）。

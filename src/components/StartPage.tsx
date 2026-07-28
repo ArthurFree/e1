@@ -39,7 +39,8 @@ export function StartPage() {
     () =>
       workspaces
         .filter((w) => w.lastOpenedAt !== null)
-        .sort((a, b) => (b.lastOpenedAt ?? 0) - (a.lastOpenedAt ?? 0))[0] ?? null,
+        .sort((a, b) => (b.lastOpenedAt ?? 0) - (a.lastOpenedAt ?? 0))[0] ??
+      null,
     [workspaces],
   );
   const aiConfigured = isAIConfigured(preferences.aiConfig);
@@ -79,11 +80,15 @@ export function StartPage() {
               disabled={workspaces.length === 0}
               onClick={quickCreate}
             >
-              <span className="quick-card__icon" aria-hidden="true"><IconFile /></span>
+              <span className="quick-card__icon" aria-hidden="true">
+                <IconFile />
+              </span>
               <span className="quick-card__text">
                 <span className="quick-card__name">新建文档</span>
                 <span className="quick-card__hint">
-                  {recentWorkspace ? `在「${recentWorkspace.name}」创建` : "选择知识库创建"}
+                  {recentWorkspace
+                    ? `在「${recentWorkspace.name}」创建`
+                    : "选择知识库创建"}
                 </span>
               </span>
             </button>
@@ -112,7 +117,9 @@ export function StartPage() {
             className="quick-card"
             onClick={() => setCreateWsOpen(true)}
           >
-            <span className="quick-card__icon" aria-hidden="true"><IconBook /></span>
+            <span className="quick-card__icon" aria-hidden="true">
+              <IconBook />
+            </span>
             <span className="quick-card__text">
               <span className="quick-card__name">新建知识库</span>
               <span className="quick-card__hint">名称必填，可选图标与描述</span>
@@ -124,7 +131,9 @@ export function StartPage() {
             className="quick-card"
             onClick={() => setTemplatesOpen(true)}
           >
-            <span className="quick-card__icon" aria-hidden="true"><IconTemplate /></span>
+            <span className="quick-card__icon" aria-hidden="true">
+              <IconTemplate />
+            </span>
             <span className="quick-card__text">
               <span className="quick-card__name">模板中心</span>
               <span className="quick-card__hint">会议纪要、周报等内置模板</span>
@@ -134,14 +143,20 @@ export function StartPage() {
           <button
             type="button"
             className="quick-card"
-            title={aiConfigured ? "从主题生成文档草稿" : "先在设置中配置 AI 服务"}
+            title={
+              aiConfigured ? "从主题生成文档草稿" : "先在设置中配置 AI 服务"
+            }
             onClick={openAI}
           >
-            <span className="quick-card__icon" aria-hidden="true"><IconSparkle /></span>
+            <span className="quick-card__icon" aria-hidden="true">
+              <IconSparkle />
+            </span>
             <span className="quick-card__text">
               <span className="quick-card__name">AI 帮你写</span>
               <span className="quick-card__hint">
-                {aiConfigured ? "输入主题，生成文档草稿" : "未配置，点击前往设置"}
+                {aiConfigured
+                  ? "输入主题，生成文档草稿"
+                  : "未配置，点击前往设置"}
               </span>
             </span>
           </button>
@@ -154,8 +169,12 @@ export function StartPage() {
 
         <ActivityList />
       </div>
-      {createWsOpen && <CreateWorkspaceModal onClose={() => setCreateWsOpen(false)} />}
-      {templatesOpen && <TemplateCenter onClose={() => setTemplatesOpen(false)} />}
+      {createWsOpen && (
+        <CreateWorkspaceModal onClose={() => setCreateWsOpen(false)} />
+      )}
+      {templatesOpen && (
+        <TemplateCenter onClose={() => setTemplatesOpen(false)} />
+      )}
       {aiDraftOpen && <AIDraftModal onClose={() => setAiDraftOpen(false)} />}
     </div>
   );

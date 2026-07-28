@@ -57,9 +57,15 @@ describe("大数据量性能冒烟", () => {
   });
 
   it("500 条活动记录构建在 200ms 内", () => {
-    const pages = Array.from({ length: 500 }, (_, i) => makePage(`p${i}`, null, i));
+    const pages = Array.from({ length: 500 }, (_, i) =>
+      makePage(`p${i}`, null, i),
+    );
     const start = performance.now();
-    const rows = buildActivityRows({ pages, workspaces: [workspace], tab: "edited" });
+    const rows = buildActivityRows({
+      pages,
+      workspaces: [workspace],
+      tab: "edited",
+    });
     expect(performance.now() - start).toBeLessThan(200);
     expect(rows).toHaveLength(500);
   });

@@ -10,13 +10,7 @@ import { collectSubtreeIds } from "../domain/pageTree";
 import type { Page } from "../domain/types";
 import { SearchIndexService } from "../application/services/SearchIndexService";
 import { WorkspaceSessionService } from "../application/services/WorkspaceSessionService";
-import {
-  getDB,
-  resetDB,
-  STORE_CONTENTS,
-  STORE_PAGES,
-  STORE_TRASH,
-} from "./db";
+import { getDB, resetDB, STORE_CONTENTS, STORE_PAGES, STORE_TRASH } from "./db";
 import {
   contentRepository,
   pageRepository,
@@ -50,6 +44,7 @@ async function seedTier(pageCount: number, trashedCount = 0) {
     if (isDoc) {
       await tx.objectStore(STORE_CONTENTS).put({
         pageId: page.id,
+        workspaceId: WS,
         contentJson: { type: "doc", content: [] },
         textSnapshot: `第 ${i} 篇基准正文，包含搜索关键词样本。`,
         updatedAt: now,
@@ -109,7 +104,11 @@ describe("性能基准", () => {
     // 补回收站记录（remove 路径的语义）。
     const trashTx = db.transaction(STORE_TRASH, "readwrite");
     for (let i = 1950; i < 2000; i++) {
-      await trashTx.store.put({ pageId: `p${i}`, deletedAt: Date.now(), originalParentId: "p0" });
+      await trashTx.store.put({
+        pageId: `p${i}`,
+        deletedAt: Date.now(),
+        originalParentId: "p0",
+      });
     }
     await trashTx.done;
 
@@ -124,7 +123,9 @@ describe("性能基准", () => {
     expect(purgeCalls).toHaveLength(1);
     expect(elapsed).toBeLessThan(500);
     expect(
-      (await pageRepository.listByWorkspace(WS)).filter((p) => p.deletedAt !== null),
+      (await pageRepository.listByWorkspace(WS)).filter(
+        (p) => p.deletedAt !== null,
+      ),
     ).toHaveLength(0);
   }, 60000);
 
@@ -139,5 +140,61 @@ describe("性能基准", () => {
     const ids = collectSubtreeIds(pages, "p0");
     expect(ids).toHaveLength(10000);
     expect(performance.now() - t1).toBeLessThan(50);
+  }, 120000);
+
+  it("多工作区（20 库 × 500 页面）：切换只读目标库，不再全表扫描正文（R004 阶段 5）", async () => {
+    // 总库 10,000 页面 / 7,500 正文，目标库仅 500 页面 / 375 正文：
+    // 若退回 listAll 全表扫描，耗时随总库规模增长；索引直取下与目标库规模相关。
+    const db = await getDB();
+    const now = Date.now();
+    for (let w = 0; w < 20; w++) {
+      const wsId = `ws-m${w}`;
+      const tx = db.transaction([STORE_PAGES, STORE_CONTENTS], "readwrite");
+      for (let i = 0; i < 500; i++) {
+        const isDoc = i % 4 !== 0;
+        const page: Page = {
+          id: `w${w}-p${i}`,
+          workspaceId: wsId,
+          parentId: i === 0 ? null : `w${w}-p0`,
+          kind: isDoc ? "document" : "group",
+          title: `页面 ${i} 多库基准`,
+          icon: null,
+          position: i,
+          favoriteAt: null,
+          lastOpenedAt: null,
+          deletedAt: null,
+          createdAt: now,
+          updatedAt: now,
+        };
+        await tx.objectStore(STORE_PAGES).put(page);
+        if (isDoc) {
+          await tx.objectStore(STORE_CONTENTS).put({
+            pageId: page.id,
+            workspaceId: wsId,
+            contentJson: { type: "doc", content: [] },
+            textSnapshot: `第 ${i} 篇多库基准正文。`,
+            updatedAt: now,
+          });
+        }
+      }
+      await tx.done;
+    }
+
+    const session = new WorkspaceSessionService({
+      pages: pageRepository,
+      tags: tagRepository,
+      content: contentRepository,
+    });
+    const listAllSpy = vi.spyOn(contentRepository, "listAll");
+    const t0 = performance.now();
+    const data = await session.load("ws-m7");
+    const elapsed = performance.now() - t0;
+
+    expect(data.pages).toHaveLength(500);
+    expect(data.contents).toHaveLength(375);
+    // 验收：会话加载不再调用 content.listAll()。
+    expect(listAllSpy).not.toHaveBeenCalled();
+    // 阈值对齐中型单库基准（2000 页面 < 300ms），目标库仅 500 页面，余量充足。
+    expect(elapsed).toBeLessThan(300);
   }, 120000);
 });

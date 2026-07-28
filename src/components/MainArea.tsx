@@ -53,11 +53,14 @@ import {
 } from "./ui/icons";
 
 /** 新建文档的初始空内容（尚无 IndexedDB 内容行时使用）。 */
-function emptyContent(pageId: string): DocumentContent {
+function emptyContent(pageId: string, workspaceId: string): DocumentContent {
   return {
     pageId,
+    workspaceId,
     contentJson: { type: "doc", content: [{ type: "paragraph" }] },
     textSnapshot: "",
+    // 尚无正文记录：乐观锁起点为 0，首次保存落 version 1（R004 阶段 7）。
+    version: 0,
     updatedAt: Date.now(),
   };
 }
@@ -70,6 +73,7 @@ export function MainArea() {
     renamePage,
     markOpened,
     togglePageFavorite,
+    createDocumentWithContent,
     workspaceStatus,
     workspaceError,
     retryLoad,
@@ -79,6 +83,7 @@ export function MainArea() {
     selectedPageId,
     titleFocusPageId,
     clearTitleFocus,
+    openDocument,
   } = useNavigation();
   const { preferences, setTheme } = usePreferences();
   const { openTreeDrawer } = useOverlay();
@@ -89,16 +94,33 @@ export function MainArea() {
     useState<DocumentEditorController | null>(null);
   const [tocOpen, setTocOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
-  const [saveState, setSaveState] = useState<SaveState>({ status: "saved", savedAt: null });
+  const [saveState, setSaveState] = useState<SaveState>({
+    status: "saved",
+    savedAt: null,
+    errorKind: null,
+  });
+  // 其他标签页保存了当前编辑文档且本地有未保存修改（R004 §7.2）：
+  // 提前提示冲突，与乐观锁冲突 UI（errorKind: conflict）汇合为同一面板。
+  const [remoteConflict, setRemoteConflict] = useState(false);
   // 未落盘编辑的恢复提示（R003 §1.4）：恢复缓冲比 IndexedDB 正文更新时出现。
   const [recovery, setRecovery] = useState<DocumentRecoveryRecord | null>(null);
   // 正文 JSON 校验失败（R003 阶段 4）：不渲染编辑器，显示损坏处理面板。
-  const [corrupted, setCorrupted] = useState<{ raw: unknown; error: string } | null>(null);
+  const [corrupted, setCorrupted] = useState<{
+    raw: unknown;
+    error: string;
+  } | null>(null);
   // 应用恢复后递增：强制编辑器以恢复内容重建，并触发一次立即保存。
   const [contentEpoch, setContentEpoch] = useState(0);
   const retrySaveRef = useRef<(() => void) | null>(null);
+  // 冲突处理动作（R004 阶段 7）：由 DocumentEditor 注册「强制覆盖」。
+  const conflictActionsRef = useRef<{ forceOverwrite(): void } | null>(null);
   // 标题 Enter/ArrowDown 时正文编辑器可能尚未就绪；就绪后补一次聚焦首行。
   const pendingExitToBodyRef = useRef(false);
+  // 供同步频道订阅回调读取最新值（订阅本身保持稳定引用）。
+  const saveStateRef = useRef(saveState);
+  saveStateRef.current = saveState;
+  const pageRef = useRef(page);
+  pageRef.current = page;
 
   useEffect(() => {
     // cancelled 防止竞态：快速切换页面时旧请求晚到不得覆盖新页面的内容
@@ -106,12 +128,13 @@ export function MainArea() {
     setContent(null);
     setRecovery(null);
     setCorrupted(null);
+    setRemoteConflict(false);
     pendingExitToBodyRef.current = false;
     if (view === "document" && page?.kind === "document") {
       void services.content.get(page.id).then((result) => {
         if (cancelled) return;
         // 新建文档尚无内容行：以空文档作为初始内容，首次编辑即落盘。
-        const base = result ?? emptyContent(page.id);
+        const base = result ?? emptyContent(page.id, page.workspaceId);
         // 正文 JSON 运行时校验：损坏时不进编辑器，转入损坏处理面板（R003 阶段 4）。
         const parsed = parseDocumentContent(base.contentJson);
         if (!parsed.ok) {
@@ -153,6 +176,100 @@ export function MainArea() {
   const onRegisterRetry = useCallback((retry: () => void) => {
     retrySaveRef.current = retry;
   }, []);
+
+  const onRegisterConflictActions = useCallback(
+    (actions: { forceOverwrite(): void } | null) => {
+      conflictActionsRef.current = actions;
+    },
+    [],
+  );
+
+  /**
+   * 冲突处理①「重新载入磁盘版本」（R004 阶段 7）：丢弃本地未保存修改，
+   * 以磁盘最新正文重建编辑器（contentEpoch +1 → 协调器随之重建，
+   * 乐观锁起点更新为最新 version）；同时清理恢复缓冲，避免旧内容再次提示。
+   * 其他标签页保存当前文档且本地干净时，也经本函数自动重载（§7.2）。
+   */
+  const reloadFromDisk = useCallback(async () => {
+    const current = pageRef.current;
+    if (!current) return;
+    const latest = await services.content.get(current.id);
+    if (!latest || pageRef.current?.id !== current.id) return;
+    const parsed = parseDocumentContent(latest.contentJson);
+    if (!parsed.ok) return;
+    discardRecovery(current.id);
+    services.searchIndex.updateText(
+      current.id,
+      latest.textSnapshot,
+      latest.updatedAt,
+    );
+    setRemoteConflict(false);
+    setContent({ ...latest, contentJson: parsed.value });
+    setContentEpoch((e) => e + 1);
+  }, [services]);
+
+  /**
+   * 冲突处理②「保留当前内容并另存副本」：当前编辑器内容经既有
+   * createDocumentWithContent 原子创建为新文档并打开（不新造写入路径）；
+   * 本文档保持冲突状态，用户可继续处理。
+   */
+  const saveConflictCopy = useCallback(async () => {
+    if (!page || !editorController) return;
+    const snapshot = editorController.getSnapshot();
+    const copy = await createDocumentWithContent({
+      workspaceId: page.workspaceId,
+      parentId: page.parentId,
+      title: `${page.title || "无标题"}（副本）`,
+      contentJson: snapshot.contentJson,
+      textSnapshot: snapshot.textSnapshot,
+    });
+    if (copy) await openDocument(copy.id);
+  }, [page, editorController, createDocumentWithContent, openDocument]);
+
+  /** 冲突处理④「复制当前内容」：编辑器纯文本进剪贴板，供人工合并。 */
+  const copyConflictContent = useCallback(() => {
+    const live = editor !== null && !editor.isDestroyed ? editor : null;
+    if (!live) return;
+    void navigator.clipboard?.writeText(live.getText()).catch(() => {
+      // 剪贴板不可用（权限/非安全上下文）时静默失败，不影响主流程。
+    });
+  }, [editor]);
+
+  // 其他标签页的正文落盘事件（R004 §7.2）：当前编辑文档——本地干净自动
+  // 重载、有未保存修改提示冲突；非当前文档——增量刷新搜索索引文本。
+  // 自己保存产生的事件已被频道按来源 tabId 过滤，不会回声。
+  useEffect(() => {
+    return services.syncChannel.subscribe((event) => {
+      if (event.type !== "content-saved") return;
+      const current = pageRef.current;
+      if (
+        current &&
+        current.kind === "document" &&
+        event.pageId === current.id
+      ) {
+        if (saveStateRef.current.status === "saved") {
+          void reloadFromDisk();
+        } else {
+          setRemoteConflict(true);
+        }
+        return;
+      }
+      void services.content
+        .get(event.pageId)
+        .then((latest) => {
+          if (latest) {
+            services.searchIndex.updateText(
+              event.pageId,
+              latest.textSnapshot,
+              latest.updatedAt,
+            );
+          }
+        })
+        .catch(() => {
+          // 索引刷新失败不影响编辑主流程。
+        });
+    });
+  }, [services, reloadFromDisk]);
 
   // 应用恢复缓冲：以恢复内容重建编辑器，并由编辑器立即执行一次保存；
   // 恢复缓冲本身在保存成功后由协调器清除（期间重复提示可接受）。
@@ -206,7 +323,7 @@ export function MainArea() {
     });
     clearCorruptedDiagnostic(page.id);
     setCorrupted(null);
-    setContent(emptyContent(page.id));
+    setContent(emptyContent(page.id, page.workspaceId));
     setContentEpoch((e) => e + 1);
   }, [page, services]);
 
@@ -241,6 +358,13 @@ export function MainArea() {
   };
 
   const isDocument = page?.kind === "document";
+  // 乐观锁冲突（本地保存撞版本）或其他标签页保存了当前文档且本地 dirty：
+  // 两种来源汇合为同一冲突面板（R004 阶段 7）。
+  const conflictVisible =
+    isDocument &&
+    content !== null &&
+    (remoteConflict ||
+      (saveState.status === "error" && saveState.errorKind === "conflict"));
 
   // 知识库会话切换中/失败（R003 阶段 2）：不渲染任何基于旧会话数据的视图。
   if (workspaceStatus === "loading") {
@@ -255,7 +379,11 @@ export function MainArea() {
       <main className="main">
         <div className="app-error" role="alert">
           <p>{workspaceError ?? "知识库加载失败，请重试。"}</p>
-          <button type="button" className="app-error__retry" onClick={retryLoad}>
+          <button
+            type="button"
+            className="app-error__retry"
+            onClick={retryLoad}
+          >
             重试
           </button>
         </div>
@@ -309,7 +437,10 @@ export function MainArea() {
         <div className="topbar__spacer" />
         {isDocument && liveEditor && (
           <>
-            <SaveStateIndicator state={saveState} onRetry={() => retrySaveRef.current?.()} />
+            <SaveStateIndicator
+              state={saveState}
+              onRetry={() => retrySaveRef.current?.()}
+            />
             <WordCount editor={liveEditor} />
           </>
         )}
@@ -361,7 +492,9 @@ export function MainArea() {
         <button
           type="button"
           className="icon-button"
-          aria-label={preferences.theme === "dark" ? "切换到浅色主题" : "切换到深色主题"}
+          aria-label={
+            preferences.theme === "dark" ? "切换到浅色主题" : "切换到深色主题"
+          }
           onClick={toggleTheme}
         >
           {preferences.theme === "dark" ? <IconSun /> : <IconMoon />}
@@ -373,6 +506,34 @@ export function MainArea() {
           {liveEditor && <FormatToolbar editor={liveEditor} />}
           <div className="doc-main">
             <div className="doc-scroll">
+              {conflictVisible && (
+                <div className="recovery-banner conflict-banner" role="alert">
+                  <span className="recovery-banner__text">
+                    本文档已在其他标签页被修改，与当前未保存的编辑冲突。
+                  </span>
+                  <Button
+                    variant="primary"
+                    onClick={() => void reloadFromDisk()}
+                  >
+                    重新载入
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={() => void saveConflictCopy()}
+                  >
+                    另存副本
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={() => conflictActionsRef.current?.forceOverwrite()}
+                  >
+                    强制覆盖
+                  </Button>
+                  <Button variant="ghost" onClick={copyConflictContent}>
+                    复制当前内容
+                  </Button>
+                </div>
+              )}
               {recovery && (
                 <div className="recovery-banner" role="status">
                   <span className="recovery-banner__text">
@@ -438,9 +599,11 @@ export function MainArea() {
                     key={`${page.id}:${contentEpoch}`}
                     pageId={page.id}
                     initialContent={content.contentJson}
+                    initialVersion={content.version}
                     onEditorReady={onEditorReady}
                     onSaveStateChange={onSaveStateChange}
                     onRegisterRetry={onRegisterRetry}
+                    onRegisterConflictActions={onRegisterConflictActions}
                     restoreRequestId={contentEpoch}
                     onControllerReady={setEditorController}
                   />

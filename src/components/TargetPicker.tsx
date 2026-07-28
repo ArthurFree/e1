@@ -43,7 +43,11 @@ export function TargetPicker({ onSelect, className }: TargetPickerProps) {
   );
 
   return (
-    <div className={className ?? "quick-card__picker"} role="menu" aria-label="选择创建位置">
+    <div
+      className={className ?? "quick-card__picker"}
+      role="menu"
+      aria-label="选择创建位置"
+    >
       {targets.map((target) => (
         <button
           key={`${target.workspaceId}:${target.parentId ?? "root"}`}

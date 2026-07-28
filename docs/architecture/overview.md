@@ -28,17 +28,17 @@ Infrastructure（src/infrastructure/：IndexedDB、AI HTTP、内存仓储、浏�
 
 ## 数据模型
 
-| 实体 | 必要字段 | 说明 |
-| --- | --- | --- |
-| `Workspace` | `id`, `name`, `icon`, `description`, `homePageId`, `favoriteAt`, `lastOpenedAt`, `createdAt`, `updatedAt` | 知识库根对象 |
-| `Page` | `id`, `workspaceId`, `parentId`, `kind`, `title`, `icon`, `position`, `favoriteAt`, `lastOpenedAt`, `deletedAt`, `createdAt`, `updatedAt` | `kind` 为 document 或 group；`deletedAt` 软删 |
-| `DocumentContent` | `pageId`, `contentJson`, `textSnapshot`, `updatedAt` | Tiptap JSON（唯一编辑真相）与搜索文本快照 |
-| `DocumentRevision` | `id`, `pageId`, `contentJson`, `textSnapshot`, `createdAt`, `reason` | 本地版本（interval / before-restore / manual） |
-| `Attachment` | `id`, `pageId`, `name`, `mimeType`, `size`, `blob`, `createdAt` | 附件 Blob，文档节点只存 ID |
-| `Tag` | `id`, `workspaceId`, `name`, `color` | 工作区标签定义 |
-| `PageTag` | `pageId`, `tagId` | 页面与标签的关联（复合主键） |
-| `Preferences` | `id`, `theme`, `sidebarWidth`, `aiConfig`, `lastRoute` | 浏览器本地偏好（单例记录） |
-| `TrashRecord` | `pageId`, `deletedAt`, `originalParentId` | 恢复原始位置用 |
+| 实体               | 必要字段                                                                                                                                  | 说明                                           |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `Workspace`        | `id`, `name`, `icon`, `description`, `homePageId`, `favoriteAt`, `lastOpenedAt`, `createdAt`, `updatedAt`                                 | 知识库根对象                                   |
+| `Page`             | `id`, `workspaceId`, `parentId`, `kind`, `title`, `icon`, `position`, `favoriteAt`, `lastOpenedAt`, `deletedAt`, `createdAt`, `updatedAt` | `kind` 为 document 或 group；`deletedAt` 软删  |
+| `DocumentContent`  | `pageId`, `contentJson`, `textSnapshot`, `updatedAt`                                                                                      | Tiptap JSON（唯一编辑真相）与搜索文本快照      |
+| `DocumentRevision` | `id`, `pageId`, `contentJson`, `textSnapshot`, `createdAt`, `reason`                                                                      | 本地版本（interval / before-restore / manual） |
+| `Attachment`       | `id`, `pageId`, `name`, `mimeType`, `size`, `blob`, `createdAt`                                                                           | 附件 Blob，文档节点只存 ID                     |
+| `Tag`              | `id`, `workspaceId`, `name`, `color`                                                                                                      | 工作区标签定义                                 |
+| `PageTag`          | `pageId`, `tagId`                                                                                                                         | 页面与标签的关联（复合主键）                   |
+| `Preferences`      | `id`, `theme`, `sidebarWidth`, `aiConfig`, `lastRoute`                                                                                    | 浏览器本地偏好（单例记录）                     |
+| `TrashRecord`      | `pageId`, `deletedAt`, `originalParentId`                                                                                                 | 恢复原始位置用                                 |
 
 索引（DB v3）：pages（`workspaceId`、`parentId`、`deletedAt`、`updatedAt`、复合 `workspaceId_parentId` / `workspaceId_updatedAt`）、contents（`updatedAt`、`textSnapshot`）、tags（`workspaceId`）、pageTags（`pageId`、`tagId`）、revisions（`pageId`、`pageId_createdAt`）、attachments（`pageId`）、trash（`deletedAt`）。详见 [persistence.md](./persistence.md)。
 

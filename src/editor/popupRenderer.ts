@@ -64,7 +64,9 @@ export function createPopupRenderer(
             if (!(list instanceof HTMLElement)) return;
             if (!list.dataset.baseMaxHeight) {
               list.style.maxHeight = "";
-              const cssMax = Number.parseFloat(getComputedStyle(list).maxHeight);
+              const cssMax = Number.parseFloat(
+                getComputedStyle(list).maxHeight,
+              );
               list.dataset.baseMaxHeight = String(
                 Number.isFinite(cssMax) ? cssMax : 320,
               );
@@ -89,8 +91,7 @@ export function createPopupRenderer(
       // autoUpdate 靠 ResizeObserver 在浮层内容渲染变高后再次调用 reposition，
       // 才能用真实高度正确 flip / size。
       const virtual: VirtualElement = {
-        getBoundingClientRect: () =>
-          latestClientRect?.() ?? new DOMRect(),
+        getBoundingClientRect: () => latestClientRect?.() ?? new DOMRect(),
       };
       stopAutoUpdate = autoUpdate(virtual, element, reposition);
     } else {

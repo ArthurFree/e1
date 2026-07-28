@@ -92,7 +92,9 @@ function Dropdown({
     if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
     event.preventDefault();
     const items = Array.from(
-      rootRef.current?.querySelectorAll<HTMLButtonElement>("[role='menuitem']:not(:disabled)") ?? [],
+      rootRef.current?.querySelectorAll<HTMLButtonElement>(
+        "[role='menuitem']:not(:disabled)",
+      ) ?? [],
     );
     if (items.length === 0) return;
     const index = items.indexOf(document.activeElement as HTMLButtonElement);
@@ -104,7 +106,11 @@ function Dropdown({
   };
 
   return (
-    <div className={`ft-dropdown${className ? ` ${className}` : ""}`} ref={rootRef} onKeyDown={onKeyDown}>
+    <div
+      className={`ft-dropdown${className ? ` ${className}` : ""}`}
+      ref={rootRef}
+      onKeyDown={onKeyDown}
+    >
       <button
         type="button"
         className="ft-dropdown__trigger"
@@ -125,7 +131,8 @@ function Dropdown({
           aria-label={ariaLabel}
           onClick={(event) => {
             // 选择任意菜单项后关闭菜单。
-            if ((event.target as HTMLElement).closest("[role='menuitem']")) setOpen(false);
+            if ((event.target as HTMLElement).closest("[role='menuitem']"))
+              setOpen(false);
           }}
         >
           {children}
@@ -241,22 +248,76 @@ export function FormatToolbar({ editor }: FormatToolbarProps) {
   };
 
   const inlineMarks = [
-    { id: "bold", label: "加粗", icon: <IconBold />, run: () => editor.chain().focus().toggleBold().run() },
-    { id: "italic", label: "斜体", icon: <IconItalic />, run: () => editor.chain().focus().toggleItalic().run() },
-    { id: "underline", label: "下划线", icon: <IconUnderline />, run: () => editor.chain().focus().toggleUnderline().run() },
-    { id: "strike", label: "删除线", icon: <IconStrikethrough />, run: () => editor.chain().focus().toggleStrike().run() },
-    { id: "code", label: "行内代码", icon: <IconCodeInline />, run: () => editor.chain().focus().toggleCode().run() },
-    { id: "superscript", label: "上标", icon: <IconSuperscript />, run: () => editor.chain().focus().toggleSuperscript().run() },
-    { id: "subscript", label: "下标", icon: <IconSubscript />, run: () => editor.chain().focus().toggleSubscript().run() },
+    {
+      id: "bold",
+      label: "加粗",
+      icon: <IconBold />,
+      run: () => editor.chain().focus().toggleBold().run(),
+    },
+    {
+      id: "italic",
+      label: "斜体",
+      icon: <IconItalic />,
+      run: () => editor.chain().focus().toggleItalic().run(),
+    },
+    {
+      id: "underline",
+      label: "下划线",
+      icon: <IconUnderline />,
+      run: () => editor.chain().focus().toggleUnderline().run(),
+    },
+    {
+      id: "strike",
+      label: "删除线",
+      icon: <IconStrikethrough />,
+      run: () => editor.chain().focus().toggleStrike().run(),
+    },
+    {
+      id: "code",
+      label: "行内代码",
+      icon: <IconCodeInline />,
+      run: () => editor.chain().focus().toggleCode().run(),
+    },
+    {
+      id: "superscript",
+      label: "上标",
+      icon: <IconSuperscript />,
+      run: () => editor.chain().focus().toggleSuperscript().run(),
+    },
+    {
+      id: "subscript",
+      label: "下标",
+      icon: <IconSubscript />,
+      run: () => editor.chain().focus().toggleSubscript().run(),
+    },
   ];
 
   const lists = [
-    { id: "bulletList", label: "项目列表", icon: <IconBulletList />, run: () => editor.chain().focus().toggleBulletList().run() },
-    { id: "orderedList", label: "编号列表", icon: <IconOrderedList />, run: () => editor.chain().focus().toggleOrderedList().run() },
-    { id: "taskList", label: "任务列表", icon: <IconTaskList />, run: () => editor.chain().focus().toggleTaskList().run() },
+    {
+      id: "bulletList",
+      label: "项目列表",
+      icon: <IconBulletList />,
+      run: () => editor.chain().focus().toggleBulletList().run(),
+    },
+    {
+      id: "orderedList",
+      label: "编号列表",
+      icon: <IconOrderedList />,
+      run: () => editor.chain().focus().toggleOrderedList().run(),
+    },
+    {
+      id: "taskList",
+      label: "任务列表",
+      icon: <IconTaskList />,
+      run: () => editor.chain().focus().toggleTaskList().run(),
+    },
   ];
 
-  const insertItems: { id: string | null; title: string; disabled?: boolean }[] = [
+  const insertItems: {
+    id: string | null;
+    title: string;
+    disabled?: boolean;
+  }[] = [
     { id: "divider", title: "分隔线" },
     { id: "image", title: "图片" },
     { id: "attachment", title: "附件" },
@@ -272,7 +333,13 @@ export function FormatToolbar({ editor }: FormatToolbarProps) {
     const url = linkUrl.trim();
     // 留空即移除链接；extendMarkRange 把光标所在的整段已有链接纳入替换范围。
     if (!url) editor.chain().focus().unsetLink().run();
-    else editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
+    else
+      editor
+        .chain()
+        .focus()
+        .extendMarkRange("link")
+        .setLink({ href: url })
+        .run();
     setLinkOpen(false);
     setLinkUrl("");
   };
@@ -324,7 +391,10 @@ export function FormatToolbar({ editor }: FormatToolbarProps) {
           </button>
         ))}
       </Dropdown>
-      <Dropdown label={fontSize === null ? "默认字号" : `${fontSize}px`} ariaLabel="字号">
+      <Dropdown
+        label={fontSize === null ? "默认字号" : `${fontSize}px`}
+        ariaLabel="字号"
+      >
         <button
           type="button"
           role="menuitem"
@@ -404,7 +474,10 @@ export function FormatToolbar({ editor }: FormatToolbarProps) {
             aria-label={`文本颜色：${c.name}`}
             onClick={() => applyTextColor(editor, c.value)}
           >
-            <span style={{ color: c.value ?? "var(--color-text-primary)" }}>A</span> {c.name}
+            <span style={{ color: c.value ?? "var(--color-text-primary)" }}>
+              A
+            </span>{" "}
+            {c.name}
           </button>
         ))}
         <div className="ft-palette__label">高亮背景</div>

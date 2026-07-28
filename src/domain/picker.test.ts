@@ -27,10 +27,28 @@ describe("buildPickerTargets", () => {
     ];
     const pages = [
       makePage({ id: "g1", kind: "group", title: "产品", position: 0 }),
-      makePage({ id: "g2", kind: "group", title: "子分组", parentId: "g1", position: 0 }),
+      makePage({
+        id: "g2",
+        kind: "group",
+        title: "子分组",
+        parentId: "g1",
+        position: 0,
+      }),
       makePage({ id: "d1", parentId: "g1" }),
-      makePage({ id: "g3", kind: "group", title: "已删", deletedAt: 1, position: 1 }),
-      makePage({ id: "g4", kind: "group", title: "库二组", workspaceId: "ws2", position: 0 }),
+      makePage({
+        id: "g3",
+        kind: "group",
+        title: "已删",
+        deletedAt: 1,
+        position: 1,
+      }),
+      makePage({
+        id: "g4",
+        kind: "group",
+        title: "库二组",
+        workspaceId: "ws2",
+        position: 0,
+      }),
     ];
     const targets = buildPickerTargets(workspaces, pages);
     expect(targets.map((t) => [t.workspaceId, t.parentId, t.depth])).toEqual([

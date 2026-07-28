@@ -45,7 +45,10 @@ interface PageTreeBodyProps {
   activeTagId: string | null;
   selectedPageId: string | null;
   selectPage(id: string | null): void;
-  createPage(kind: "document" | "group", parentId: string | null): Promise<Page | null>;
+  createPage(
+    kind: "document" | "group",
+    parentId: string | null,
+  ): Promise<Page | null>;
   renamePage(id: string, title: string): Promise<void>;
   deletePage(id: string): Promise<void>;
   movePage(id: string, parentId: string | null, index: number): Promise<void>;
@@ -75,7 +78,10 @@ const PageTreeBody = memo(function PageTreeBody({
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
-  const [dropHint, setDropHint] = useState<{ id: string; zone: DropZone } | null>(null);
+  const [dropHint, setDropHint] = useState<{
+    id: string;
+    zone: DropZone;
+  } | null>(null);
   // HTML5 DnD 的 dragover 事件里读不到 dataTransfer 数据，用 ref 记下被拖页面。
   const dragIdRef = useRef<string | null>(null);
 
@@ -191,7 +197,9 @@ const PageTreeBody = memo(function PageTreeBody({
           setDropHint(null);
         }}
         onDragOver={(event) => onDragOverRow(event, page)}
-        onDragLeave={() => setDropHint((hint) => (hint?.id === page.id ? null : hint))}
+        onDragLeave={() =>
+          setDropHint((hint) => (hint?.id === page.id ? null : hint))
+        }
         onDrop={(event) => onDropRow(event, page)}
         onClick={() => {
           if (isGroup) toggleCollapse(page.id);
@@ -218,13 +226,21 @@ const PageTreeBody = memo(function PageTreeBody({
               toggleCollapse(page.id);
             }}
           >
-            {isCollapsed ? <IconChevronRight size={12} /> : <IconChevronDown size={12} />}
+            {isCollapsed ? (
+              <IconChevronRight size={12} />
+            ) : (
+              <IconChevronDown size={12} />
+            )}
           </button>
         ) : (
           <span className="tree-row__toggle" aria-hidden="true" />
         )}
         <span className="tree-row__icon" aria-hidden="true">
-          <PageIcon icon={page.icon} kind={isGroup ? "group" : "document"} size={14} />
+          <PageIcon
+            icon={page.icon}
+            kind={isGroup ? "group" : "document"}
+            size={14}
+          />
         </span>
         {renamingId === page.id ? (
           <input
@@ -290,17 +306,16 @@ const PageTreeBody = memo(function PageTreeBody({
   };
 
   // 邻接表（R003 阶段 7）：pages 变化时一次构建，树渲染不再逐层全数组过滤。
-  const childrenByParent = useMemo(
-    () => buildChildrenByParent(pages),
-    [pages],
-  );
+  const childrenByParent = useMemo(() => buildChildrenByParent(pages), [pages]);
   const liveChildren = (parentId: string | null) =>
     (childrenByParent.get(parentId) ?? []).filter((p) => p.deletedAt === null);
 
   const renderTree = (parentId: string | null) => {
     const nodes = liveChildren(parentId);
     if (parentId === null && nodes.length === 0) {
-      return <div className="tree-empty">还没有页面，点击上方「新建文档」开始。</div>;
+      return (
+        <div className="tree-empty">还没有页面，点击上方「新建文档」开始。</div>
+      );
     }
     return nodes.map((page) => {
       const children = liveChildren(page.id);
@@ -361,7 +376,8 @@ export function PageTreeSidebar() {
     movePage,
     deleteTag,
   } = useWorkspaceSession();
-  const { view, selectedPageId, selectPage, showWorkspaceHome } = useNavigation();
+  const { view, selectedPageId, selectPage, showWorkspaceHome } =
+    useNavigation();
   const { preferences, setSidebarWidth } = usePreferences();
   const { treeDrawerOpen, closeTreeDrawer } = useOverlay();
   const [renamingSeed, setRenamingSeed] = useState<Page | null>(null);
@@ -381,7 +397,10 @@ export function PageTreeSidebar() {
       const onMove = (move: PointerEvent) => {
         // 拖动中直接改 DOM 宽度（绕过 React 渲染）保证跟手，
         // 持久化到偏好只在松手时做一次，避免每次 move 都写 IndexedDB
-        const next = Math.min(480, Math.max(200, startWidth + move.clientX - startX));
+        const next = Math.min(
+          480,
+          Math.max(200, startWidth + move.clientX - startX),
+        );
         widthRef.current = next;
         const el = document.querySelector<HTMLElement>(".tree-sidebar");
         if (el) el.style.width = `${next}px`;
@@ -530,14 +549,19 @@ export function PageTreeSidebar() {
               className={`tag-chip${activeTagId === tag.id ? " tag-chip--active" : ""}`}
               style={{ color: tag.color }}
             >
-              <span className="tag-chip__dot" style={{ background: tag.color }} />
+              <span
+                className="tag-chip__dot"
+                style={{ background: tag.color }}
+              />
               <button
                 type="button"
                 className="tag-chip__filter"
                 aria-pressed={activeTagId === tag.id}
                 aria-label={`按标签「${tag.name}」筛选`}
                 onClick={() =>
-                  setActiveTagId((current) => (current === tag.id ? null : tag.id))
+                  setActiveTagId((current) =>
+                    current === tag.id ? null : tag.id,
+                  )
                 }
               >
                 {tag.name}

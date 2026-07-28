@@ -10,7 +10,8 @@
   font: inherit;
   font-size: 14px;
   border-radius: var(--radius-sm);
-  transition: background var(--motion-fast) var(--motion-ease),
+  transition:
+    background var(--motion-fast) var(--motion-ease),
     border-color var(--motion-fast) var(--motion-ease);
 }
 

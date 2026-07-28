@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { useApp } from "../state/AppState";
 import { TestApp } from "../test/TestApp";
 import { resetDB } from "../infrastructure/db";
@@ -60,7 +66,9 @@ describe("AIDraftModal", () => {
     fireEvent.change(await screen.findByLabelText("文档主题"), {
       target: { value: "Q3 复盘" },
     });
-    fireEvent.click(await screen.findByRole("menuitem", { name: /我的知识库/ }));
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: /我的知识库/ }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "生成预览" }));
 
     // 预览出现，但尚未创建文档。
@@ -91,7 +99,9 @@ describe("AIDraftModal", () => {
     fireEvent.change(await screen.findByLabelText("文档主题"), {
       target: { value: "不要创建" },
     });
-    fireEvent.click(await screen.findByRole("menuitem", { name: /我的知识库/ }));
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: /我的知识库/ }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "生成预览" }));
     await screen.findByLabelText("AI 生成预览");
 
@@ -112,7 +122,9 @@ describe("AIDraftModal", () => {
     fireEvent.change(await screen.findByLabelText("文档主题"), {
       target: { value: "失败案例" },
     });
-    fireEvent.click(await screen.findByRole("menuitem", { name: /我的知识库/ }));
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: /我的知识库/ }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "生成预览" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/不可用|失败/);

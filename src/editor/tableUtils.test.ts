@@ -66,8 +66,11 @@ function tableTexts(editor: Editor): string[][] {
 }
 
 /** 找文档中第一个表格（不依赖选区）。 */
-function firstTable(editor: Editor): { pos: number; node: import("@tiptap/pm/model").Node } | null {
-  let found: { pos: number; node: import("@tiptap/pm/model").Node } | null = null;
+function firstTable(
+  editor: Editor,
+): { pos: number; node: import("@tiptap/pm/model").Node } | null {
+  let found: { pos: number; node: import("@tiptap/pm/model").Node } | null =
+    null;
   editor.state.doc.descendants((node, pos) => {
     if (found) return false;
     if (node.type.name === "table") {

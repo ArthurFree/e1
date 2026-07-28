@@ -54,6 +54,8 @@ describe("SearchPanel", () => {
         <SearchPanel onClose={() => undefined} />
       </TestApp>,
     );
-    expect(screen.getByText("输入关键词，按标题与正文查找文档。")).toBeInTheDocument();
+    expect(
+      screen.getByText("输入关键词，按标题与正文查找文档。"),
+    ).toBeInTheDocument();
   });
 });

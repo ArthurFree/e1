@@ -46,7 +46,12 @@ describe("版本仓储", () => {
     expect(list.map((r) => r.id)).toEqual(["r-new", "r-old"]);
     expect(list[1].textSnapshot).toBe("一");
 
-    const added = await revisionRepository.add(doc.id, { v: 3 }, "三", "manual");
+    const added = await revisionRepository.add(
+      doc.id,
+      { v: 3 },
+      "三",
+      "manual",
+    );
     expect(added).not.toBeNull();
     expect((await revisionRepository.listByPage(doc.id))[0].id).toBe(added!.id);
   });
@@ -55,11 +60,21 @@ describe("版本仓储", () => {
     const doc = await seedDoc();
     const content = { type: "doc", content: [] };
     await revisionRepository.add(doc.id, content, "快照", "interval");
-    const dup = await revisionRepository.add(doc.id, content, "快照", "interval");
+    const dup = await revisionRepository.add(
+      doc.id,
+      content,
+      "快照",
+      "interval",
+    );
     expect(dup).toBeNull();
     expect(await revisionRepository.listByPage(doc.id)).toHaveLength(1);
 
-    const changed = await revisionRepository.add(doc.id, { type: "doc", content: [{}] }, "变了", "interval");
+    const changed = await revisionRepository.add(
+      doc.id,
+      { type: "doc", content: [{}] },
+      "变了",
+      "interval",
+    );
     expect(changed).not.toBeNull();
     expect(await revisionRepository.listByPage(doc.id)).toHaveLength(2);
   });
@@ -105,10 +120,68 @@ describe("版本仓储", () => {
     expect(list.some((r) => r.id === "r-restore")).toBe(true);
   });
 
+  it("pruneInterval 在数量上限之外按总字节预算裁剪（R004 阶段 6）", async () => {
+    const doc = await seedDoc();
+    const db = await getDB();
+    // 每条 contentJson 序列化约 112 字节；预算 250 → 保留最新两条，更旧的删除。
+    const pad = "x".repeat(100);
+    for (let i = 0; i < 4; i += 1) {
+      await db.put(STORE_REVISIONS, {
+        id: `r-${i}`,
+        pageId: doc.id,
+        contentJson: { pad, v: i },
+        textSnapshot: `v${i}`,
+        createdAt: 1000 + i,
+        reason: "interval",
+      });
+    }
+    // manual 版本不参与自动清理，即使它在预算之外。
+    await db.put(STORE_REVISIONS, {
+      id: "r-manual",
+      pageId: doc.id,
+      contentJson: { pad, v: "m" },
+      textSnapshot: "m",
+      createdAt: 500,
+      reason: "manual",
+    });
+
+    // 数量上限足够大（不起作用），仅靠字节预算裁剪。
+    await revisionRepository.pruneInterval(doc.id, 100, 250);
+    const list = await revisionRepository.listByPage(doc.id);
+    expect(list.map((r) => r.id).sort()).toEqual(["r-2", "r-3", "r-manual"]);
+  });
+
+  it("pruneInterval 字节预算下最新版本始终保留", async () => {
+    const doc = await seedDoc();
+    const db = await getDB();
+    const big = "x".repeat(1024);
+    for (const [id, createdAt] of [
+      ["r-old", 1000],
+      ["r-big", 2000],
+    ] as const) {
+      await db.put(STORE_REVISIONS, {
+        id,
+        pageId: doc.id,
+        contentJson: { big },
+        textSnapshot: id,
+        createdAt,
+        reason: "interval",
+      });
+    }
+    // 预算远小于单条版本：最新的仍保留，更旧的删除。
+    await revisionRepository.pruneInterval(doc.id, 100, 10);
+    const list = await revisionRepository.listByPage(doc.id);
+    expect(list.map((r) => r.id)).toEqual(["r-big"]);
+  });
+
   it("损坏的版本记录被跳过", async () => {
     const doc = await seedDoc();
     const db = await getDB();
-    await db.put(STORE_REVISIONS, { id: "bad", pageId: doc.id, reason: "unknown" });
+    await db.put(STORE_REVISIONS, {
+      id: "bad",
+      pageId: doc.id,
+      reason: "unknown",
+    });
     await revisionRepository.add(doc.id, { v: 1 }, "一", "interval");
 
     const list = await revisionRepository.listByPage(doc.id);
@@ -156,7 +229,9 @@ describe("附件仓储", () => {
 
     const removed = await attachmentRepository.removeOrphans(doc.id, [keep.id]);
     expect(removed).toBe(2);
-    expect((await attachmentRepository.listByPage(doc.id)).map((a) => a.id)).toEqual([keep.id]);
+    expect(
+      (await attachmentRepository.listByPage(doc.id)).map((a) => a.id),
+    ).toEqual([keep.id]);
     // 再次执行无副作用。
     expect(await attachmentRepository.removeOrphans(doc.id, [keep.id])).toBe(0);
 
@@ -187,9 +262,9 @@ describe("附件仓储", () => {
       createdBeforeOrAt: capturedAt,
     });
     expect(removed).toBe(1);
-    expect((await attachmentRepository.listByPage(doc.id)).map((a) => a.id)).toEqual([
-      newAttachment.id,
-    ]);
+    expect(
+      (await attachmentRepository.listByPage(doc.id)).map((a) => a.id),
+    ).toEqual([newAttachment.id]);
     expect(await attachmentRepository.get(oldOrphan.id)).toBeUndefined();
     // 不传时间边界时保持原语义：清理全部未引用附件。
     expect(await attachmentRepository.removeOrphans(doc.id, [])).toBe(1);
@@ -208,7 +283,7 @@ describe("附件仓储", () => {
 describe("永久删除级联", () => {
   it("purge 级联删除版本与附件", async () => {
     const doc = await seedDoc();
-    await contentRepository.save(doc.id, { type: "doc" }, "正文");
+    await contentRepository.save(doc.id, { type: "doc" }, "正文", 1);
     await revisionRepository.add(doc.id, { type: "doc" }, "正文", "interval");
     await attachmentRepository.add({
       pageId: doc.id,

@@ -15,7 +15,9 @@ describe("缩进扩展", () => {
   it("段落可增加/减少缩进，0 级后不再减少", () => {
     const editor = createEditor({
       type: "doc",
-      content: [{ type: "paragraph", content: [{ type: "text", text: "正文" }] }],
+      content: [
+        { type: "paragraph", content: [{ type: "text", text: "正文" }] },
+      ],
     });
     editor.commands.setTextSelection(1);
 
@@ -30,7 +32,9 @@ describe("缩进扩展", () => {
   it("缩进最大 8 级", () => {
     const editor = createEditor({
       type: "doc",
-      content: [{ type: "paragraph", content: [{ type: "text", text: "正文" }] }],
+      content: [
+        { type: "paragraph", content: [{ type: "text", text: "正文" }] },
+      ],
     });
     editor.commands.setTextSelection(1);
     for (let i = 0; i < MAX_INDENT + 3; i += 1) editor.commands.indent();
@@ -42,7 +46,11 @@ describe("缩进扩展", () => {
     const editor = createEditor({
       type: "doc",
       content: [
-        { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "标题" }] },
+        {
+          type: "heading",
+          attrs: { level: 2 },
+          content: [{ type: "text", text: "标题" }],
+        },
       ],
     });
     editor.commands.setTextSelection(1);
@@ -58,8 +66,18 @@ describe("缩进扩展", () => {
         {
           type: "bulletList",
           content: [
-            { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "一" }] }] },
-            { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "二" }] }] },
+            {
+              type: "listItem",
+              content: [
+                { type: "paragraph", content: [{ type: "text", text: "一" }] },
+              ],
+            },
+            {
+              type: "listItem",
+              content: [
+                { type: "paragraph", content: [{ type: "text", text: "二" }] },
+              ],
+            },
           ],
         },
       ],
@@ -82,7 +100,9 @@ describe("缩进扩展", () => {
   it("代码块内缩进命令不生效", () => {
     const editor = createEditor({
       type: "doc",
-      content: [{ type: "codeBlock", content: [{ type: "text", text: "code" }] }],
+      content: [
+        { type: "codeBlock", content: [{ type: "text", text: "code" }] },
+      ],
     });
     editor.commands.setTextSelection(1);
     expect(editor.commands.indent()).toBe(false);

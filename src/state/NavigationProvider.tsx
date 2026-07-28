@@ -35,12 +35,12 @@ interface NavigationProviderProps {
 }
 
 /** 导航状态 Provider：公开 NavigationContext（value 形状不变）。 */
-export function NavigationProvider({ navBridge, children }: NavigationProviderProps) {
+export function NavigationProvider({
+  navBridge,
+  children,
+}: NavigationProviderProps) {
   const services = useAppServices();
-  const {
-    workspace: workspaceRepository,
-    page: pageRepository,
-  } = services;
+  const { workspace: workspaceRepository, page: pageRepository } = services;
   const { persistRoute, routePersistenceStatus } = usePreferencesRoute();
   const workspaceInternals = useWorkspaceInternals();
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
@@ -148,10 +148,13 @@ export function NavigationProvider({ navBridge, children }: NavigationProviderPr
 
   // —— 注册到命令桥：供工作区域的跨域动作触发导航（R004 阶段 4）——
 
-  const restoreRoute = useCallback((nextView: MainView, pageId: string | null) => {
-    setView(nextView);
-    setSelectedPageId(pageId);
-  }, []);
+  const restoreRoute = useCallback(
+    (nextView: MainView, pageId: string | null) => {
+      setView(nextView);
+      setSelectedPageId(pageId);
+    },
+    [],
+  );
 
   const showWorkspaceHomeFor = useCallback(
     (workspaceId: string) => {
@@ -196,7 +199,13 @@ export function NavigationProvider({ navBridge, children }: NavigationProviderPr
     return () => {
       navBridge.commands = null;
     };
-  }, [navBridge, restoreRoute, showWorkspaceHomeFor, openDocumentView, exitDocumentIfSelected]);
+  }, [
+    navBridge,
+    restoreRoute,
+    showWorkspaceHomeFor,
+    openDocumentView,
+    exitDocumentIfSelected,
+  ]);
 
   const navigationValue = useMemo<NavigationContextValue>(
     () => ({

@@ -93,7 +93,9 @@ describe("Context 渲染隔离", () => {
 
     await host.app!.renamePage(pageId, "改名后");
     await waitFor(() =>
-      expect(host.app!.pages.find((p) => p.id === pageId)?.title).toBe("改名后"),
+      expect(host.app!.pages.find((p) => p.id === pageId)?.title).toBe(
+        "改名后",
+      ),
     );
 
     expect(sessionProbe.count.current).toBeGreaterThan(sessionBefore);

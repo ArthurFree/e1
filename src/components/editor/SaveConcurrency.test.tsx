@@ -35,6 +35,7 @@ function Harness() {
     <DocumentEditor
       pageId={host.pageId}
       initialContent={{ type: "doc", content: [{ type: "paragraph" }] }}
+      initialVersion={1}
       onEditorReady={(editor) => {
         host.editor = editor;
       }}
@@ -67,10 +68,12 @@ describe("DocumentEditor 并发保存", () => {
     // 门控保存：调用即挂起，测试 resolve 后才真正写库，模拟乱序完成。
     const realSave = contentRepository.save.bind(contentRepository);
     vi.spyOn(contentRepository, "save").mockImplementation(
-      (pageId, json, text) => {
+      (pageId, json, text, expectedVersion) => {
         const gate = createDeferred<void>();
         saveCalls.push(gate);
-        return gate.promise.then(() => realSave(pageId, json, text));
+        return gate.promise.then(() =>
+          realSave(pageId, json, text, expectedVersion),
+        );
       },
     );
   });

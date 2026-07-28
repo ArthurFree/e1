@@ -22,7 +22,9 @@ describe("段落样式", () => {
   it("支持标题 1–6 与激活判断", () => {
     const editor = createEditor({
       type: "doc",
-      content: [{ type: "paragraph", content: [{ type: "text", text: "正文" }] }],
+      content: [
+        { type: "paragraph", content: [{ type: "text", text: "正文" }] },
+      ],
     });
     editor.commands.setTextSelection(1);
     for (const level of [1, 2, 3, 4, 5, 6] as const) {
@@ -52,7 +54,9 @@ describe("字号", () => {
   it("设置、读取与恢复默认", () => {
     const editor = createEditor({
       type: "doc",
-      content: [{ type: "paragraph", content: [{ type: "text", text: "字号测试" }] }],
+      content: [
+        { type: "paragraph", content: [{ type: "text", text: "字号测试" }] },
+      ],
     });
     editor.commands.setTextSelection({ from: 1, to: 5 });
 
@@ -75,9 +79,7 @@ describe("清理", () => {
       content: [
         {
           type: "paragraph",
-          content: [
-            { type: "text", text: "加粗", marks: [{ type: "bold" }] },
-          ],
+          content: [{ type: "text", text: "加粗", marks: [{ type: "bold" }] }],
         },
       ],
     });
@@ -94,7 +96,12 @@ describe("清理", () => {
         {
           type: "bulletList",
           content: [
-            { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "项" }] }] },
+            {
+              type: "listItem",
+              content: [
+                { type: "paragraph", content: [{ type: "text", text: "项" }] },
+              ],
+            },
           ],
         },
       ],

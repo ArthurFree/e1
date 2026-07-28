@@ -25,10 +25,16 @@ export type DomainErrorCode =
   | "TAG_NOT_FOUND"
   /** 标签与页面属于不同知识库。 */
   | "CROSS_WORKSPACE_TAG"
-  /** 入参非法（kind、标题长度等）。 */
+  /** 入参非法（kind、标题长度、附件文件名等）。 */
   | "INVALID_INPUT"
+  /** 附件超过单文件上限或所属文档附件总量上限。 */
+  | "ATTACHMENT_TOO_LARGE"
+  /** 附件类型不在允许范围内（如图片 MIME 白名单之外）。 */
+  | "UNSUPPORTED_ATTACHMENT_TYPE"
   /** 文档正文 JSON 损坏。 */
-  | "CORRUPTED_DOCUMENT";
+  | "CORRUPTED_DOCUMENT"
+  /** 正文乐观并发冲突：磁盘 version 与保存时的 expectedVersion 不一致。 */
+  | "DOCUMENT_CONFLICT";
 
 /** 领域错误：code 是稳定契约，message 是中文用户文案。 */
 export class DomainError extends Error {
@@ -49,4 +55,14 @@ export function isDomainError(
   return (
     err instanceof DomainError && (code === undefined || err.code === code)
   );
+}
+
+/**
+ * 判断错误是否为浏览器存储配额耗尽（R004 阶段 6）。
+ * IndexedDB 写入在配额耗尽时抛 DOMException（name 为 QuotaExceededError，
+ * 老实现为 code 22）；保存与附件写入链路据此区分「空间不足」与普通失败。
+ */
+export function isQuotaExceededError(error: unknown): boolean {
+  if (!(error instanceof DOMException)) return false;
+  return error.name === "QuotaExceededError" || error.code === 22;
 }

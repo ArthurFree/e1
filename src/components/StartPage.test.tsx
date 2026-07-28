@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { useApp } from "../state/AppState";
 import { TestApp } from "../test/TestApp";
 import { resetDB } from "../infrastructure/db";
@@ -72,7 +78,9 @@ describe("StartPage", () => {
         <Harness />
       </TestApp>,
     );
-    const caret = await screen.findByRole("button", { name: "选择目标知识库或分组" });
+    const caret = await screen.findByRole("button", {
+      name: "选择目标知识库或分组",
+    });
     fireEvent.click(caret);
     const group = await screen.findByRole("menuitem", { name: /产品资料/ });
     fireEvent.click(group);

@@ -44,7 +44,10 @@ export function clearRecovery(pageId: string, savedGeneration: number): void {
     const raw = localStorage.getItem(keyOf(pageId));
     if (!raw) return;
     const record = JSON.parse(raw) as DocumentRecoveryRecord;
-    if (typeof record.generation === "number" && record.generation > savedGeneration) {
+    if (
+      typeof record.generation === "number" &&
+      record.generation > savedGeneration
+    ) {
       return;
     }
     localStorage.removeItem(keyOf(pageId));

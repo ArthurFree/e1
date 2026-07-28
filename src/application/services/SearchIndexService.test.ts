@@ -32,29 +32,54 @@ function makeCorpus(): { pages: Page[]; contents: DocumentContent[] } {
       position: 4,
       deletedAt: 1_700_000_000_000,
     }),
-    makePage({ workspaceId: "ws-2", id: "x1", title: "其他库项目", position: 0 }),
+    makePage({
+      workspaceId: "ws-2",
+      id: "x1",
+      title: "其他库项目",
+      position: 0,
+    }),
   ];
   const contents: DocumentContent[] = [
     {
       pageId: "p1",
+      workspaceId: WS,
       contentJson: null,
       textSnapshot: "本周推进了搜索索引与性能优化",
+      version: 1,
       updatedAt: 1,
     },
     {
       pageId: "p2",
+      workspaceId: WS,
       contentJson: null,
       textSnapshot: "讨论了项目排期与里程碑",
+      version: 1,
       updatedAt: 1,
     },
-    { pageId: "p3", contentJson: null, textSnapshot: "无关内容", updatedAt: 1 },
+    {
+      pageId: "p3",
+      workspaceId: WS,
+      contentJson: null,
+      textSnapshot: "无关内容",
+      version: 1,
+      updatedAt: 1,
+    },
     {
       pageId: "p4",
+      workspaceId: WS,
       contentJson: null,
       textSnapshot: "项目已废弃",
+      version: 1,
       updatedAt: 1,
     },
-    { pageId: "x1", contentJson: null, textSnapshot: "项目在其他库", updatedAt: 1 },
+    {
+      pageId: "x1",
+      workspaceId: "ws-2",
+      contentJson: null,
+      textSnapshot: "项目在其他库",
+      version: 1,
+      updatedAt: 1,
+    },
   ];
   return { pages, contents };
 }
@@ -66,7 +91,14 @@ describe("SearchIndexService", () => {
     const wsPages = pages.filter((p) => p.workspaceId === WS);
     index.build(WS, wsPages, contents);
 
-    for (const q of ["项目", "搜索", "会议", "无标题", "不存在的词", " 项目 "]) {
+    for (const q of [
+      "项目",
+      "搜索",
+      "会议",
+      "无标题",
+      "不存在的词",
+      " 项目 ",
+    ]) {
       const expected = searchPages(wsPages, contents, q);
       const actual = index.query(WS, q);
       expect(actual, `查询「${q}」应与 searchPages 一致`).toEqual(expected);
@@ -79,7 +111,11 @@ describe("SearchIndexService", () => {
   it("updateText 增量更新正文后立即可检索", () => {
     const { pages, contents } = makeCorpus();
     const index = new SearchIndexService();
-    index.build(WS, pages.filter((p) => p.workspaceId === WS), contents);
+    index.build(
+      WS,
+      pages.filter((p) => p.workspaceId === WS),
+      contents,
+    );
 
     expect(index.query(WS, "全新关键词")).toEqual([]);
     index.updateText("p3", "包含全新关键词的新正文", Date.now());
@@ -92,7 +128,11 @@ describe("SearchIndexService", () => {
   it("upsertPage 同步重命名后的标题", () => {
     const { pages, contents } = makeCorpus();
     const index = new SearchIndexService();
-    index.build(WS, pages.filter((p) => p.workspaceId === WS), contents);
+    index.build(
+      WS,
+      pages.filter((p) => p.workspaceId === WS),
+      contents,
+    );
 
     const renamed = pages.find((p) => p.id === "p3")!;
     index.upsertPage({ ...renamed, title: "改名后的项目页" });

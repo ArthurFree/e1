@@ -73,7 +73,9 @@ export const Indent = Extension.create({
           if (!INDENT_TYPES.includes(block.type.name)) return false;
           const current = (block.attrs.indent as number) ?? 0;
           if (current >= MAX_INDENT) return false;
-          return commands.updateAttributes(block.type.name, { indent: current + 1 });
+          return commands.updateAttributes(block.type.name, {
+            indent: current + 1,
+          });
         },
       outdent:
         () =>
@@ -89,7 +91,9 @@ export const Indent = Extension.create({
           if (!INDENT_TYPES.includes(block.type.name)) return false;
           const current = (block.attrs.indent as number) ?? 0;
           if (current <= 0) return false;
-          return commands.updateAttributes(block.type.name, { indent: current - 1 });
+          return commands.updateAttributes(block.type.name, {
+            indent: current - 1,
+          });
         },
     };
   },

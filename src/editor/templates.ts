@@ -99,7 +99,11 @@ export const DOC_TEMPLATES: DocTemplate[] = [
       heading(2, "背景与目标"),
       paragraph("一句话说明项目要达成什么。"),
       heading(2, "里程碑"),
-      taskList("M1：范围确认（日期）", "M2：开发完成（日期）", "M3：发布（日期）"),
+      taskList(
+        "M1：范围确认（日期）",
+        "M2：开发完成（日期）",
+        "M3：发布（日期）",
+      ),
       heading(2, "分工"),
       bulletList("负责人：职责"),
       heading(2, "风险与依赖"),

@@ -50,7 +50,10 @@ export function FavoritesPage() {
     };
   }, [services]);
 
-  const favWorkspaces = useMemo(() => favoriteWorkspaces(workspaces), [workspaces]);
+  const favWorkspaces = useMemo(
+    () => favoriteWorkspaces(workspaces),
+    [workspaces],
+  );
   const favPages = useMemo(() => favoritePages(allPages), [allPages]);
   const pagesById = useMemo(
     () => new Map(allPages.map((p) => [p.id, p])),

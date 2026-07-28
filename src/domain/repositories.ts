@@ -37,7 +37,10 @@ export interface UpdateWorkspaceInput {
 /** 知识库仓储。 */
 export interface WorkspaceRepository {
   list(): Promise<Workspace[]>;
-  create(name: string, extra?: { icon?: string | null; description?: string }): Promise<Workspace>;
+  create(
+    name: string,
+    extra?: { icon?: string | null; description?: string },
+  ): Promise<Workspace>;
   rename(id: string, name: string): Promise<void>;
   update(id: string, patch: UpdateWorkspaceInput): Promise<void>;
   /** 收藏/取消收藏（时间戳或 null）。 */
@@ -74,10 +77,22 @@ export interface PageRepository {
 export interface ContentRepository {
   /** 按 pageId 取正文；不存在时返回 undefined。 */
   get(pageId: string): Promise<DocumentContent | undefined>;
-  /** 覆盖式保存（upsert）：contentJson 为唯一编辑真相，textSnapshot 同步更新。 */
-  save(pageId: string, contentJson: unknown, textSnapshot: string): Promise<void>;
-  /** 全部文档正文（全局搜索用）。 */
+  /**
+   * 覆盖式保存（upsert）+ 乐观并发控制（R004 阶段 7）：
+   * 事务内读取当前 version（存量无 version 记录视为 0），不等于
+   * expectedVersion 时抛 DomainError("DOCUMENT_CONFLICT")，否则 version+1 写入。
+   * contentJson 为唯一编辑真相，textSnapshot 同步更新。
+   */
+  save(
+    pageId: string,
+    contentJson: unknown,
+    textSnapshot: string,
+    expectedVersion: number,
+  ): Promise<{ version: number; updatedAt: number }>;
+  /** 全部文档正文（全局搜索、跨库统计用）。 */
   listAll(): Promise<DocumentContent[]>;
+  /** 工作区全部文档正文（会话加载用，R004 阶段 5：索引直取，不全表扫描）。 */
+  listByWorkspace(workspaceId: string): Promise<DocumentContent[]>;
 }
 
 /** 原子创建文档（页面 + 初始正文）入参（R004 阶段 2，INV-04）。 */
@@ -119,8 +134,11 @@ export interface RevisionRepository {
     textSnapshot: string,
     reason: RevisionReason,
   ): Promise<DocumentRevision | null>;
-  /** 自动版本（interval）超出上限时清理最旧的，手动/恢复前版本不受影响。 */
-  pruneInterval(pageId: string, keep: number): Promise<void>;
+  /**
+   * 自动版本（interval）超出上限时清理最旧的，手动/恢复前版本不受影响。
+   * maxBytes（R004 阶段 6）：数量上限之外的总字节预算，省略时不按字节裁剪。
+   */
+  pruneInterval(pageId: string, keep: number, maxBytes?: number): Promise<void>;
 }
 
 /** 创建附件入参。 */

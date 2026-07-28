@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { Editor } from "@tiptap/core";
 import { buildDocumentExtensions } from "../../editor/extensions";
 import { FormatToolbar } from "./FormatToolbar";
@@ -10,7 +16,12 @@ function setup(content?: unknown) {
   editor = new Editor({
     element: document.createElement("div"),
     extensions: buildDocumentExtensions(),
-    content: (content ?? { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "正文内容" }] }] }) as never,
+    content: (content ?? {
+      type: "doc",
+      content: [
+        { type: "paragraph", content: [{ type: "text", text: "正文内容" }] },
+      ],
+    }) as never,
   });
   render(<FormatToolbar editor={editor} />);
   return editor;
@@ -25,11 +36,37 @@ describe("FormatToolbar", () => {
 
   it("渲染核心命令按钮", () => {
     setup();
-    expect(screen.getByRole("toolbar", { name: "格式工具栏" })).toBeInTheDocument();
-    for (const label of ["撤销", "重做", "加粗", "斜体", "下划线", "删除线", "行内代码", "上标", "下标", "链接", "项目列表", "编号列表", "任务列表", "增加缩进", "减少缩进", "清除行内格式", "重置为正文"]) {
+    expect(
+      screen.getByRole("toolbar", { name: "格式工具栏" }),
+    ).toBeInTheDocument();
+    for (const label of [
+      "撤销",
+      "重做",
+      "加粗",
+      "斜体",
+      "下划线",
+      "删除线",
+      "行内代码",
+      "上标",
+      "下标",
+      "链接",
+      "项目列表",
+      "编号列表",
+      "任务列表",
+      "增加缩进",
+      "减少缩进",
+      "清除行内格式",
+      "重置为正文",
+    ]) {
       expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
     }
-    for (const label of ["插入", "段落样式", "字号", "颜色与高亮", "更多命令"]) {
+    for (const label of [
+      "插入",
+      "段落样式",
+      "字号",
+      "颜色与高亮",
+      "更多命令",
+    ]) {
       expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
     }
   });
@@ -79,10 +116,14 @@ describe("FormatToolbar", () => {
   it("插入菜单提供分隔线/图片/附件/表格/公式/AI", () => {
     setup();
     fireEvent.click(screen.getByRole("button", { name: "插入" }));
-    expect(screen.getByRole("menuitem", { name: "分隔线" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("menuitem", { name: "分隔线" }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "附件" })).toBeEnabled();
     expect(screen.getByRole("menuitem", { name: "表格" })).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "AI 助手" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("menuitem", { name: "AI 助手" }),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("menuitem", { name: "分隔线" }));
     expect(JSON.stringify(editor?.getJSON())).toContain("horizontalRule");
@@ -94,7 +135,9 @@ describe("FormatToolbar", () => {
     const first = screen.getByRole("menuitem", { name: "正文" });
     first.focus();
     fireEvent.keyDown(first, { key: "ArrowDown" });
-    expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "标题 1" }));
+    expect(document.activeElement).toBe(
+      screen.getByRole("menuitem", { name: "标题 1" }),
+    );
     fireEvent.keyDown(document.activeElement as Element, { key: "Escape" });
     expect(screen.queryByRole("menuitem", { name: "正文" })).toBeNull();
   });

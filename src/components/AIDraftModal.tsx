@@ -51,22 +51,22 @@ export function AIDraftModal({ onClose }: AIDraftModalProps) {
     return (
       <Dialog label="AI 帮你写" className="modal" onClose={onClose}>
         <h2 className="modal__title">AI 帮你写</h2>
-          <p className="modal__hint">需要先在设置中配置兼容的 AI 服务。</p>
-          <div className="modal__actions">
-            <button type="button" className="button" onClick={onClose}>
-              取消
-            </button>
-            <button
-              type="button"
-              className="button button--primary"
-              onClick={() => {
-                onClose();
-                openSettings();
-              }}
-            >
-              前往设置
-            </button>
-          </div>
+        <p className="modal__hint">需要先在设置中配置兼容的 AI 服务。</p>
+        <div className="modal__actions">
+          <button type="button" className="button" onClick={onClose}>
+            取消
+          </button>
+          <button
+            type="button"
+            className="button button--primary"
+            onClick={() => {
+              onClose();
+              openSettings();
+            }}
+          >
+            前往设置
+          </button>
+        </div>
       </Dialog>
     );
   }
@@ -108,91 +108,96 @@ export function AIDraftModal({ onClose }: AIDraftModalProps) {
   return (
     <Dialog label="AI 帮你写" className="modal modal--wide" onClose={onClose}>
       <h2 className="modal__title">AI 帮你写</h2>
-        <div className="modal__form">
-          <label className="modal__field">
-            <span>主题</span>
-            <textarea
-              value={topic}
-              rows={2}
-              aria-label="文档主题"
-              placeholder="例如：Q3 产品发布会复盘"
-              onChange={(event) => setTopic(event.target.value)}
-            />
-          </label>
-          <label className="modal__field">
-            <span>文档类型</span>
-            <select
-              value={draftType}
-              aria-label="文档类型"
-              onChange={(event) => setDraftType(event.target.value)}
-            >
-              {DRAFT_TYPES.map((type) => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="modal__field">
-            <span>创建位置</span>
-            <TargetPicker
-              className="modal__picker"
-              onSelect={(picked) => setTarget(picked)}
-            />
-            {target && (
-              <span className="modal__hint" role="note">
-                已选：{target.workspaceName} / {target.parentId ? target.label : "根目录"}
-              </span>
-            )}
-          </div>
-
-          {step === "generating" && <p className="modal__hint">正在生成草稿…</p>}
-          {step === "error" && (
-            <p className="modal__error" role="alert">
-              {error}
-            </p>
+      <div className="modal__form">
+        <label className="modal__field">
+          <span>主题</span>
+          <textarea
+            value={topic}
+            rows={2}
+            aria-label="文档主题"
+            placeholder="例如：Q3 产品发布会复盘"
+            onChange={(event) => setTopic(event.target.value)}
+          />
+        </label>
+        <label className="modal__field">
+          <span>文档类型</span>
+          <select
+            value={draftType}
+            aria-label="文档类型"
+            onChange={(event) => setDraftType(event.target.value)}
+          >
+            {DRAFT_TYPES.map((type) => (
+              <option key={type} value={type}>
+                {type}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="modal__field">
+          <span>创建位置</span>
+          <TargetPicker
+            className="modal__picker"
+            onSelect={(picked) => setTarget(picked)}
+          />
+          {target && (
+            <span className="modal__hint" role="note">
+              已选：{target.workspaceName} /{" "}
+              {target.parentId ? target.label : "根目录"}
+            </span>
           )}
-          {step === "preview" && (
-            <label className="modal__field">
-              <span>生成预览（确认后才会写入新文档）</span>
-              <textarea
-                value={draft}
-                rows={10}
-                aria-label="AI 生成预览"
-                onChange={(event) => setDraft(event.target.value)}
-              />
-            </label>
-          )}
-
-          <div className="modal__actions">
-            <button type="button" className="button" onClick={onClose}>
-              取消
-            </button>
-            {step === "preview" && (
-              <button type="button" className="button" onClick={() => void generate()}>
-                重新生成
-              </button>
-            )}
-            {step !== "preview" ? (
-              <button
-                type="button"
-                className="button button--primary"
-                disabled={!topic.trim() || !target || step === "generating"}
-                onClick={() => void generate()}
-              >
-                生成预览
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="button button--primary"
-                onClick={() => void confirmCreate()}
-              >
-                确认创建
-              </button>
-            )}
-          </div>
         </div>
+
+        {step === "generating" && <p className="modal__hint">正在生成草稿…</p>}
+        {step === "error" && (
+          <p className="modal__error" role="alert">
+            {error}
+          </p>
+        )}
+        {step === "preview" && (
+          <label className="modal__field">
+            <span>生成预览（确认后才会写入新文档）</span>
+            <textarea
+              value={draft}
+              rows={10}
+              aria-label="AI 生成预览"
+              onChange={(event) => setDraft(event.target.value)}
+            />
+          </label>
+        )}
+
+        <div className="modal__actions">
+          <button type="button" className="button" onClick={onClose}>
+            取消
+          </button>
+          {step === "preview" && (
+            <button
+              type="button"
+              className="button"
+              onClick={() => void generate()}
+            >
+              重新生成
+            </button>
+          )}
+          {step !== "preview" ? (
+            <button
+              type="button"
+              className="button button--primary"
+              disabled={!topic.trim() || !target || step === "generating"}
+              onClick={() => void generate()}
+            >
+              生成预览
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="button button--primary"
+              onClick={() => void confirmCreate()}
+            >
+              确认创建
+            </button>
+          )}
+        </div>
+      </div>
     </Dialog>
   );
 }

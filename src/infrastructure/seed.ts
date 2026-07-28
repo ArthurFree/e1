@@ -53,7 +53,9 @@ function buildWelcomeDoc() {
       paragraph(
         text("这是一个"),
         { type: "text", marks: [{ type: "bold" }], text: "本地优先" },
-        text("的笔记应用。所有数据保存在浏览器 IndexedDB 中，离线也能编辑，刷新后内容不丢失。"),
+        text(
+          "的笔记应用。所有数据保存在浏览器 IndexedDB 中，离线也能编辑，刷新后内容不丢失。",
+        ),
       ),
       {
         type: "blockquote",
@@ -61,7 +63,9 @@ function buildWelcomeDoc() {
           paragraph(
             text("提示：在空行键入 "),
             { type: "text", marks: [{ type: "code" }], text: "/" },
-            text(" 打开命令菜单；选中文本可唤出浮动工具栏；输入 @ 可以提及其他页面。"),
+            text(
+              " 打开命令菜单；选中文本可唤出浮动工具栏；输入 @ 可以提及其他页面。",
+            ),
           ),
         ],
       },
@@ -79,9 +83,18 @@ function buildWelcomeDoc() {
       {
         type: "bulletList",
         content: [
-          { type: "listItem", content: [paragraph(text("标题、引用、代码块、分隔线"))] },
-          { type: "listItem", content: [paragraph(text("项目列表、编号列表、待办列表"))] },
-          { type: "listItem", content: [paragraph(text("表格、图片、链接、颜色与高亮"))] },
+          {
+            type: "listItem",
+            content: [paragraph(text("标题、引用、代码块、分隔线"))],
+          },
+          {
+            type: "listItem",
+            content: [paragraph(text("项目列表、编号列表、待办列表"))],
+          },
+          {
+            type: "listItem",
+            content: [paragraph(text("表格、图片、链接、颜色与高亮"))],
+          },
           { type: "listItem", content: [paragraph(text("数学公式与 @ 提及"))] },
         ],
       },
@@ -99,7 +112,9 @@ function buildWelcomeDoc() {
       {
         type: "codeBlock",
         attrs: { language: null },
-        content: [text('function hello() {\n  console.log("你好，世界！");\n}')],
+        content: [
+          text('function hello() {\n  console.log("你好，世界！");\n}'),
+        ],
       },
       { type: "horizontalRule" },
       paragraph(text("从这里开始，写下你的第一条笔记吧。")),
@@ -143,7 +158,7 @@ export async function ensureSeeded(db: IDBPDatabase): Promise<void> {
 let seedingPromise: Promise<void> | null = null;
 
 async function doSeed(db: IDBPDatabase): Promise<void> {
-  let workspaceCount = 0;
+  let workspaceCount: number;
   try {
     workspaceCount = await db.count(STORE_WORKSPACES);
   } catch {
@@ -258,15 +273,26 @@ async function doSeed(db: IDBPDatabase): Promise<void> {
   };
 
   // 单个事务写入知识库 + 全部页面 + 正文，保证种子要么完整落库要么整体失败。
-  const tx = db.transaction([STORE_WORKSPACES, STORE_PAGES, STORE_CONTENTS], "readwrite");
+  const tx = db.transaction(
+    [STORE_WORKSPACES, STORE_PAGES, STORE_CONTENTS],
+    "readwrite",
+  );
   await tx.objectStore(STORE_WORKSPACES).put(workspace);
-  for (const { page, contentJson, text: snapshot } of [welcome, todo, group, meeting]) {
+  for (const { page, contentJson, text: snapshot } of [
+    welcome,
+    todo,
+    group,
+    meeting,
+  ]) {
     await tx.objectStore(STORE_PAGES).put(page);
     if (page.kind === "document") {
       const content: DocumentContent = {
         pageId: page.id,
+        workspaceId: page.workspaceId,
         contentJson,
         textSnapshot: snapshot,
+        // 预置文档首版正文（R004 阶段 7）。
+        version: 1,
         updatedAt: now,
       };
       await tx.objectStore(STORE_CONTENTS).put(content);

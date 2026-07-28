@@ -25,6 +25,7 @@ function Harness() {
     <DocumentEditor
       pageId={host.pageId}
       initialContent={{ type: "doc", content: [{ type: "paragraph" }] }}
+      initialVersion={1}
       onEditorReady={(editor) => {
         host.editor = editor;
       }}
@@ -57,7 +58,11 @@ describe("DocumentEditor 附件孤儿清理", () => {
     const editor = host.editor!;
     const pageId = host.pageId!;
 
-    await insertAttachmentFile(editor, pageId, new File(["x"], "a.txt", { type: "text/plain" }));
+    await insertAttachmentFile(
+      editor,
+      pageId,
+      new File(["x"], "a.txt", { type: "text/plain" }),
+    );
     const [record] = await attachmentRepository.listByPage(pageId);
     expect(record).toBeDefined();
 
@@ -81,8 +86,13 @@ describe("DocumentEditor 附件孤儿清理", () => {
       return true;
     });
     expect(pos).toBeGreaterThanOrEqual(0);
-    editor.chain().deleteRange({ from: pos, to: pos + nodeSize }).run();
-    expect(editor.getJSON().content?.some((n) => n.type === "attachment")).toBeFalsy();
+    editor
+      .chain()
+      .deleteRange({ from: pos, to: pos + nodeSize })
+      .run();
+    expect(
+      editor.getJSON().content?.some((n) => n.type === "attachment"),
+    ).toBeFalsy();
     await waitFor(
       async () => {
         expect((await attachmentRepository.listByPage(pageId)).length).toBe(0);

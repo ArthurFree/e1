@@ -37,6 +37,7 @@ function Harness() {
     <DocumentEditor
       pageId={host.pageId}
       initialContent={{ type: "doc", content: [{ type: "paragraph" }] }}
+      initialVersion={1}
       onEditorReady={(editor) => {
         host.editor = editor;
       }}
@@ -71,10 +72,12 @@ describe("版本恢复与编辑器保存串行化（R004 INV-06）", () => {
     });
     const realSave = contentRepository.save.bind(contentRepository);
     vi.spyOn(contentRepository, "save").mockImplementation(
-      (pageId, json, text) => {
+      (pageId, json, text, expectedVersion) => {
         const gate = createDeferred<void>();
         saveGates.push(gate);
-        return gate.promise.then(() => realSave(pageId, json, text));
+        return gate.promise.then(() =>
+          realSave(pageId, json, text, expectedVersion),
+        );
       },
     );
   });

@@ -16,13 +16,13 @@ Tiptap onUpdate → noteEdit()（generation+1）→ 800ms 防抖 enqueue
 
 以下 8 处直写已全部收敛到应用服务，架构扫描（`src/test/architecture.test.ts`）以空白名单强制——新增直写立即失败：
 
-| 位置 | 原调用 | 迁移后 |
-| --- | --- | --- |
-| `src/components/TemplateCenter.tsx` | `page.create` + `content.save` | `createDocumentWithContent` action（原子创建） |
-| `src/components/AIDraftModal.tsx` | `page.create` + `content.save` | 同上 |
-| `src/components/PageTreeSidebar.tsx` | `content.save`（Markdown 导入） | 同上 |
-| `src/components/VersionPanel.tsx` | `revision.add` + `content.save` | `DocumentEditorController.restore`（协调器串行化，INV-06） |
-| `src/components/MainArea.tsx` | `content.save`（空白副本） | `documentCommit.replaceContent` |
+| 位置                                 | 原调用                          | 迁移后                                                     |
+| ------------------------------------ | ------------------------------- | ---------------------------------------------------------- |
+| `src/components/TemplateCenter.tsx`  | `page.create` + `content.save`  | `createDocumentWithContent` action（原子创建）             |
+| `src/components/AIDraftModal.tsx`    | `page.create` + `content.save`  | 同上                                                       |
+| `src/components/PageTreeSidebar.tsx` | `content.save`（Markdown 导入） | 同上                                                       |
+| `src/components/VersionPanel.tsx`    | `revision.add` + `content.save` | `DocumentEditorController.restore`（协调器串行化，INV-06） |
+| `src/components/MainArea.tsx`        | `content.save`（空白副本）      | `documentCommit.replaceContent`                            |
 
 注：损坏正文的「尝试恢复」与「应用恢复缓冲」本就走协调器（`DocumentEditor` 的 restoreRequestId effect）。附件写入经 `editor.storage.attachmentRepository` 通道（`src/editor/attachment.ts`），为 R003 认可的注入方式。
 

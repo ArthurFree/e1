@@ -41,9 +41,12 @@ for (const viewport of VIEWPORTS) {
         await expect(page.getByRole("tree", { name: "页面树" })).toBeVisible();
         await expectNoHorizontalOverflow(page);
         // 抽屉通过点击遮罩关闭（点在抽屉之外的右缘）
-        await page
-          .locator(".backdrop")
-          .click({ position: { x: viewport.width - 10, y: Math.floor(viewport.height / 2) } });
+        await page.locator(".backdrop").click({
+          position: {
+            x: viewport.width - 10,
+            y: Math.floor(viewport.height / 2),
+          },
+        });
       }
 
       // ≤767px 工作区轨道按设计隐藏，无搜索/回收站入口；只在入口存在时检查浮层

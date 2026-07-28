@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { useApp } from "../state/AppState";
 import { TestApp } from "../test/TestApp";
 import { resetDB } from "../infrastructure/db";

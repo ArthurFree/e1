@@ -22,7 +22,11 @@ export interface WorkspaceSessionState {
 
 export type SessionAction =
   | { type: "session/load-start"; requestId: number; workspaceId: string }
-  | { type: "session/load-success"; requestId: number; data: WorkspaceSessionData }
+  | {
+      type: "session/load-success";
+      requestId: number;
+      data: WorkspaceSessionData;
+    }
   | { type: "session/load-error"; requestId: number; error: string }
   | { type: "pages/set"; pages: Page[] | ((prev: Page[]) => Page[]) }
   | {

@@ -28,7 +28,9 @@ export function ActivityList() {
   const { openDocument, locatePage } = useNavigation();
   const [allPages, setAllPages] = useState<Page[]>([]);
   const [tab, setTab] = useState<ActivityTab>("edited");
-  const [filterWorkspaceId, setFilterWorkspaceId] = useState<string | null>(null);
+  const [filterWorkspaceId, setFilterWorkspaceId] = useState<string | null>(
+    null,
+  );
   const [limit, setLimit] = useState(ACTIVITY_PAGE_SIZE);
   const [now, setNow] = useState(() => Date.now());
 
@@ -135,7 +137,9 @@ export function ActivityList() {
           <thead>
             <tr>
               <th scope="col">标题</th>
-              <th scope="col" className="activity-table__type">类型</th>
+              <th scope="col" className="activity-table__type">
+                类型
+              </th>
               <th scope="col">归属</th>
               <th scope="col">时间</th>
               <th scope="col" className="activity-table__fav">
@@ -174,12 +178,18 @@ export function ActivityList() {
                   <button
                     type="button"
                     className="icon-button"
-                    aria-label={row.page.favoriteAt === null ? "收藏文档" : "取消收藏文档"}
+                    aria-label={
+                      row.page.favoriteAt === null ? "收藏文档" : "取消收藏文档"
+                    }
                     aria-pressed={row.page.favoriteAt !== null}
                     title={row.page.favoriteAt === null ? "收藏" : "取消收藏"}
                     onClick={() => onToggleFavorite(row.page)}
                   >
-                    {row.page.favoriteAt === null ? <IconStar size={14} /> : <IconStarFilled size={14} />}
+                    {row.page.favoriteAt === null ? (
+                      <IconStar size={14} />
+                    ) : (
+                      <IconStarFilled size={14} />
+                    )}
                   </button>
                 </td>
               </tr>

@@ -57,7 +57,10 @@ describe("CommandList", () => {
 
     expect(keyDown(ref, "ArrowUp")).toBe(true);
     const options = screen.getAllByRole("option");
-    expect(options[options.length - 1]).toHaveAttribute("aria-selected", "true");
+    expect(options[options.length - 1]).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
     expect(scrollIntoView).toHaveBeenCalled();
   });
 

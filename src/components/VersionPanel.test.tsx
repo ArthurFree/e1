@@ -1,8 +1,17 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { Editor } from "@tiptap/core";
-import { resetDB } from "../infrastructure/db";
-import { contentRepository, revisionRepository } from "../infrastructure/repositories";
+import { resetDB, getDB, STORE_PAGES } from "../infrastructure/db";
+import {
+  contentRepository,
+  revisionRepository,
+} from "../infrastructure/repositories";
 import { createBrowserAppServices } from "../infrastructure/browserServices";
 import type { AppServices } from "../application/AppServices";
 import type { DocumentEditorController } from "../application/services/DocumentEditorController";
@@ -60,6 +69,23 @@ describe("VersionPanel", () => {
   beforeEach(async () => {
     cleanup();
     await resetDB();
+    // 保存路径要求页面存在（R004 阶段 5：content.save 读页面回写 workspaceId）。
+    const db = await getDB();
+    const now = Date.now();
+    await db.put(STORE_PAGES, {
+      id: PAGE_ID,
+      workspaceId: "ws1",
+      parentId: null,
+      kind: "document",
+      title: "文档",
+      icon: null,
+      position: 0,
+      favoriteAt: null,
+      lastOpenedAt: null,
+      deletedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    });
   });
 
   it("无版本时显示空态", async () => {
@@ -79,7 +105,12 @@ describe("VersionPanel", () => {
   });
 
   it("列出版本时间与原因，展开显示摘要", async () => {
-    await revisionRepository.add(PAGE_ID, { type: "doc", content: [] }, "旧内容摘要", "interval");
+    await revisionRepository.add(
+      PAGE_ID,
+      { type: "doc", content: [] },
+      "旧内容摘要",
+      "interval",
+    );
     const services = createBrowserAppServices();
     const editor = createEditor("当前内容");
     render(
@@ -101,7 +132,12 @@ describe("VersionPanel", () => {
   it("恢复版本：先存恢复前版本，再经协调器写回选中文本", async () => {
     const oldJson = {
       type: "doc",
-      content: [{ type: "paragraph", content: [{ type: "text", text: "历史版本内容" }] }],
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "历史版本内容" }],
+        },
+      ],
     };
     await revisionRepository.add(PAGE_ID, oldJson, "历史版本内容", "interval");
     const services = createBrowserAppServices();
@@ -155,7 +191,9 @@ describe("VersionPanel", () => {
     fireEvent.click(await screen.findByText("恢复此版本"));
     fireEvent.click(await screen.findByText("确认恢复？"));
 
-    expect(await screen.findByText(/该版本内容损坏，无法恢复/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/该版本内容损坏，无法恢复/),
+    ).toBeInTheDocument();
     // 编辑器内容未被替换。
     expect(editor.getText()).toContain("当前内容");
     // 未创建恢复前版本，也未写回存储。

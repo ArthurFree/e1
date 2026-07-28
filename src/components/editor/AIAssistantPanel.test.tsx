@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { Editor } from "@tiptap/core";
 import { TestApp } from "../../test/TestApp";
 import { resetDB } from "../../infrastructure/db";
@@ -28,11 +34,12 @@ function createEditor(text: string) {
 function mockFetchResult(content: string) {
   vi.stubGlobal(
     "fetch",
-    vi.fn(async () =>
-      new Response(JSON.stringify({ choices: [{ message: { content } }] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
+    vi.fn(
+      async () =>
+        new Response(JSON.stringify({ choices: [{ message: { content } }] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
     ),
   );
 }
@@ -62,7 +69,11 @@ describe("AIAssistantPanel", () => {
 
   it("ask 模式：提问后预览结果，应用后插入文档", async () => {
     await preferencesRepository.update({
-      aiConfig: { endpoint: "https://example.com/v1", model: "test", apiKey: "sk" },
+      aiConfig: {
+        endpoint: "https://example.com/v1",
+        model: "test",
+        apiKey: "sk",
+      },
     });
     mockFetchResult("AI 回答内容");
     const editor = createEditor("正文");
@@ -89,7 +100,11 @@ describe("AIAssistantPanel", () => {
 
   it("polish 模式：应用后替换原选区", async () => {
     await preferencesRepository.update({
-      aiConfig: { endpoint: "https://example.com/v1", model: "test", apiKey: "sk" },
+      aiConfig: {
+        endpoint: "https://example.com/v1",
+        model: "test",
+        apiKey: "sk",
+      },
     });
     mockFetchResult("润色后的文字");
     const editor = createEditor("这是一段需要润色的文字");
@@ -99,7 +114,12 @@ describe("AIAssistantPanel", () => {
       </TestApp>,
     );
     act(() =>
-      openAIAssistant({ mode: "polish", selection: "需要润色", from: 5, to: 9 }),
+      openAIAssistant({
+        mode: "polish",
+        selection: "需要润色",
+        from: 5,
+        to: 9,
+      }),
     );
 
     expect(await screen.findByLabelText("AI 生成结果预览")).toHaveTextContent(
@@ -114,7 +134,11 @@ describe("AIAssistantPanel", () => {
 
   it("请求失败时显示错误并可重试", async () => {
     await preferencesRepository.update({
-      aiConfig: { endpoint: "https://example.com/v1", model: "test", apiKey: "sk" },
+      aiConfig: {
+        endpoint: "https://example.com/v1",
+        model: "test",
+        apiKey: "sk",
+      },
     });
     vi.stubGlobal(
       "fetch",
@@ -126,8 +150,12 @@ describe("AIAssistantPanel", () => {
         <AIAssistantPanel editor={editor} />
       </TestApp>,
     );
-    act(() => openAIAssistant({ mode: "summarize", selection: "正文", from: 1, to: 3 }));
-    expect(await screen.findByText("API Key 无效或没有权限")).toBeInTheDocument();
+    act(() =>
+      openAIAssistant({ mode: "summarize", selection: "正文", from: 1, to: 3 }),
+    );
+    expect(
+      await screen.findByText("API Key 无效或没有权限"),
+    ).toBeInTheDocument();
     expect(screen.getByText("重试")).toBeInTheDocument();
     editor.destroy();
   });

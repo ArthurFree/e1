@@ -74,7 +74,9 @@ describe("块操作", () => {
     moveBlock(editor, first!.pos, editor.state.doc.content.size);
     const texts = editor
       .getJSON()
-      .content?.map((n) => (n.content?.[0] as { text?: string } | undefined)?.text);
+      .content?.map(
+        (n) => (n.content?.[0] as { text?: string } | undefined)?.text,
+      );
     expect(texts).toEqual(["第二块", "第一块"]);
     editor.destroy();
   });
@@ -85,7 +87,9 @@ describe("块操作", () => {
     duplicateBlock(editor, first.pos);
     const texts = editor
       .getJSON()
-      .content?.map((n) => (n.content?.[0] as { text?: string } | undefined)?.text);
+      .content?.map(
+        (n) => (n.content?.[0] as { text?: string } | undefined)?.text,
+      );
     expect(texts).toEqual(["第一块", "第一块", "第二块"]);
     editor.destroy();
   });

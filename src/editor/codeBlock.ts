@@ -35,7 +35,9 @@ const KNOWN = new Set(CODE_LANGUAGES.map((l) => l.id));
 
 /** 未知语言回退为纯文本，不破坏正文（Markdown 导入等外部内容的语言 id 不受控）。 */
 export function normalizeCodeLanguage(language: unknown): string {
-  return typeof language === "string" && KNOWN.has(language) ? language : "plaintext";
+  return typeof language === "string" && KNOWN.has(language)
+    ? language
+    : "plaintext";
 }
 
 /** 语言的展示名；未知语言经 normalize 后显示「纯文本」。 */

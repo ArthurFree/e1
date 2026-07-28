@@ -27,12 +27,8 @@ import {
 /** 知识库首页：头部信息、统计、主操作与完整目录概览（不拖拽）。 */
 export function WorkspaceHome() {
   const services = useAppServices();
-  const {
-    workspace,
-    pages,
-    createPage,
-    toggleWorkspaceFavorite,
-  } = useWorkspaceSession();
+  const { workspace, pages, createPage, toggleWorkspaceFavorite } =
+    useWorkspaceSession();
   const { openDocument } = useNavigation();
   const { openTreeDrawer } = useOverlay();
   const [contents, setContents] = useState<DocumentContent[]>([]);
@@ -54,6 +50,10 @@ export function WorkspaceHome() {
     () => (workspace ? workspaceDocStats(pages, contents, workspace.id) : null),
     [workspace, pages, contents],
   );
+
+  // 邻接表（R003 阶段 7）：pages 变化时一次构建，目录概览不再逐层全数组过滤。
+  // 注意：必须在 workspace 早退之前调用，Hook 顺序不能依赖条件分支。
+  const childrenByParent = useMemo(() => buildChildrenByParent(pages), [pages]);
 
   if (!workspace) {
     return <div className="main-empty">请选择或新建一个知识库。</div>;
@@ -84,11 +84,6 @@ export function WorkspaceHome() {
     </div>
   );
 
-  // 邻接表（R003 阶段 7）：pages 变化时一次构建，目录概览不再逐层全数组过滤。
-  const childrenByParent = useMemo(
-    () => buildChildrenByParent(pages),
-    [pages],
-  );
   const liveChildren = (parentId: string | null) =>
     (childrenByParent.get(parentId) ?? []).filter(
       (p) => p.deletedAt === null && p.workspaceId === workspace.id,
@@ -116,7 +111,11 @@ export function WorkspaceHome() {
             onClick={() => toggleCollapse(page.id)}
           >
             <span aria-hidden="true">
-              {isCollapsed ? <IconChevronRight size={12} /> : <IconChevronDown size={12} />}
+              {isCollapsed ? (
+                <IconChevronRight size={12} />
+              ) : (
+                <IconChevronDown size={12} />
+              )}
             </span>
             <PageIcon icon={page.icon} kind="group" size={14} />
             {page.title || "未命名分组"}

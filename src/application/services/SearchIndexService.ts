@@ -56,7 +56,9 @@ export class SearchIndexService {
     if (old) {
       for (const id of old.keys()) this.workspaceOf.delete(id);
     }
-    const textByPageId = new Map(contents.map((c) => [c.pageId, c.textSnapshot]));
+    const textByPageId = new Map(
+      contents.map((c) => [c.pageId, c.textSnapshot]),
+    );
     const entries = new Map<string, SearchIndexEntry>();
     for (const page of pages) {
       entries.set(page.id, entryOf(page, textByPageId.get(page.id) ?? ""));
@@ -127,7 +129,10 @@ export class SearchIndexService {
           title: entry.title,
           snippet: makeSnippet(entry.textSnapshot, q),
         });
-      } else if (entry.kind === "document" && entry.textNormalized.includes(q)) {
+      } else if (
+        entry.kind === "document" &&
+        entry.textNormalized.includes(q)
+      ) {
         bodyHits.push({
           pageId: entry.pageId,
           title: entry.title,

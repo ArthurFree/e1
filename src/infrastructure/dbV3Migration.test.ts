@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { openDB } from "idb";
 import {
   DB_NAME,
+  DB_VERSION,
   STORE_CONTENTS,
   STORE_PAGES,
   STORE_TRASH,
@@ -94,7 +95,7 @@ describe("v2 → v3 迁移", () => {
   it("v2 老库升级后新索引就位且数据完整", async () => {
     await writeV2Fixture();
     const db = await getDB();
-    expect(db.version).toBe(3);
+    expect(db.version).toBe(DB_VERSION);
 
     const pageIndexes = Array.from(
       db.transaction(STORE_PAGES).objectStore(STORE_PAGES).indexNames,
@@ -117,10 +118,11 @@ describe("v2 → v3 迁移", () => {
   it("复合索引可按 [workspaceId, parentId] 检索（顶层 null 键除外）", async () => {
     await writeV2Fixture();
     const db = await getDB();
-    const inGroup = await db.getAllFromIndex(STORE_PAGES, "workspaceId_parentId", [
-      "ws1",
-      "g1",
-    ]);
+    const inGroup = await db.getAllFromIndex(
+      STORE_PAGES,
+      "workspaceId_parentId",
+      ["ws1", "g1"],
+    );
     expect(inGroup.map((p) => (p as { id: string }).id)).toEqual(["d1"]);
   });
 
@@ -151,7 +153,7 @@ describe("v2 → v3 迁移", () => {
     v1.close();
 
     const db = await getDB();
-    expect(db.version).toBe(3);
+    expect(db.version).toBe(DB_VERSION);
     // v2 分支：folder → group，新字段补默认值。
     const pages = await pageRepository.listByWorkspace("ws1");
     expect(pages[0]?.kind).toBe("group");

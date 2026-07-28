@@ -12,6 +12,11 @@ import { DocumentSaveCoordinator } from "../../application/services/SaveCoordina
 import { WorkspaceSessionService } from "../../application/services/WorkspaceSessionService";
 import { SearchIndexService } from "../../application/services/SearchIndexService";
 import {
+  SyncChannelService,
+  type BroadcastChannelLike,
+} from "../../application/services/SyncChannelService";
+import { StorageConnectionEventBus } from "../../application/services/StorageConnectionEventBus";
+import {
   createInMemoryRepositories,
   createMemoryStore,
   type MemoryStore,
@@ -22,10 +27,17 @@ export interface InMemoryAppServicesOptions {
   store?: MemoryStore;
   /** AI provider stub；缺省抛「未配置」错误。 */
   aiProvider?: AIProvider;
+  /**
+   * 跨标签页同步频道的 mock 传输层（R004 §7.2）；缺省 null（no-op）。
+   * 测试注入 mock 后可验证发送/接收/回声抑制。
+   */
+  syncChannel?: BroadcastChannelLike | null;
 }
 
 /** 创建内存容器；返回 store 便于测试直接断言底层数据。 */
-export function createInMemoryAppServices(options: InMemoryAppServicesOptions = {}): {
+export function createInMemoryAppServices(
+  options: InMemoryAppServicesOptions = {},
+): {
   services: AppServices;
   store: MemoryStore;
 } {
@@ -37,17 +49,28 @@ export function createInMemoryAppServices(options: InMemoryAppServicesOptions = 
     content: repos.content,
   });
   const searchIndex = new SearchIndexService();
+  // 跨标签页同步频道（R004 §7.2）：默认 no-op；测试经 options 注入 mock。
+  const syncChannel = new SyncChannelService(
+    options.syncChannel ?? null,
+    `test-tab-${Math.random().toString(36).slice(2)}`,
+  );
   // 文档提交服务（R004 阶段 2）：与生产容器同装配。
   const documentCommit = new DocumentCommitService({
     content: repos.content,
     documentWrite: repos.documentWrite,
     revisions: repos.revision,
     searchIndex,
+    syncChannel,
   });
   // 内存恢复缓冲：与 localStorage 版同接口，数据随容器存活。
   const recoveryData = new Map<
     string,
-    { pageId: string; contentJson: unknown; generation: number; timestamp: number }
+    {
+      pageId: string;
+      contentJson: unknown;
+      generation: number;
+      timestamp: number;
+    }
   >();
   const write = (record: {
     pageId: string;
@@ -62,30 +85,37 @@ export function createInMemoryAppServices(options: InMemoryAppServicesOptions = 
     documentCommit,
     session,
     searchIndex,
+    syncChannel,
+    storageEvents: new StorageConnectionEventBus(),
     createAIProvider:
       options.aiProvider !== undefined
         ? () => options.aiProvider as AIProvider
         : () => {
             throw new Error("内存容器未配置 AI provider");
           },
-    createSaveCoordinator: (pageId, onStateChange) =>
-      new DocumentSaveCoordinator(pageId, {
-        committer: documentCommit,
-        revisions: repos.revision,
-        attachments: repos.attachment,
-        recovery: {
-          write,
-          clear: (pid, savedGeneration) => {
-            const record = recoveryData.get(pid);
-            if (record && record.generation <= savedGeneration) {
-              recoveryData.delete(pid);
-            }
+    createSaveCoordinator: (pageId, onStateChange, coordinatorOptions) =>
+      new DocumentSaveCoordinator(
+        pageId,
+        {
+          committer: documentCommit,
+          revisions: repos.revision,
+          attachments: repos.attachment,
+          recovery: {
+            write,
+            clear: (pid, savedGeneration) => {
+              const record = recoveryData.get(pid);
+              if (record && record.generation <= savedGeneration) {
+                recoveryData.delete(pid);
+              }
+            },
           },
+          // 维护失败只记录开发诊断（R004 阶段 1），与生产容器一致。
+          onMaintenanceError: (stage) =>
+            increment("save-maintenance-error", stage),
+          onStateChange,
         },
-        // 维护失败只记录开发诊断（R004 阶段 1），与生产容器一致。
-        onMaintenanceError: (stage) => increment("save-maintenance-error", stage),
-        onStateChange,
-      }),
+        { initialVersion: coordinatorOptions?.initialVersion },
+      ),
   };
   return { services, store };
 }

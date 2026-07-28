@@ -4,18 +4,18 @@
 
 仓储层与领域纯函数统一抛 `DomainError`：`code` 是稳定契约（程序判断），`message` 是中文用户文案（UI 不得解析文案判断错误类型）。
 
-| code | 含义 |
-| --- | --- |
-| `WORKSPACE_NOT_FOUND` | 知识库不存在或数据损坏 |
-| `PAGE_NOT_FOUND` | 页面不存在或数据损坏（含已永久删除） |
-| `PARENT_NOT_FOUND` | 父页面不存在 |
-| `CROSS_WORKSPACE_PARENT` | 父页面属于其他知识库 |
-| `PAGE_TREE_CYCLE` | 移动会形成树环 |
-| `PARENT_IN_TRASH` | 父页面在回收站中 |
-| `TAG_NOT_FOUND` | 标签不存在 |
-| `CROSS_WORKSPACE_TAG` | 标签与页面属于不同知识库 |
-| `INVALID_INPUT` | 入参非法（kind、标题长度等） |
-| `CORRUPTED_DOCUMENT` | 文档正文 JSON 损坏 |
+| code                     | 含义                                 |
+| ------------------------ | ------------------------------------ |
+| `WORKSPACE_NOT_FOUND`    | 知识库不存在或数据损坏               |
+| `PAGE_NOT_FOUND`         | 页面不存在或数据损坏（含已永久删除） |
+| `PARENT_NOT_FOUND`       | 父页面不存在                         |
+| `CROSS_WORKSPACE_PARENT` | 父页面属于其他知识库                 |
+| `PAGE_TREE_CYCLE`        | 移动会形成树环                       |
+| `PARENT_IN_TRASH`        | 父页面在回收站中                     |
+| `TAG_NOT_FOUND`          | 标签不存在                           |
+| `CROSS_WORKSPACE_TAG`    | 标签与页面属于不同知识库             |
+| `INVALID_INPUT`          | 入参非法（kind、标题长度等）         |
+| `CORRUPTED_DOCUMENT`     | 文档正文 JSON 损坏                   |
 
 ## 正文 JSON 运行时校验（R003 阶段 4）
 

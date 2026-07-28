@@ -13,7 +13,7 @@
  */
 
 /** 默认启用：Vite dev 且不在 vitest 中（测试保持静默）。 */
-let enabled = Boolean(import.meta.env.DEV) && !Boolean(import.meta.env.VITEST);
+let enabled = import.meta.env.DEV && !import.meta.env.VITEST;
 
 export function isDevDiagnosticsEnabled(): boolean {
   return enabled;

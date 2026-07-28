@@ -39,9 +39,12 @@ describe("DocumentCommitService", () => {
     });
     searchIndex.build(ws.id, await repos.page.listByWorkspace(ws.id), []);
 
-    const { savedAt } = await service.commit(page.id, DOC_A, "甲正文关键词");
+    // 页面创建时已写入 version 1 的空正文：首次提交 expectedVersion 为 1。
+    const { savedAt } = await service.commit(page.id, DOC_A, "甲正文关键词", 1);
     expect(typeof savedAt).toBe("number");
-    expect((await repos.content.get(page.id))?.textSnapshot).toBe("甲正文关键词");
+    expect((await repos.content.get(page.id))?.textSnapshot).toBe(
+      "甲正文关键词",
+    );
     const hits = searchIndex.query(ws.id, "关键词");
     expect(hits.map((h) => h.pageId)).toContain(page.id);
   });
@@ -59,9 +62,15 @@ describe("DocumentCommitService", () => {
       textSnapshot: "甲正文关键词",
     });
 
-    expect((await repos.content.get(page.id))?.textSnapshot).toBe("甲正文关键词");
-    expect(searchIndex.query(ws.id, "乙标题").map((h) => h.pageId)).toContain(page.id);
-    expect(searchIndex.query(ws.id, "关键词").map((h) => h.pageId)).toContain(page.id);
+    expect((await repos.content.get(page.id))?.textSnapshot).toBe(
+      "甲正文关键词",
+    );
+    expect(searchIndex.query(ws.id, "乙标题").map((h) => h.pageId)).toContain(
+      page.id,
+    );
+    expect(searchIndex.query(ws.id, "关键词").map((h) => h.pageId)).toContain(
+      page.id,
+    );
   });
 
   it("replaceContent 覆盖后索引命中新文本、不再命中旧文本", async () => {
@@ -89,7 +98,9 @@ describe("DocumentCommitService", () => {
       textSnapshot: "新文本丙",
     });
 
-    expect(searchIndex.query(ws.id, "新文本").map((h) => h.pageId)).toContain(page.id);
+    expect(searchIndex.query(ws.id, "新文本").map((h) => h.pageId)).toContain(
+      page.id,
+    );
     expect(searchIndex.query(ws.id, "旧文本")).toHaveLength(0);
   });
 

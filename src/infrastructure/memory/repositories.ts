@@ -10,6 +10,10 @@
  * 全部保持一致；差异仅在不持久化（无 seed、无跨会话恢复）。
  */
 import { DomainError } from "../../domain/errors";
+import {
+  revisionContentBytes,
+  selectRevisionsToPrune,
+} from "../../domain/revisions";
 import { parseDocumentContent } from "../../domain/validation/documentContent";
 import {
   childrenOf,
@@ -47,7 +51,10 @@ const MAX_PAGE_TITLE_LENGTH = 200;
 
 function validateCreatePageInput(input: CreatePageInput): void {
   if (input.kind !== "document" && input.kind !== "group") {
-    throw new DomainError("INVALID_INPUT", `非法页面类型: ${String(input.kind)}`);
+    throw new DomainError(
+      "INVALID_INPUT",
+      `非法页面类型: ${String(input.kind)}`,
+    );
   }
   const title = input.title.trim();
   if (title.length === 0 || title.length > MAX_PAGE_TITLE_LENGTH) {
@@ -119,7 +126,10 @@ export function createInMemoryRepositories(
       throw new DomainError("CROSS_WORKSPACE_PARENT", "父页面属于其他知识库");
     }
     if (parent.deletedAt !== null) {
-      throw new DomainError("PARENT_IN_TRASH", "父页面在回收站中，不能作为父级");
+      throw new DomainError(
+        "PARENT_IN_TRASH",
+        "父页面在回收站中，不能作为父级",
+      );
     }
   }
 
@@ -146,21 +156,30 @@ export function createInMemoryRepositories(
     async rename(id, name) {
       const ws = store.workspaces.get(id);
       if (!ws) {
-        throw new DomainError("WORKSPACE_NOT_FOUND", `知识库不存在或数据损坏: ${id}`);
+        throw new DomainError(
+          "WORKSPACE_NOT_FOUND",
+          `知识库不存在或数据损坏: ${id}`,
+        );
       }
       store.workspaces.set(id, { ...ws, name, updatedAt: Date.now() });
     },
     async update(id, patch) {
       const ws = store.workspaces.get(id);
       if (!ws) {
-        throw new DomainError("WORKSPACE_NOT_FOUND", `知识库不存在或数据损坏: ${id}`);
+        throw new DomainError(
+          "WORKSPACE_NOT_FOUND",
+          `知识库不存在或数据损坏: ${id}`,
+        );
       }
       store.workspaces.set(id, { ...ws, ...patch, id, updatedAt: Date.now() });
     },
     async setFavorite(id, favoriteAt) {
       const ws = store.workspaces.get(id);
       if (!ws) {
-        throw new DomainError("WORKSPACE_NOT_FOUND", `知识库不存在或数据损坏: ${id}`);
+        throw new DomainError(
+          "WORKSPACE_NOT_FOUND",
+          `知识库不存在或数据损坏: ${id}`,
+        );
       }
       store.workspaces.set(id, { ...ws, favoriteAt, updatedAt: Date.now() });
     },
@@ -212,8 +231,11 @@ export function createInMemoryRepositories(
       if (created.kind === "document") {
         store.contents.set(created.id, {
           pageId: created.id,
+          workspaceId: created.workspaceId,
           contentJson: { type: "doc", content: [] },
           textSnapshot: "",
+          // 新文档首版正文（R004 阶段 7）。
+          version: 1,
           updatedAt: now,
         });
       }
@@ -244,12 +266,16 @@ export function createInMemoryRepositories(
       );
       const targetIndex =
         index ??
-        childrenOf(workspacePages, newParentId).filter((p) => p.id !== id).length;
+        childrenOf(workspacePages, newParentId).filter((p) => p.id !== id)
+          .length;
       const next = movePage(workspacePages, id, newParentId, targetIndex);
       const now = Date.now();
       for (const p of next) {
         const before = workspacePages.find((w) => w.id === p.id);
-        if (before && (before.parentId !== p.parentId || before.position !== p.position)) {
+        if (
+          before &&
+          (before.parentId !== p.parentId || before.position !== p.position)
+        ) {
           store.pages.set(p.id, { ...p, updatedAt: now });
         }
       }
@@ -279,7 +305,10 @@ export function createInMemoryRepositories(
         let parentId = record?.originalParentId ?? null;
         const parent = parentId ? store.pages.get(parentId) : undefined;
         // 原父级已不存在或仍在回收站（且不在本次恢复子树内）时回到根。
-        if (parentId && (!parent || (parent.deletedAt !== null && !ids.includes(parentId)))) {
+        if (
+          parentId &&
+          (!parent || (parent.deletedAt !== null && !ids.includes(parentId)))
+        ) {
           parentId = null;
         }
         const siblings = allPages().filter(
@@ -324,18 +353,48 @@ export function createInMemoryRepositories(
 
   const content: ContentRepository = {
     async get(pageId) {
-      return store.contents.get(pageId);
+      const record = store.contents.get(pageId);
+      return record ? { ...record, version: record.version ?? 0 } : undefined;
     },
-    async save(pageId, contentJson, textSnapshot) {
+    async save(pageId, contentJson, textSnapshot, expectedVersion) {
+      // 与 IndexedDB 实现同约束：页面不存在时显式失败（R004 阶段 5）；
+      // 乐观锁（R004 阶段 7）：version 不匹配抛 DOCUMENT_CONFLICT，
+      // 存量无 version 记录视为 0。
+      const target = store.pages.get(pageId);
+      if (!target) {
+        throw new DomainError(
+          "PAGE_NOT_FOUND",
+          `页面不存在或数据损坏: ${pageId}`,
+        );
+      }
+      const currentVersion = store.contents.get(pageId)?.version ?? 0;
+      if (currentVersion !== expectedVersion) {
+        throw new DomainError(
+          "DOCUMENT_CONFLICT",
+          `文档已在其他地方被修改（当前版本 ${currentVersion}，期望 ${expectedVersion}）`,
+        );
+      }
+      const updatedAt = Date.now();
       store.contents.set(pageId, {
         pageId,
+        workspaceId: target.workspaceId,
         contentJson,
         textSnapshot,
-        updatedAt: Date.now(),
+        version: currentVersion + 1,
+        updatedAt,
       });
+      return { version: currentVersion + 1, updatedAt };
     },
     async listAll() {
-      return [...store.contents.values()];
+      return [...store.contents.values()].map((c) => ({
+        ...c,
+        version: c.version ?? 0,
+      }));
+    },
+    async listByWorkspace(workspaceId) {
+      return [...store.contents.values()]
+        .filter((c) => c.workspaceId === workspaceId)
+        .map((c) => ({ ...c, version: c.version ?? 0 }));
     },
   };
 
@@ -387,8 +446,11 @@ export function createInMemoryRepositories(
       store.pages.set(created.id, created);
       store.contents.set(created.id, {
         pageId: created.id,
+        workspaceId: created.workspaceId,
         contentJson: parsed.value,
         textSnapshot: input.textSnapshot,
+        // 新文档首版正文（R004 阶段 7）。
+        version: 1,
         updatedAt: now,
       });
       return created;
@@ -401,11 +463,15 @@ export function createInMemoryRepositories(
           "正文 JSON 未通过白名单校验",
         );
       }
-      getRequiredPage(input.pageId);
+      const target = getRequiredPage(input.pageId);
+      // 与 IndexedDB 实现一致：外部覆盖路径不做冲突检查，version 照常递增。
+      const currentVersion = store.contents.get(input.pageId)?.version ?? 0;
       const record: DocumentContent = {
         pageId: input.pageId,
+        workspaceId: target.workspaceId,
         contentJson: parsed.value,
         textSnapshot: input.textSnapshot,
+        version: currentVersion + 1,
         updatedAt: Date.now(),
       };
       store.contents.set(input.pageId, record);
@@ -439,11 +505,20 @@ export function createInMemoryRepositories(
       store.revisions.set(rev.id, rev);
       return rev;
     },
-    async pruneInterval(pageId, keep) {
+    async pruneInterval(pageId, keep, maxBytes) {
       const interval = (await revision.listByPage(pageId)).filter(
         (r) => r.reason === "interval",
       );
-      for (const r of interval.slice(keep)) {
+      // 与 IndexedDB 实现同规则：数量 + 总字节双重预算（R004 阶段 6）。
+      const excess = selectRevisionsToPrune(
+        interval.map((r) => ({
+          ...r,
+          bytes: revisionContentBytes(r.contentJson),
+        })),
+        keep,
+        maxBytes ?? Number.POSITIVE_INFINITY,
+      );
+      for (const r of excess) {
         store.revisions.delete(r.id);
       }
     },
@@ -510,23 +585,26 @@ export function createInMemoryRepositories(
         .map((pt) => pt.tagId);
     },
     async listWorkspacePageTags(workspaceId) {
-      const pageIds = new Set(
-        allPages()
-          .filter((p) => p.workspaceId === workspaceId)
-          .map((p) => p.id),
+      return [...store.pageTags.values()].filter(
+        (pt) => pt.workspaceId === workspaceId,
       );
-      return [...store.pageTags.values()].filter((pt) => pageIds.has(pt.pageId));
     },
     async setPageTags(pageId, tagIds) {
       const target = store.pages.get(pageId);
       if (!target) {
-        throw new DomainError("PAGE_NOT_FOUND", `页面不存在或数据损坏: ${pageId}`);
+        throw new DomainError(
+          "PAGE_NOT_FOUND",
+          `页面不存在或数据损坏: ${pageId}`,
+        );
       }
       const uniqueTagIds = [...new Set(tagIds)];
       for (const tagId of uniqueTagIds) {
         const record = store.tags.get(tagId);
         if (!record) {
-          throw new DomainError("TAG_NOT_FOUND", `标签不存在或数据损坏: ${tagId}`);
+          throw new DomainError(
+            "TAG_NOT_FOUND",
+            `标签不存在或数据损坏: ${tagId}`,
+          );
         }
         if (record.workspaceId !== target.workspaceId) {
           throw new DomainError(
@@ -539,7 +617,11 @@ export function createInMemoryRepositories(
         if (pt.pageId === pageId) store.pageTags.delete(key);
       }
       for (const tagId of uniqueTagIds) {
-        store.pageTags.set(`${pageId}${tagId}`, { pageId, tagId });
+        store.pageTags.set(`${pageId}${tagId}`, {
+          pageId,
+          tagId,
+          workspaceId: target.workspaceId,
+        });
       }
     },
   };
@@ -554,5 +636,14 @@ export function createInMemoryRepositories(
     },
   };
 
-  return { workspace, page, content, documentWrite, revision, attachment, tag, preferences };
+  return {
+    workspace,
+    page,
+    content,
+    documentWrite,
+    revision,
+    attachment,
+    tag,
+    preferences,
+  };
 }

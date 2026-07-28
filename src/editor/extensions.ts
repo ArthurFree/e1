@@ -24,6 +24,7 @@ import type { Page } from "../domain/types";
 import { Attachment } from "./attachment";
 import { CodeBlockWithLanguage } from "./codeBlock";
 import { Indent } from "./indent";
+import { LocalImage } from "./localImage";
 import { createMentionSuggestion } from "./mentionSuggestion";
 import { createSlashSuggestion } from "./slashSuggestion";
 
@@ -57,7 +58,10 @@ export function buildDocumentExtensions(): AnyExtension[] {
     Highlight.configure({ multicolor: true }),
     TextAlign.configure({ types: ["heading", "paragraph"] }),
     Typography,
-    Image.configure({ inline: false, allowBase64: true }),
+    // 旧 Base64 图片（image 节点 data: URI）的兼容渲染保留；allowBase64 关闭后
+    // 粘贴 HTML 不再产生新的 Base64 图片（JSON 加载不经 parseHTML，不受影响），
+    // 新图片统一走 LocalImage 附件化（R004 阶段 6）。
+    Image.configure({ inline: false, allowBase64: false }),
     Subscript,
     Superscript,
     TaskList,
@@ -66,6 +70,7 @@ export function buildDocumentExtensions(): AnyExtension[] {
     Mathematics,
     Indent,
     Attachment,
+    LocalImage,
   ];
 }
 
@@ -74,13 +79,18 @@ export function buildDocumentExtensions(): AnyExtension[] {
  * TableOfContents 与 UniqueID 为 Pro 能力，目录由 src/editor/toc.ts 自行实现。
  * @param options 宿主注入的依赖（@ 提及候选页与编辑器实例取用）。
  */
-export function buildEditorExtensions(options: EditorExtensionsOptions): AnyExtension[] {
+export function buildEditorExtensions(
+  options: EditorExtensionsOptions,
+): AnyExtension[] {
   return [
     ...buildDocumentExtensions(),
     Placeholder.configure({ placeholder: "输入正文，键入 / 打开命令菜单" }),
     Mention.configure({
       HTMLAttributes: { class: "mention" },
-      suggestion: createMentionSuggestion(options.getMentionPages, options.getEditor),
+      suggestion: createMentionSuggestion(
+        options.getMentionPages,
+        options.getEditor,
+      ),
     }),
     createSlashSuggestion(),
   ];

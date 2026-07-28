@@ -34,7 +34,8 @@ const INVALID_DOC = {
 
 export function describeDocumentWriteContract(
   name: string,
-  makeDeps: () => DocumentWriteContractDeps | Promise<DocumentWriteContractDeps>,
+  makeDeps: () =>
+    DocumentWriteContractDeps | Promise<DocumentWriteContractDeps>,
 ): void {
   describe(`DocumentWriteRepository 契约（${name}）`, () => {
     it("createWithContent 原子创建页面与初始正文", async () => {
@@ -52,6 +53,8 @@ export function describeDocumentWriteContract(
       const stored = await deps.content.get(page.id);
       expect(stored?.textSnapshot).toBe("初始正文");
       expect(stored?.contentJson).toEqual(VALID_DOC);
+      // 正文记录冗余工作区维度（R004 阶段 5）。
+      expect(stored?.workspaceId).toBe(ws.id);
       // 页面列表立即可见。
       const pages = await deps.page.listByWorkspace(ws.id);
       expect(pages.map((p) => p.id)).toContain(page.id);
@@ -168,6 +171,7 @@ export function describeDocumentWriteContract(
         textSnapshot: "替换后",
       });
       expect(record.textSnapshot).toBe("替换后");
+      expect(record.workspaceId).toBe(ws.id);
       expect((await deps.content.get(page.id))?.contentJson).toEqual(next);
     });
 

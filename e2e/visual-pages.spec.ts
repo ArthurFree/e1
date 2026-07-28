@@ -42,9 +42,12 @@ for (const viewport of VIEWPORTS) {
 
     test("知识库首页", async ({ page }) => {
       await gotoWorkspaceHome(page, viewport.width);
-      await expect(page).toHaveScreenshot(`knowledge-home-${viewport.width}.png`, {
-        mask: [page.locator(".ws-home__doc-time")],
-      });
+      await expect(page).toHaveScreenshot(
+        `knowledge-home-${viewport.width}.png`,
+        {
+          mask: [page.locator(".ws-home__doc-time")],
+        },
+      );
     });
   });
 }

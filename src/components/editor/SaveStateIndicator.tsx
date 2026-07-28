@@ -21,11 +21,29 @@ function formatSavedAt(at: number): string {
 }
 
 /** 保存状态（R001 §8.1）：编辑后、保存中、已保存时间、失败与重试。 */
-export function SaveStateIndicator({ state, onRetry }: SaveStateIndicatorProps) {
+export function SaveStateIndicator({
+  state,
+  onRetry,
+}: SaveStateIndicatorProps) {
   if (state.status === "error") {
+    // 乐观锁冲突（R004 阶段 7）：普通重试必然再撞版本，不显示重试按钮，
+    // 处理方式由正文顶部的冲突面板提供（重新载入/另存副本/强制覆盖/复制）。
+    if (state.errorKind === "conflict") {
+      return (
+        <span className="save-state save-state--error" role="alert">
+          与其他标签页的修改冲突
+        </span>
+      );
+    }
+    // 区分本地存储空间不足与普通写入失败（R004 阶段 6）：空间不足需要
+    // 用户先清理数据，单纯重试大概率仍失败，文案须明确原因。
+    const message =
+      state.errorKind === "quota"
+        ? "本地存储空间不足，请清理回收站或删除不需要的附件后重试"
+        : "保存失败";
     return (
       <span className="save-state save-state--error" role="alert">
-        保存失败
+        {message}
         <button type="button" className="save-state__retry" onClick={onRetry}>
           重试
         </button>

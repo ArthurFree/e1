@@ -43,9 +43,17 @@ export function searchPages(
     const title = page.title || "无标题";
     const snapshot = contentByPageId.get(page.id)?.textSnapshot ?? "";
     if (title.toLowerCase().includes(q)) {
-      titleHits.push({ pageId: page.id, title, snippet: makeSnippet(snapshot, q) });
+      titleHits.push({
+        pageId: page.id,
+        title,
+        snippet: makeSnippet(snapshot, q),
+      });
     } else if (page.kind === "document" && snapshot.toLowerCase().includes(q)) {
-      bodyHits.push({ pageId: page.id, title, snippet: makeSnippet(snapshot, q) });
+      bodyHits.push({
+        pageId: page.id,
+        title,
+        snippet: makeSnippet(snapshot, q),
+      });
     }
   }
   return [...titleHits, ...bodyHits];

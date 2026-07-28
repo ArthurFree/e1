@@ -26,14 +26,53 @@ const corruptCases: [string, unknown][] = [
   ["content 不是数组", { type: "doc", content: "x" }],
   ["未知节点类型", { type: "doc", content: [{ type: "evilNode" }] }],
   ["节点缺少 type", { type: "doc", content: [{ text: "x" }] }],
-  ["content 嵌套非数组", { type: "doc", content: [{ type: "paragraph", content: "x" }] }],
-  ["非文本节点带 text", { type: "doc", content: [{ type: "paragraph", text: "x" }] }],
+  [
+    "content 嵌套非数组",
+    { type: "doc", content: [{ type: "paragraph", content: "x" }] },
+  ],
+  [
+    "非文本节点带 text",
+    { type: "doc", content: [{ type: "paragraph", text: "x" }] },
+  ],
   ["文本节点缺 text", { type: "doc", content: [{ type: "text" }] }],
   ["attrs 非对象", { type: "doc", content: [{ type: "image", attrs: "x" }] }],
   ["image 缺 src", { type: "doc", content: [{ type: "image", attrs: {} }] }],
-  ["attachment 缺 attachmentId", { type: "doc", content: [{ type: "attachment", attrs: {} }] }],
-  ["mention id 类型错误", { type: "doc", content: [{ type: "paragraph", content: [{ type: "mention", attrs: { id: 1 } }] }] }],
-  ["未知 mark", { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "x", marks: [{ type: "evilMark" }] }] }] }],
+  [
+    "attachment 缺 attachmentId",
+    { type: "doc", content: [{ type: "attachment", attrs: {} }] },
+  ],
+  [
+    "localImage 缺 attachmentId",
+    { type: "doc", content: [{ type: "localImage", attrs: {} }] },
+  ],
+  [
+    "localImage attachmentId 类型错误",
+    {
+      type: "doc",
+      content: [{ type: "localImage", attrs: { attachmentId: 1 } }],
+    },
+  ],
+  [
+    "mention id 类型错误",
+    {
+      type: "doc",
+      content: [
+        { type: "paragraph", content: [{ type: "mention", attrs: { id: 1 } }] },
+      ],
+    },
+  ],
+  [
+    "未知 mark",
+    {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "x", marks: [{ type: "evilMark" }] }],
+        },
+      ],
+    },
+  ],
   ["嵌套 doc", { type: "doc", content: [{ type: "doc" }] }],
 ];
 
@@ -51,6 +90,19 @@ describe("parseDocumentContent", () => {
     expect(parseDocumentContent({ type: "doc" }).ok).toBe(true);
   });
 
+  it("接受合法的 localImage 节点（R004 阶段 6）", () => {
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "localImage",
+          attrs: { attachmentId: "a1", alt: "图", width: 320 },
+        },
+      ],
+    };
+    expect(parseDocumentContent(doc).ok).toBe(true);
+  });
+
   for (const [name, raw] of corruptCases) {
     it(`拒绝损坏内容：${name}`, () => {
       const result = parseDocumentContent(raw);
@@ -65,7 +117,10 @@ describe("parseDocumentContent", () => {
 
 describe("sanitizeDocumentContent", () => {
   it("无法解析的输入返回空文档", () => {
-    expect(sanitizeDocumentContent("junk")).toEqual({ type: "doc", content: [] });
+    expect(sanitizeDocumentContent("junk")).toEqual({
+      type: "doc",
+      content: [],
+    });
     expect(sanitizeDocumentContent({ type: "doc", content: "x" })).toEqual({
       type: "doc",
       content: [],
@@ -95,7 +150,9 @@ describe("sanitizeDocumentContent", () => {
       content: [
         {
           type: "evilWrapper",
-          content: [{ type: "paragraph", content: [{ type: "text", text: "提升我" }] }],
+          content: [
+            { type: "paragraph", content: [{ type: "text", text: "提升我" }] },
+          ],
         },
       ],
     };
@@ -146,10 +203,14 @@ describe("白名单与编辑器 schema 同步", () => {
     editor.destroy();
 
     for (const node of schemaNodes) {
-      expect(ALLOWED_NODE_TYPES.has(node), `白名单缺少节点: ${node}`).toBe(true);
+      expect(ALLOWED_NODE_TYPES.has(node), `白名单缺少节点: ${node}`).toBe(
+        true,
+      );
     }
     for (const mark of schemaMarks) {
-      expect(ALLOWED_MARK_TYPES.has(mark), `白名单缺少标记: ${mark}`).toBe(true);
+      expect(ALLOWED_MARK_TYPES.has(mark), `白名单缺少标记: ${mark}`).toBe(
+        true,
+      );
     }
   });
 });

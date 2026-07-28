@@ -94,9 +94,7 @@ describe("WorkspaceProvider", () => {
     await act(async () => {
       deferredB.resolve(sessionDataOf(wsB.id, [pageB]));
     });
-    await waitFor(() =>
-      expect(host.session?.workspace?.id).toBe(wsB.id),
-    );
+    await waitFor(() => expect(host.session?.workspace?.id).toBe(wsB.id));
     expect(host.session?.pages.map((p) => p.title)).toEqual(["乙页"]);
 
     // A 的过期响应后到达：必须被丢弃，会话停留在乙库。

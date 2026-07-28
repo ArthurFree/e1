@@ -2,7 +2,7 @@
 
 一个独立的 Web 笔记应用：以 Tiptap 的 Notion-like 模板为交互和视觉参考，提供本地优先（离线可用）的知识库、页面树和块编辑能力。面向简体中文个人用户。
 
-**当前状态：R003 架构整改全部八个阶段已完成——保存协调器（串行 + 代次 + 恢复缓冲）、工作区会话原子加载、偏好事务化、正文白名单校验与领域错误码、AppServices 依赖注入与内存仓储、四状态域 Context、IndexedDB v3 与搜索索引、架构文档（architecture/ + adr/）与开发诊断。**
+**当前状态：R003 与 R004 架构整改全部完成——保存协调器（串行 + 代次 + 恢复缓冲 + 乐观锁）、统一文档写入边界（原子创建 + 提交单点）、四状态域 Provider、IndexedDB v4 工作区索引、图片附件化与存储配额治理、多标签页同步与冲突处理、ESLint/Prettier/dependency-cruiser 与 GitHub Actions 工程门禁。**
 
 ## 功能
 
@@ -28,11 +28,18 @@ npm run preview      # 预览生产构建
 ```bash
 npm test                 # 单元与组件测试（Vitest + Testing Library）
 npm run typecheck        # TypeScript 检查
+npm run lint             # ESLint（flat config，0 error 门禁）
+npm run format:check     # Prettier 格式检查
+npm run deps:check       # dependency-cruiser 分层与循环依赖检查
+npm run test:coverage    # 覆盖率（@vitest/coverage-v8）
+npm run ci               # 统一门禁：typecheck + lint + deps:check + test + build
 npm run test:e2e         # Playwright 端到端 + 1440×900 截图回归 + 响应式冒烟
 npm run test:e2e:update  # 更新截图基线（界面变更后执行并审查 diff）
 ```
 
 Playwright 浏览器二进制安装在项目内（`PLAYWRIGHT_BROWSERS_PATH=0`），首次运行 `test:e2e` 前如缺浏览器，执行 `PLAYWRIGHT_BROWSERS_PATH=0 npx playwright install chromium`。
+
+CI（`.github/workflows/ci.yml`）：quality job 跑 `npm run ci` + 覆盖率；e2e job 跑功能与响应式（视觉截图基线为 macOS 生成，不纳入 CI，基线变化须人工审查）。
 
 ## 架构
 
@@ -57,7 +64,7 @@ src/
 ├── application/         # 应用服务：保存协调器、会话加载、搜索索引、偏好写入、
 │                        #   恢复缓冲、损坏诊断、AppServices 容器接口
 ├── domain/              # 纯逻辑：实体类型、页面树、搜索、AI、校验与错误码、仓储接口
-└── infrastructure/      # IndexedDB 实现（DB v3）、种子数据、OpenAI 兼容 AI provider、
+└── infrastructure/      # IndexedDB 实现（DB v4）、种子数据、OpenAI 兼容 AI provider、
                          #   浏览器服务装配根、内存仓储
 ```
 
@@ -65,27 +72,27 @@ src/
 
 ### 数据模型
 
-| 实体 | 必要字段 | 说明 |
-| --- | --- | --- |
-| `Workspace` | `id`, `name`, `icon`, `description`, `homePageId`, `favoriteAt`, `lastOpenedAt`, `createdAt`, `updatedAt` | 知识库根对象 |
-| `Page` | `id`, `workspaceId`, `parentId`, `kind`, `title`, `icon`, `position`, `favoriteAt`, `lastOpenedAt`, `deletedAt`, `createdAt`, `updatedAt` | `kind` 为 document 或 group；`deletedAt` 软删 |
-| `DocumentContent` | `pageId`, `contentJson`, `textSnapshot`, `updatedAt` | Tiptap JSON 与搜索文本快照 |
-| `DocumentRevision` | `id`, `pageId`, `contentJson`, `textSnapshot`, `createdAt`, `reason` | 本地版本（interval / before-restore / manual） |
-| `Attachment` | `id`, `pageId`, `name`, `mimeType`, `size`, `blob`, `createdAt` | 附件 Blob，文档节点只存 ID |
-| `Tag` | `id`, `workspaceId`, `name`, `color` | 工作区标签定义 |
-| `PageTag` | `pageId`, `tagId` | 页面与标签的关联 |
-| `Preferences` | `theme`, `sidebarWidth`, `aiConfig` | 浏览器本地偏好 |
-| `TrashRecord` | `pageId`, `deletedAt`, `originalParentId` | 用于恢复原始位置 |
+| 实体               | 必要字段                                                                                                                                  | 说明                                           |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `Workspace`        | `id`, `name`, `icon`, `description`, `homePageId`, `favoriteAt`, `lastOpenedAt`, `createdAt`, `updatedAt`                                 | 知识库根对象                                   |
+| `Page`             | `id`, `workspaceId`, `parentId`, `kind`, `title`, `icon`, `position`, `favoriteAt`, `lastOpenedAt`, `deletedAt`, `createdAt`, `updatedAt` | `kind` 为 document 或 group；`deletedAt` 软删  |
+| `DocumentContent`  | `pageId`, `workspaceId`, `contentJson`, `textSnapshot`, `updatedAt`, `version`                                                            | Tiptap JSON 与搜索文本快照；version 乐观锁     |
+| `DocumentRevision` | `id`, `pageId`, `contentJson`, `textSnapshot`, `createdAt`, `reason`                                                                      | 本地版本（interval / before-restore / manual） |
+| `Attachment`       | `id`, `pageId`, `name`, `mimeType`, `size`, `blob`, `createdAt`                                                                           | 附件 Blob，文档节点只存 ID                     |
+| `Tag`              | `id`, `workspaceId`, `name`, `color`                                                                                                      | 工作区标签定义                                 |
+| `PageTag`          | `pageId`, `tagId`, `workspaceId`                                                                                                          | 页面与标签的关联                               |
+| `Preferences`      | `theme`, `sidebarWidth`, `aiConfig`                                                                                                       | 浏览器本地偏好                                 |
+| `TrashRecord`      | `pageId`, `deletedAt`, `originalParentId`                                                                                                 | 用于恢复原始位置                               |
 
-文档内容 JSON 是唯一编辑真相（读入前经白名单运行时校验）；`textSnapshot` 仅用于搜索与 Markdown 导出。仓储读取含损坏数据降级（字段缺失/形状不符时跳过或回退默认值）。数据库当前版本 v3，迁移按 oldVersion 分支在 upgrade 事务内完成（v1→v2 将 `folder` 原地改写为 `group` 并补齐新字段；v2→v3 新增复合索引）；搜索使用会话加载时构建的工作区级内存索引。
+文档内容 JSON 是唯一编辑真相（读入前经白名单运行时校验）；`textSnapshot` 仅用于搜索与 Markdown 导出。仓储读取含损坏数据降级（字段缺失/形状不符时跳过或回退默认值）。数据库当前版本 v4，迁移按 oldVersion 分支在 upgrade 事务内完成（v1→v2 将 `folder` 原地改写为 `group` 并补齐新字段；v2→v3 新增复合索引；v3→v4 为 contents/pageTags 回写 workspaceId 并新增工作区索引）；搜索使用会话加载时构建的工作区级内存索引；正文写入经 `DocumentCommitService` 单点完成落盘 + 索引同步，保存携带 expectedVersion 乐观锁。
 
 ### 编辑器组合
 
-- 基础：StarterKit（标题 1–6、链接）、TextStyleKit、Highlight、TextAlign、Typography、Image（base64 内嵌）、Subscript/Superscript、Mathematics
-- 块：TaskList、BulletList、OrderedList、Table、代码块（lowlight 离线高亮 + 语言属性）、附件节点
+- 基础：StarterKit（标题 1–6、链接）、TextStyleKit、Highlight、TextAlign、Typography、Subscript/Superscript、Mathematics
+- 块：TaskList、BulletList、OrderedList、Table、代码块（lowlight 离线高亮 + 语言属性）、附件节点、localImage 图片节点（只存 attachmentId，Blob 走附件仓储；旧 Base64 图片兼容读取但不再新增）
 - 交互：Suggestion 驱动 `/` 与 `@` 浮层（@ 候选经 `getMentionPages` 动态读取），BubbleMenu 驱动文本工具栏，Floating UI 定位；块拖拽把手与目录为自实现（DragHandle/TableOfContents 是 Pro 能力，未使用）
 - 统一命令注册表（`src/editor/commands.ts`）驱动 `/` 菜单；常驻工具栏经 `format.ts` 共用同一执行函数，AI 命令经 `aiBridge` 事件桥打开面板，避免功能分叉
-- 保存：`DocumentSaveCoordinator` 串行队列 + 代次管理（800ms 防抖、切换文档强制落盘、latest-wins 附件清理与自动版本、失败重试）；localStorage 恢复缓冲兜底未落盘内容，启动时提示恢复；保存成功后按 5 分钟间隔生成自动版本（去重、上限 100）
+- 保存：`DocumentSaveCoordinator` 串行队列 + 代次管理（800ms 防抖、切换文档强制落盘、快照时间边界的附件清理、当前代次专属的自动版本、失败重试、expectedVersion 乐观锁与冲突面板）；localStorage 恢复缓冲兜底未落盘内容，启动时提示恢复；保存成功后按 5 分钟间隔生成自动版本（去重、上限 100 条 + 5MB 字节预算）
 
 ### AI 接口
 
@@ -94,7 +101,7 @@ type AIMode = "ask" | "polish" | "rewrite" | "summarize";
 
 type AIRequest = {
   prompt: string;
-  selection?: string;       // 选区文字（润色/改写/总结）
+  selection?: string; // 选区文字（润色/改写/总结）
   documentContext?: string; // 正文快照片段（ask）
   mode?: AIMode;
 };

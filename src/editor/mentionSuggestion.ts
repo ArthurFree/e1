@@ -24,22 +24,22 @@ export function createMentionSuggestion(
     char: "@",
     items: ({ query }) => {
       const q = query.trim().toLowerCase();
-      return getPages()
-        // 只提及文档页，排除回收站中的页面。
-        .filter((p) => p.kind === "document" && p.deletedAt === null)
-        .filter((p) => !q || p.title.toLowerCase().includes(q))
-        // 候选最多 10 条，避免大工作区下长列表难以浏览。
-        .slice(0, 10)
-        .map(
-          (p): CommandListItem & { label: string } => ({
+      return (
+        getPages()
+          // 只提及文档页，排除回收站中的页面。
+          .filter((p) => p.kind === "document" && p.deletedAt === null)
+          .filter((p) => !q || p.title.toLowerCase().includes(q))
+          // 候选最多 10 条，避免大工作区下长列表难以浏览。
+          .slice(0, 10)
+          .map((p): CommandListItem & { label: string } => ({
             id: p.id,
             title: p.title || "无标题",
             label: p.title || "无标题",
             // 用户自定义 Emoji 原样展示；未设置时回退 IconFile（候选列表经
             // ReactRenderer 渲染，icon 为 ReactNode，不能用 SVG 字符串）。
             icon: p.icon ?? createElement(IconFile, { size: 14 }),
-          }),
-        );
+          }))
+      );
     },
     command: ({ editor, range, props }) => {
       editor

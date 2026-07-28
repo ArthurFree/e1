@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # 与本地开发主版本一致（本地 v24，见 package-lock / engines 推断）
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # 统一门禁：typecheck + lint + deps:check + 单元/组件测试 + 生产构建
+      - run: npm run ci
+      - run: npm run test:coverage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+          if-no-files-found: ignore
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # 安装到 Playwright 默认缓存路径（不使用项目内 PLAYWRIGHT_BROWSERS_PATH=0）
+      - run: npx playwright install --with-deps chromium
+      # 只跑功能与响应式用例；视觉截图基线（visual*.spec.ts）在 macOS 生成，
+      # Linux 渲染差异必然失败，不纳入 CI。
+      # 注意：视觉截图基线变化必须人工审查，不在 CI 自动更新。
+      - run: >
+          npx playwright test e2e/app.spec.ts e2e/responsive.spec.ts
+          --reporter=list,html
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-results
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore

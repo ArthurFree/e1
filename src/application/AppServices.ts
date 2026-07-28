@@ -30,6 +30,8 @@ import type {
   DocumentSaveCoordinator,
   SaveCoordinatorState,
 } from "./services/SaveCoordinator";
+import type { SyncChannelService } from "./services/SyncChannelService";
+import type { StorageConnectionEventBus } from "./services/StorageConnectionEventBus";
 
 /** 应用服务容器：按领域分组的仓储 port + 应用服务工厂。 */
 export interface AppServices {
@@ -53,9 +55,16 @@ export interface AppServices {
   /**
    * 保存协调器工厂：隐藏正文/版本/附件三仓储与恢复缓冲的装配细节，
    * 每个文档一个实例，销毁由调用方负责。
+   * initialVersion 为编辑器加载正文时的 content.version（乐观锁起点，
+   * R004 阶段 7）；缺省 0（尚无正文记录的新文档）。
    */
   createSaveCoordinator(
     pageId: string,
     onStateChange?: (state: SaveCoordinatorState) => void,
+    options?: { initialVersion?: number },
   ): DocumentSaveCoordinator;
+  /** 跨标签页同步频道（R004 §7.2）；无 BroadcastChannel 环境为 no-op 实例。 */
+  syncChannel: SyncChannelService;
+  /** 存储连接事件总线（R004 §7.1）：blocked/versionchange/terminated 提示。 */
+  storageEvents: StorageConnectionEventBus;
 }

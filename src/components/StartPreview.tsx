@@ -47,7 +47,11 @@ export function StartPreview({ onClose }: StartPreviewProps) {
   }, [services]);
 
   const rows = useMemo(
-    () => buildActivityRows({ pages: allPages, workspaces, tab }).slice(0, PREVIEW_LIMIT),
+    () =>
+      buildActivityRows({ pages: allPages, workspaces, tab }).slice(
+        0,
+        PREVIEW_LIMIT,
+      ),
     [allPages, workspaces, tab],
   );
 

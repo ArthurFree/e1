@@ -16,6 +16,11 @@ import type { Preferences } from "../../domain/types";
 export interface PreferencesServiceDeps {
   preferences: PreferencesRepository;
   onError?(error: unknown): void;
+  /**
+   * 非路由偏好落盘成功回调（R004 §7.2）：主题/侧栏宽度/AI 配置写入后触发，
+   * 装配层据此广播 preferences-changed；路由（persistRoute）不触发。
+   */
+  onPersisted?(): void;
 }
 
 /** 侧栏宽度持久化的防抖窗口（R003 §3.2：200～300ms）。 */
@@ -42,6 +47,11 @@ export class PreferencesService {
    */
   update(patch: PreferencesPatch): Promise<Preferences> {
     const run = this.enqueue(() => this.deps.preferences.update(patch));
+    // 落盘成功后通知装配层广播（R004 §7.2）；失败不广播。
+    void run.then(
+      () => this.deps.onPersisted?.(),
+      () => {},
+    );
     return run;
   }
 
@@ -58,9 +68,12 @@ export class PreferencesService {
       // 错误经 onError 上报；防抖路径无人消费返回值，必须吞掉 rejection。
       void this.enqueue(() =>
         this.deps.preferences.update({ sidebarWidth: pending }),
-      ).catch(() => {
-        // 已上报，避免未处理的 Promise rejection。
-      });
+      ).then(
+        () => this.deps.onPersisted?.(),
+        () => {
+          // 已上报，避免未处理的 Promise rejection。
+        },
+      );
     }, SIDEBAR_WIDTH_DEBOUNCE_MS);
   }
 

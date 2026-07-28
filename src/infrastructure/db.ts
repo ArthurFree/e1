@@ -13,7 +13,7 @@ import { increment } from "../application/devDiagnostics";
  * 不会留下半新半旧的 schema（见 R001 §6.3 兼容与回滚原则）。
  */
 export const DB_NAME = "notion-like-web";
-export const DB_VERSION = 3;
+export const DB_VERSION = 4;
 
 // 各 object store 名集中定义为常量，避免仓储层散落硬编码字符串。
 export const STORE_WORKSPACES = "workspaces";
@@ -70,12 +70,17 @@ export function createV1Schema(db: IDBPDatabase) {
  * 存量记录用游标逐条 `update` 回写：IndexedDB 没有批量更新，
  * 且必须在 upgrade 事务内做，不能另开事务。
  */
-async function upgradeToV2(db: IDBPDatabase, tx: { objectStore(name: string): unknown }) {
+async function upgradeToV2(
+  db: IDBPDatabase,
+  tx: { objectStore(name: string): unknown },
+) {
   const revisions = db.createObjectStore(STORE_REVISIONS, { keyPath: "id" });
   revisions.createIndex("pageId", "pageId");
   revisions.createIndex("pageId_createdAt", ["pageId", "createdAt"]);
 
-  const attachments = db.createObjectStore(STORE_ATTACHMENTS, { keyPath: "id" });
+  const attachments = db.createObjectStore(STORE_ATTACHMENTS, {
+    keyPath: "id",
+  });
   attachments.createIndex("pageId", "pageId");
 
   interface LegacyPage {
@@ -86,7 +91,11 @@ async function upgradeToV2(db: IDBPDatabase, tx: { objectStore(name: string): un
     [key: string]: unknown;
   }
   const pagesStore = tx.objectStore(STORE_PAGES) as {
-    openCursor(): Promise<{ value: LegacyPage; update(v: LegacyPage): void; continue(): Promise<unknown> } | null>;
+    openCursor(): Promise<{
+      value: LegacyPage;
+      update(v: LegacyPage): void;
+      continue(): Promise<unknown>;
+    } | null>;
   };
   let cursor = await pagesStore.openCursor();
   while (cursor) {
@@ -110,7 +119,11 @@ async function upgradeToV2(db: IDBPDatabase, tx: { objectStore(name: string): un
     [key: string]: unknown;
   }
   const workspacesStore = tx.objectStore(STORE_WORKSPACES) as {
-    openCursor(): Promise<{ value: LegacyWorkspace; update(v: LegacyWorkspace): void; continue(): Promise<unknown> } | null>;
+    openCursor(): Promise<{
+      value: LegacyWorkspace;
+      update(v: LegacyWorkspace): void;
+      continue(): Promise<unknown>;
+    } | null>;
   };
   let wsCursor = await workspacesStore.openCursor();
   while (wsCursor) {
@@ -130,13 +143,43 @@ async function upgradeToV2(db: IDBPDatabase, tx: { objectStore(name: string): un
 let dbPromise: Promise<IDBPDatabase> | null = null;
 
 /**
+ * 存储连接生命周期回调（R004 阶段 7 §7.1）：db.ts 不 import UI，
+ * 由装配根（browserServices）注入，转发到应用层事件总线。
+ */
+export interface StorageConnectionCallbacks {
+  /** 本标签页发起的升级被其他标签页阻塞：提示关闭其他标签页。 */
+  onBlocked?(): void;
+  /** 其他标签页完成了升级（本连接随之关闭）：提示刷新页面。 */
+  onVersionChange?(): void;
+  /** 连接异常终止：缓存已清空，下次操作自动重连。 */
+  onTerminated?(): void;
+}
+
+let connectionCallbacks: StorageConnectionCallbacks = {};
+
+/** 注入连接生命周期回调（装配根调用）；重复调用整体替换。 */
+export function setStorageConnectionCallbacks(
+  callbacks: StorageConnectionCallbacks,
+): void {
+  connectionCallbacks = callbacks;
+}
+
+/** 清空连接缓存（仅当缓存仍是该连接时）：后续操作重新打开连接。 */
+function clearCachedConnection(expected: Promise<IDBPDatabase>): void {
+  if (dbPromise === expected) dbPromise = null;
+}
+
+/**
  * v2 → v3（R003 阶段 7）：新增热点查询索引，无数据迁移。
  * - pages 复合索引 `workspaceId_parentId` / `workspaceId_updatedAt`；
  * - trash 增加 `deletedAt` 索引。
  * 注意：IndexedDB 索引会排除键为 null 的记录（如 parentId 为 null 的顶层页面），
  * 顶层兄弟查询回退到「workspaceId 索引 + 内存过滤」，不依赖复合索引覆盖顶层。
  */
-async function upgradeToV3(_db: IDBPDatabase, tx: { objectStore(name: string): unknown }) {
+async function upgradeToV3(
+  _db: IDBPDatabase,
+  tx: { objectStore(name: string): unknown },
+) {
   const pages = tx.objectStore(STORE_PAGES) as {
     createIndex(name: string, keyPath: string | string[]): void;
   };
@@ -149,6 +192,98 @@ async function upgradeToV3(_db: IDBPDatabase, tx: { objectStore(name: string): u
 }
 
 /**
+ * v3 → v4（R004 阶段 5）：contents / pageTags 增加工作区维度。
+ * - 数据迁移：以 pages 建立 pageId → workspaceId 映射，逐条回写
+ *   contents 与 pageTags 的 workspaceId；页面已不存在的孤立记录
+ *   不猜测、不删除，统计数量并记录（console.warn + devDiagnostics），
+ *   跳过该条（其 workspaceId 缺失，天然不会进入新索引）。
+ * - 新索引：contents `workspaceId`、`workspaceId_updatedAt`（复合）、
+ *   pageTags `workspaceId`。
+ * 全部在 upgrade 事务内完成，失败即整体回滚。
+ */
+async function upgradeToV4(
+  _db: IDBPDatabase,
+  tx: { objectStore(name: string): unknown },
+) {
+  interface CursorStore<T> {
+    openCursor(): Promise<{
+      value: T;
+      update(v: T): void;
+      continue(): Promise<unknown>;
+    } | null>;
+  }
+  const pagesStore = tx.objectStore(STORE_PAGES) as {
+    getAll(): Promise<{ id: string; workspaceId: string }[]>;
+  };
+  const workspaceByPageId = new Map<string, string>();
+  for (const page of await pagesStore.getAll()) {
+    if (
+      page &&
+      typeof page.id === "string" &&
+      typeof page.workspaceId === "string"
+    ) {
+      workspaceByPageId.set(page.id, page.workspaceId);
+    }
+  }
+
+  // 先建索引再回写：游标 update 会同步维护索引项。
+  const contentsStore = tx.objectStore(STORE_CONTENTS) as CursorStore<{
+    pageId: string;
+    workspaceId?: string;
+    [key: string]: unknown;
+  }> & { createIndex(name: string, keyPath: string | string[]): void };
+  contentsStore.createIndex("workspaceId", "workspaceId");
+  contentsStore.createIndex("workspaceId_updatedAt", [
+    "workspaceId",
+    "updatedAt",
+  ]);
+
+  let orphanContents = 0;
+  let cursor = await contentsStore.openCursor();
+  while (cursor) {
+    const record = cursor.value;
+    const workspaceId = workspaceByPageId.get(record.pageId);
+    if (workspaceId === undefined) {
+      orphanContents += 1;
+    } else if (record.workspaceId !== workspaceId) {
+      cursor.update({ ...record, workspaceId });
+    }
+    cursor = (await cursor.continue()) as typeof cursor;
+  }
+
+  const pageTagsStore = tx.objectStore(STORE_PAGE_TAGS) as CursorStore<{
+    pageId: string;
+    tagId: string;
+    workspaceId?: string;
+  }> & { createIndex(name: string, keyPath: string): void };
+  pageTagsStore.createIndex("workspaceId", "workspaceId");
+
+  let orphanPageTags = 0;
+  let ptCursor = await pageTagsStore.openCursor();
+  while (ptCursor) {
+    const record = ptCursor.value;
+    const workspaceId = workspaceByPageId.get(record.pageId);
+    if (workspaceId === undefined) {
+      orphanPageTags += 1;
+    } else if (record.workspaceId !== workspaceId) {
+      ptCursor.update({ ...record, workspaceId });
+    }
+    ptCursor = (await ptCursor.continue()) as typeof ptCursor;
+  }
+
+  // 孤立记录不猜测归属、不删除：只统计与记录（仅数量，不含内容）。
+  if (orphanContents > 0 || orphanPageTags > 0) {
+    console.warn(
+      `[db] v4 迁移跳过孤立记录：正文 ${orphanContents} 条，页面标签关联 ${orphanPageTags} 条`,
+    );
+    increment(
+      "db-migration",
+      `v4 孤立记录: contents=${orphanContents} pageTags=${orphanPageTags}`,
+    );
+  }
+}
+
+/**
  * 打开数据库。schema 变更通过提升 DB_VERSION 并在 upgrade 中
  * 按 oldVersion 逐级迁移；新增 store/索引写在对应分支里。
  *
@@ -156,20 +291,59 @@ async function upgradeToV3(_db: IDBPDatabase, tx: { objectStore(name: string): u
  * 并发调用在首次打开完成前复用同一个 Promise，不会重复触发 upgrade。
  */
 export function getDB(): Promise<IDBPDatabase> {
-  dbPromise ??= openDB(DB_NAME, DB_VERSION, {
-    async upgrade(db, oldVersion, newVersion, tx) {
-      try {
-        if (oldVersion < 1) createV1Schema(db);
-        if (oldVersion < 2) await upgradeToV2(db, tx);
-        if (oldVersion < 3) await upgradeToV3(db, tx);
-        // 开发诊断：迁移结果（仅版本号，R003 §8.3）。
-        increment("db-migration", `v${oldVersion}→v${newVersion ?? DB_VERSION}`);
-      } catch (err) {
-        increment("db-migration", `v${oldVersion} 迁移失败`);
-        throw err;
-      }
-    },
-  });
+  if (!dbPromise) {
+    // 已打开的连接实例：blocking（versionchange）时必须同步关闭——
+    // 异步关闭会让发起升级的另一标签页先收到 blocked。
+    let openedDb: IDBPDatabase | null = null;
+    const promise = openDB(DB_NAME, DB_VERSION, {
+      async upgrade(db, oldVersion, newVersion, tx) {
+        try {
+          if (oldVersion < 1) createV1Schema(db);
+          if (oldVersion < 2) await upgradeToV2(db, tx);
+          if (oldVersion < 3) await upgradeToV3(db, tx);
+          if (oldVersion < 4) await upgradeToV4(db, tx);
+          // 开发诊断：迁移结果（仅版本号，R003 §8.3）。
+          increment(
+            "db-migration",
+            `v${oldVersion}→v${newVersion ?? DB_VERSION}`,
+          );
+        } catch (err) {
+          increment("db-migration", `v${oldVersion} 迁移失败`);
+          throw err;
+        }
+      },
+      // 连接生命周期（R004 §7.1）：
+      // blocked——本标签页的升级被其他（旧代码）标签页阻塞，提示用户关闭它们；
+      blocked() {
+        increment("db-connection", "blocked");
+        connectionCallbacks.onBlocked?.();
+      },
+      // blocking（即 versionchange）——其他标签页发起升级：同步关闭本连接
+      // 让升级完成；清空缓存，后续操作以新 schema 重连，UI 提示刷新。
+      blocking() {
+        increment("db-connection", "versionchange");
+        openedDb?.close();
+        clearCachedConnection(promise);
+        connectionCallbacks.onVersionChange?.();
+      },
+      // terminated——连接异常终止（如浏览器回收）：清缓存，下次操作重连；
+      // 在途读写错误向上抛，走既有错误页/保存错误通道。
+      terminated() {
+        increment("db-connection", "terminated");
+        clearCachedConnection(promise);
+        connectionCallbacks.onTerminated?.();
+      },
+    });
+    dbPromise = promise;
+    promise.then(
+      (db) => {
+        openedDb = db;
+      },
+      // 打开失败（如升级事务失败或版本回退）：清缓存，允许下次操作重试，
+      // 避免缓存着一个已拒绝的 Promise 永久卡死。
+      () => clearCachedConnection(promise),
+    );
+  }
   return dbPromise;
 }
 
@@ -180,9 +354,13 @@ export function getDB(): Promise<IDBPDatabase> {
  */
 export async function resetDB(): Promise<void> {
   if (dbPromise) {
-    const db = await dbPromise;
-    db.close();
+    const promise = dbPromise;
     dbPromise = null;
+    // 打开可能已失败（如版本回退）：失败时无连接可关，直接继续删除。
+    await promise.then(
+      (db) => db.close(),
+      () => {},
+    );
   }
   await new Promise<void>((resolve, reject) => {
     const request = indexedDB.deleteDatabase(DB_NAME);

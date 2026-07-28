@@ -26,9 +26,11 @@ export function serializeRoute(route: AppRoute): string {
 export function parseRoute(raw: string | null): AppRoute | null {
   if (!raw) return null;
   try {
-    const parsed = JSON.parse(raw) as Partial<
-      { view: string; workspaceId: unknown; pageId: unknown }
-    >;
+    const parsed = JSON.parse(raw) as Partial<{
+      view: string;
+      workspaceId: unknown;
+      pageId: unknown;
+    }>;
     if (parsed.view === "start") return { view: "start" };
     if (parsed.view === "recent") return { view: "recent" };
     if (parsed.view === "favorites") return { view: "favorites" };

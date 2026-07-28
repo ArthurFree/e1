@@ -111,7 +111,10 @@ export function TagPicker({ pageId }: TagPickerProps) {
                 className="tag-picker__item"
                 onClick={() => toggle(tag.id)}
               >
-                <span className="tag-chip__dot" style={{ background: tag.color }} />
+                <span
+                  className="tag-chip__dot"
+                  style={{ background: tag.color }}
+                />
                 <span className="tag-picker__name">{tag.name}</span>
                 {checked && (
                   <span aria-hidden="true">

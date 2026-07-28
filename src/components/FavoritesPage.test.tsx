@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { useApp } from "../state/AppState";
 import { TestApp } from "../test/TestApp";
 import { resetDB } from "../infrastructure/db";
@@ -50,9 +56,15 @@ describe("FavoritesPage", () => {
         <Harness />
       </TestApp>,
     );
-    const welcomeBtn = (await screen.findAllByRole("button", { name: /欢迎使用/ }))[0];
-    expect(screen.getAllByRole("button", { name: /任务清单/ })[0]).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: /我的知识库/ })[0]).toBeInTheDocument();
+    const welcomeBtn = (
+      await screen.findAllByRole("button", { name: /欢迎使用/ })
+    )[0];
+    expect(
+      screen.getAllByRole("button", { name: /任务清单/ })[0],
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByRole("button", { name: /我的知识库/ })[0],
+    ).toBeInTheDocument();
     // 文档区按收藏时间倒序：欢迎（3000）在任务清单（2000）之前。
     const docSection = screen.getByLabelText("收藏的文档");
     const titles = Array.from(
@@ -79,7 +91,9 @@ describe("FavoritesPage", () => {
         <Harness />
       </TestApp>,
     );
-    const wsBtn = (await screen.findAllByRole("button", { name: /我的知识库/ }))[0];
+    const wsBtn = (
+      await screen.findAllByRole("button", { name: /我的知识库/ })
+    )[0];
     fireEvent.click(wsBtn);
     await waitFor(() => {
       expect(screen.getByTestId("view").textContent).toBe("workspace");

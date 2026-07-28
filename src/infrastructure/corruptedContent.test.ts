@@ -6,7 +6,11 @@
  */
 import { beforeEach, describe, expect, it } from "vitest";
 import { resetDB } from "./db";
-import { contentRepository } from "./repositories";
+import {
+  contentRepository,
+  pageRepository,
+  workspaceRepository,
+} from "./repositories";
 import { parseDocumentContent } from "../domain/validation/documentContent";
 import { isDomainError } from "../domain/errors";
 import {
@@ -26,9 +30,17 @@ describe("损坏正文", () => {
   });
 
   it("仓储原样返回损坏 JSON，校验层以 CORRUPTED_DOCUMENT 拦截", async () => {
+    // save 要求页面存在（R004 阶段 5：从页面回写 workspaceId）。
+    const ws = await workspaceRepository.create("测试库");
+    const page = await pageRepository.create({
+      workspaceId: ws.id,
+      parentId: null,
+      kind: "document",
+      title: "文档",
+    });
     const bad = { type: "doc", content: [{ type: "evilNode" }] };
-    await contentRepository.save("p1", bad, "坏内容");
-    const stored = await contentRepository.get("p1");
+    await contentRepository.save(page.id, bad, "坏内容", 1);
+    const stored = await contentRepository.get(page.id);
     expect(stored).toBeDefined();
     const parsed = parseDocumentContent(stored!.contentJson);
     expect(parsed.ok).toBe(false);

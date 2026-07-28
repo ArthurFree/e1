@@ -4,12 +4,12 @@
 
 状态层已拆分为四个独立的状态所有者，由 `AppProviders`（`src/state/AppProviders.tsx`）嵌套装配，嵌套顺序即依赖方向：`PreferencesProvider → WorkspaceProvider → NavigationProvider → OverlayProvider`：
 
-| Provider | 文件 | 拥有 | 公开 Context |
-| --- | --- | --- | --- |
-| Preferences | `PreferencesProvider.tsx` | preferences、routePersistenceStatus、`PreferencesService` 实例（卸载时 `dispose()`：清防抖定时器 + 队列排空） | `PreferencesContext.tsx` |
-| Workspace | `WorkspaceProvider.tsx` | ready/error/retryLoad、workspaces、会话（pages/tags/pageTags/status）、页面/标签 CRUD、搜索索引构建 | `WorkspaceSessionContext.tsx` |
-| Navigation | `NavigationProvider.tsx` | view、selectedPageId、titleFocusPageId、导航动作 | `NavigationContext.tsx` |
-| Overlay | `OverlayContext.tsx` | settings/search/trash/treeDrawer 开关（自包含 Provider） | 同左 |
+| Provider    | 文件                      | 拥有                                                                                                          | 公开 Context                  |
+| ----------- | ------------------------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| Preferences | `PreferencesProvider.tsx` | preferences、routePersistenceStatus、`PreferencesService` 实例（卸载时 `dispose()`：清防抖定时器 + 队列排空） | `PreferencesContext.tsx`      |
+| Workspace   | `WorkspaceProvider.tsx`   | ready/error/retryLoad、workspaces、会话（pages/tags/pageTags/status）、页面/标签 CRUD、搜索索引构建           | `WorkspaceSessionContext.tsx` |
+| Navigation  | `NavigationProvider.tsx`  | view、selectedPageId、titleFocusPageId、导航动作                                                              | `NavigationContext.tsx`       |
+| Overlay     | `OverlayContext.tsx`      | settings/search/trash/treeDrawer 开关（自包含 Provider）                                                      | 同左                          |
 
 跨域动作不复制实现，经两条内部通道协作（公开 Context value 形状均不变）：
 

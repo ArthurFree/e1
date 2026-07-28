@@ -112,7 +112,10 @@ export function setBlockStyle(editor: Editor, style: BlockStyle) {
   if (style === "paragraph") chain.setParagraph().run();
   else if (style === "blockquote") chain.setBlockquote().run();
   else if (style === "codeBlock") chain.setCodeBlock().run();
-  else chain.setNode("heading", { level: Number(style.replace("heading", "")) }).run();
+  else
+    chain
+      .setNode("heading", { level: Number(style.replace("heading", "")) })
+      .run();
 }
 
 /**
@@ -129,12 +132,16 @@ export function isBlockStyleActive(editor: Editor, style: BlockStyle): boolean {
   }
   if (style === "blockquote") return editor.isActive("blockquote");
   if (style === "codeBlock") return editor.isActive("codeBlock");
-  return editor.isActive("heading", { level: Number(style.replace("heading", "")) });
+  return editor.isActive("heading", {
+    level: Number(style.replace("heading", "")),
+  });
 }
 
 /** 当前块样式的展示名；列表等场景回退为“正文”。 */
 export function currentBlockStyleTitle(editor: Editor): string {
-  const active = BLOCK_STYLES.find((s) => s.id !== "paragraph" && isBlockStyleActive(editor, s.id));
+  const active = BLOCK_STYLES.find(
+    (s) => s.id !== "paragraph" && isBlockStyleActive(editor, s.id),
+  );
   return active?.title ?? "正文";
 }
 

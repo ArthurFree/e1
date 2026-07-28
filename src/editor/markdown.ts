@@ -55,6 +55,10 @@ export function jsonToText(contentJson: unknown): string {
   const walk = (node: JSONContent | undefined) => {
     if (!node || typeof node !== "object") return;
     if (typeof node.text === "string") parts.push(node.text);
+    // 本地图片（R004 阶段 6）以 alt 参与搜索快照，与正文文本同规则折叠。
+    if (node.type === "localImage" && typeof node.attrs?.alt === "string") {
+      parts.push(node.attrs.alt);
+    }
     for (const child of node.content ?? []) walk(child);
   };
   walk(contentJson as JSONContent);

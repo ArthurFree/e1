@@ -32,9 +32,12 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
   const [results, setResults] = useState<SearchResult[]>([]);
   const listRef = useRef<CommandListRef>(null);
 
-  const { debounced: debouncedSearch } = useDebouncedCallback((value: string) => {
-    void search(value).then(setResults);
-  }, 300);
+  const { debounced: debouncedSearch } = useDebouncedCallback(
+    (value: string) => {
+      void search(value).then(setResults);
+    },
+    300,
+  );
 
   const onQueryChange = (value: string) => {
     setQuery(value);
@@ -52,7 +55,12 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
       id: result.pageId,
       title: result.title,
       subtitle: result.snippet || undefined,
-      icon: page?.icon ?? <PageIcon kind={page?.kind === "group" ? "group" : "document"} size={14} />,
+      icon: page?.icon ?? (
+        <PageIcon
+          kind={page?.kind === "group" ? "group" : "document"}
+          size={14}
+        />
+      ),
     };
   });
 
@@ -83,7 +91,9 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
       {query.trim() ? (
         <CommandList ref={listRef} items={items} command={jump} />
       ) : (
-        <div className="search-panel__hint">输入关键词，按标题与正文查找文档。</div>
+        <div className="search-panel__hint">
+          输入关键词，按标题与正文查找文档。
+        </div>
       )}
     </Dialog>
   );

@@ -18,7 +18,13 @@ interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
  * 统一图标按钮（R002 §7.7/§7.8）：32px 点击区，
  * 必须提供可读名称；激活态有独立视觉。
  */
-export function IconButton({ label, active, className, children, ...rest }: IconButtonProps) {
+export function IconButton({
+  label,
+  active,
+  className,
+  children,
+  ...rest
+}: IconButtonProps) {
   const classes = [
     "icon-button",
     active ? "icon-button--active" : "",

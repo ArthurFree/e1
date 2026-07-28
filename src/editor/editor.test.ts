@@ -22,7 +22,9 @@ describe("编辑器扩展组合", () => {
   it("可以创建并输出 JSON 与纯文本快照", () => {
     const editor = createEditor({
       type: "doc",
-      content: [{ type: "paragraph", content: [{ type: "text", text: "你好" }] }],
+      content: [
+        { type: "paragraph", content: [{ type: "text", text: "你好" }] },
+      ],
     });
     expect(editor.getText()).toContain("你好");
     expect(editor.getJSON().type).toBe("doc");
@@ -53,14 +55,18 @@ describe("编辑器扩展组合", () => {
   it("支持插入表格", () => {
     const editor = createEditor();
     editor.commands.insertTable({ rows: 2, cols: 2, withHeaderRow: true });
-    expect(editor.getJSON().content?.some((n) => n.type === "table")).toBe(true);
+    expect(editor.getJSON().content?.some((n) => n.type === "table")).toBe(
+      true,
+    );
     editor.destroy();
   });
 
   it("支持插入公式块", () => {
     const editor = createEditor();
     editor.commands.insertBlockMath({ latex: "E=mc^2" });
-    const mathNode = editor.getJSON().content?.find((n) => n.type === "blockMath");
+    const mathNode = editor
+      .getJSON()
+      .content?.find((n) => n.type === "blockMath");
     expect(mathNode?.attrs?.latex).toBe("E=mc^2");
     editor.destroy();
   });
@@ -69,9 +75,17 @@ describe("编辑器扩展组合", () => {
     const editor = createEditor({
       type: "doc",
       content: [
-        { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "第一章" }] },
+        {
+          type: "heading",
+          attrs: { level: 1 },
+          content: [{ type: "text", text: "第一章" }],
+        },
         { type: "paragraph", content: [{ type: "text", text: "正文" }] },
-        { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "小节" }] },
+        {
+          type: "heading",
+          attrs: { level: 2 },
+          content: [{ type: "text", text: "小节" }],
+        },
       ],
     });
     const toc = extractToc(editor);

@@ -33,7 +33,11 @@ const REASON_LABEL: Record<RevisionReason, string> = {
  * 本地版本历史（R001 §8.3）：列表显示时间、原因和正文摘要；
  * 恢复前先把当前内容存为「恢复前」版本，再写回选中版本。
  */
-export function VersionPanel({ pageId, controller, onClose }: VersionPanelProps) {
+export function VersionPanel({
+  pageId,
+  controller,
+  onClose,
+}: VersionPanelProps) {
   const services = useAppServices();
   const [revisions, setRevisions] = useState<DocumentRevision[]>([]);
   const [previewId, setPreviewId] = useState<string | null>(null);

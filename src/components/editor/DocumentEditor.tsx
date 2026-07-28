@@ -37,12 +37,19 @@ interface DocumentEditorProps {
   pageId: string;
   /** 文档内容 JSON（Tiptap doc），来自仓储；为兼容历史数据保持 unknown。 */
   initialContent: unknown;
+  /** 加载正文的磁盘版本号（R004 阶段 7 乐观锁起点）；新文档无记录时为 0。 */
+  initialVersion: number;
   /** 编辑器实例就绪/销毁回调（null 表示已销毁），供父级持有并转发命令。 */
   onEditorReady(editor: Editor | null): void;
   /** 保存状态变化通知（顶栏展示）。 */
   onSaveStateChange?(state: SaveState): void;
   /** 注册「保存失败-重试」动作，供顶栏按钮触发。 */
   onRegisterRetry?(retry: () => void): void;
+  /**
+   * 注册冲突处理动作（R004 阶段 7）：乐观锁冲突时「强制覆盖」需经
+   * 协调器以磁盘最新版本重试当前快照；组件卸载时以 null 注销。
+   */
+  onRegisterConflictActions?(actions: { forceOverwrite(): void } | null): void;
   /**
    * 恢复缓冲应用后的保存请求 ID：变化时对当前内容立即执行一次保存，
    * 避免恢复的内容再次只停留在内存（R003 §1.4）。
@@ -62,16 +69,22 @@ interface DocumentEditorProps {
 export function DocumentEditor({
   pageId,
   initialContent,
+  initialVersion,
   onEditorReady,
   onSaveStateChange,
   onRegisterRetry,
+  onRegisterConflictActions,
   restoreRequestId,
   onControllerReady,
 }: DocumentEditorProps) {
   const { pages } = useWorkspaceSession();
   const services = useAppServices();
   const editorRef = useRef<Editor | null>(null);
-  const [saveState, setSaveState] = useState<SaveState>({ status: "saved", savedAt: null });
+  const [saveState, setSaveState] = useState<SaveState>({
+    status: "saved",
+    savedAt: null,
+    errorKind: null,
+  });
   // 每个文档一个保存协调器；pageIdRef 先于渲染更新，供回调判断「当前文档」。
   const coordinatorsRef = useRef(new Map<string, DocumentSaveCoordinator>());
   const pageIdRef = useRef(pageId);
@@ -83,15 +96,20 @@ export function DocumentEditor({
     (pid: string) => {
       let coordinator = coordinatorsRef.current.get(pid);
       if (!coordinator) {
-        coordinator = services.createSaveCoordinator(pid, (state) => {
-          // 只有当前文档的协调器驱动 UI；旧协调器排空期间的状态不外发。
-          if (pid === pageIdRef.current) setSaveState(state);
-        });
+        // 乐观锁起点为编辑器加载时的磁盘版本（R004 阶段 7）。
+        coordinator = services.createSaveCoordinator(
+          pid,
+          (state) => {
+            // 只有当前文档的协调器驱动 UI；旧协调器排空期间的状态不外发。
+            if (pid === pageIdRef.current) setSaveState(state);
+          },
+          { initialVersion },
+        );
         coordinatorsRef.current.set(pid, coordinator);
       }
       return coordinator;
     },
-    [services],
+    [services, initialVersion],
   );
 
   useEffect(() => {
@@ -123,6 +141,28 @@ export function DocumentEditor({
     });
   }, [onRegisterRetry]);
 
+  // 冲突处理动作（R004 阶段 7）：「强制覆盖」读取磁盘最新版本后以之为
+  // expectedVersion 重试当前快照；成功与否都经 onStateChange 发布。
+  useEffect(() => {
+    onRegisterConflictActions?.({
+      forceOverwrite: () => {
+        const pid = pageIdRef.current;
+        const coordinator = coordinatorsRef.current.get(pid);
+        if (!coordinator) return;
+        void services.content
+          .get(pid)
+          .then((latest) => {
+            coordinator.setLoadedVersion(latest?.version ?? 0);
+            return coordinator.retryLatest();
+          })
+          .catch(() => {
+            // 重试失败经 onStateChange 发布为 error。
+          });
+      },
+    });
+    return () => onRegisterConflictActions?.(null);
+  }, [onRegisterConflictActions, services]);
+
   // 切换文档：先把挂起的防抖保存提交给旧文档协调器，再排空并销毁它。
   useEffect(() => {
     if (pageIdRef.current !== pageId) {
@@ -135,7 +175,7 @@ export function DocumentEditor({
         void old.dispose();
       }
       // 新文档从干净的保存状态开始。
-      setSaveState({ status: "saved", savedAt: null });
+      setSaveState({ status: "saved", savedAt: null, errorKind: null });
     }
   }, [pageId, flush]);
 

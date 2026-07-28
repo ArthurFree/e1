@@ -19,10 +19,7 @@ import {
   WorkspaceSessionContext,
   type WorkspaceSessionStatus,
 } from "../WorkspaceSessionContext";
-import {
-  NavigationContext,
-  type MainView,
-} from "../NavigationContext";
+import { NavigationContext, type MainView } from "../NavigationContext";
 import { PreferencesContext } from "../PreferencesContext";
 import { useOverlay } from "../OverlayContext";
 

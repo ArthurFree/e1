@@ -7,6 +7,7 @@
 import type { Editor, Range } from "@tiptap/core";
 import { openAIAssistant } from "./aiBridge";
 import { pickAndInsertAttachment } from "./attachment";
+import { pickAndInsertLocalImage } from "./localImage";
 
 /** 命令分组标签：决定 `/` 菜单中的分区展示。 */
 export interface EditorCommand {
@@ -33,30 +34,6 @@ function apply(editor: Editor, range: Range | undefined, fn: () => void) {
   fn();
 }
 
-/** 内嵌图片大小上限（base64 存入文档 JSON，过大会拖慢保存与加载）。 */
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-
-/** 选择本地图片并以 base64 内嵌：离线可用且随文档持久化。 */
-export function pickAndInsertImage(editor: Editor) {
-  const input = document.createElement("input");
-  input.type = "file";
-  input.accept = "image/*";
-  input.onchange = () => {
-    const file = input.files?.[0];
-    if (!file) return;
-    if (file.size > MAX_IMAGE_BYTES) {
-      window.alert("图片超过 5MB，请压缩后再插入。");
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      editor.chain().focus().setImage({ src: reader.result as string }).run();
-    };
-    reader.readAsDataURL(file);
-  };
-  input.click();
-}
-
 /** 全部内置命令；顺序即菜单展示顺序。新增命令只需在此登记。 */
 export const EDITOR_COMMANDS: EditorCommand[] = [
   {
@@ -64,42 +41,60 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     title: "标题 1",
     keywords: ["h1", "biaoti", "heading"],
     group: "基础",
-    run: (e, r) => apply(e, r, () => e.chain().focus().setNode("heading", { level: 1 }).run()),
+    run: (e, r) =>
+      apply(e, r, () =>
+        e.chain().focus().setNode("heading", { level: 1 }).run(),
+      ),
   },
   {
     id: "heading2",
     title: "标题 2",
     keywords: ["h2", "biaoti", "heading"],
     group: "基础",
-    run: (e, r) => apply(e, r, () => e.chain().focus().setNode("heading", { level: 2 }).run()),
+    run: (e, r) =>
+      apply(e, r, () =>
+        e.chain().focus().setNode("heading", { level: 2 }).run(),
+      ),
   },
   {
     id: "heading3",
     title: "标题 3",
     keywords: ["h3", "biaoti", "heading"],
     group: "基础",
-    run: (e, r) => apply(e, r, () => e.chain().focus().setNode("heading", { level: 3 }).run()),
+    run: (e, r) =>
+      apply(e, r, () =>
+        e.chain().focus().setNode("heading", { level: 3 }).run(),
+      ),
   },
   {
     id: "heading4",
     title: "标题 4",
     keywords: ["h4", "biaoti", "heading"],
     group: "基础",
-    run: (e, r) => apply(e, r, () => e.chain().focus().setNode("heading", { level: 4 }).run()),
+    run: (e, r) =>
+      apply(e, r, () =>
+        e.chain().focus().setNode("heading", { level: 4 }).run(),
+      ),
   },
   {
     id: "heading5",
     title: "标题 5",
     keywords: ["h5", "biaoti", "heading"],
     group: "基础",
-    run: (e, r) => apply(e, r, () => e.chain().focus().setNode("heading", { level: 5 }).run()),
+    run: (e, r) =>
+      apply(e, r, () =>
+        e.chain().focus().setNode("heading", { level: 5 }).run(),
+      ),
   },
   {
     id: "heading6",
     title: "标题 6",
     keywords: ["h6", "biaoti", "heading"],
     group: "基础",
-    run: (e, r) => apply(e, r, () => e.chain().focus().setNode("heading", { level: 6 }).run()),
+    run: (e, r) =>
+      apply(e, r, () =>
+        e.chain().focus().setNode("heading", { level: 6 }).run(),
+      ),
   },
   {
     id: "paragraph",
@@ -113,7 +108,8 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     title: "引用",
     keywords: ["quote", "yinyong"],
     group: "基础",
-    run: (e, r) => apply(e, r, () => e.chain().focus().toggleBlockquote().run()),
+    run: (e, r) =>
+      apply(e, r, () => e.chain().focus().toggleBlockquote().run()),
   },
   {
     id: "codeBlock",
@@ -127,21 +123,24 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     title: "分隔线",
     keywords: ["hr", "fengexian", "divider"],
     group: "基础",
-    run: (e, r) => apply(e, r, () => e.chain().focus().setHorizontalRule().run()),
+    run: (e, r) =>
+      apply(e, r, () => e.chain().focus().setHorizontalRule().run()),
   },
   {
     id: "bulletList",
     title: "项目列表",
     keywords: ["ul", "liebiao", "bullet"],
     group: "列表",
-    run: (e, r) => apply(e, r, () => e.chain().focus().toggleBulletList().run()),
+    run: (e, r) =>
+      apply(e, r, () => e.chain().focus().toggleBulletList().run()),
   },
   {
     id: "orderedList",
     title: "编号列表",
     keywords: ["ol", "liebiao", "ordered"],
     group: "列表",
-    run: (e, r) => apply(e, r, () => e.chain().focus().toggleOrderedList().run()),
+    run: (e, r) =>
+      apply(e, r, () => e.chain().focus().toggleOrderedList().run()),
   },
   {
     id: "taskList",
@@ -157,7 +156,11 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     group: "插入",
     run: (e, r) =>
       apply(e, r, () =>
-        e.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
+        e
+          .chain()
+          .focus()
+          .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+          .run(),
       ),
   },
   {
@@ -165,14 +168,22 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     title: "公式块",
     keywords: ["math", "gongshi", "katex", "latex"],
     group: "插入",
-    run: (e, r) => apply(e, r, () => e.chain().focus().insertBlockMath({ latex: "" }).run()),
+    run: (e, r) =>
+      apply(e, r, () => e.chain().focus().insertBlockMath({ latex: "" }).run()),
   },
   {
     id: "image",
     title: "图片",
     keywords: ["image", "tupian", "img", "pic"],
     group: "媒体",
-    run: (e, r) => apply(e, r, () => pickAndInsertImage(e)),
+    run: (e, r) =>
+      apply(e, r, () => {
+        // R004 阶段 6：图片附件化（localImage 节点），不再内嵌 Base64；
+        // pageId 由编辑器宿主写入 storage，缺失时安全跳过。
+        const pageId = (e.storage as unknown as Record<string, unknown>)
+          .attachmentPageId as string | undefined;
+        if (pageId) pickAndInsertLocalImage(e, pageId);
+      }),
   },
   {
     id: "attachment",
@@ -182,9 +193,8 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     run: (e, r) =>
       apply(e, r, () => {
         // pageId 由编辑器宿主写入 storage；缺失时安全跳过。
-        const pageId = (e.storage as unknown as Record<string, unknown>).attachmentPageId as
-          | string
-          | undefined;
+        const pageId = (e.storage as unknown as Record<string, unknown>)
+          .attachmentPageId as string | undefined;
         if (pageId) pickAndInsertAttachment(e, pageId);
       }),
   },
@@ -193,7 +203,10 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     title: "行内公式",
     keywords: ["math", "gongshi", "katex", "latex"],
     group: "插入",
-    run: (e, r) => apply(e, r, () => e.chain().focus().insertInlineMath({ latex: "" }).run()),
+    run: (e, r) =>
+      apply(e, r, () =>
+        e.chain().focus().insertInlineMath({ latex: "" }).run(),
+      ),
   },
   {
     id: "askAI",
@@ -209,7 +222,10 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
 ];
 
 /** 按标题或关键词过滤命令；空查询返回全部。 */
-export function filterCommands(query: string, commands: EditorCommand[] = EDITOR_COMMANDS) {
+export function filterCommands(
+  query: string,
+  commands: EditorCommand[] = EDITOR_COMMANDS,
+) {
   const q = query.trim().toLowerCase();
   if (!q) return commands;
   return commands.filter(

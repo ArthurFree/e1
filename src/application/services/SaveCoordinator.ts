@@ -22,8 +22,10 @@ import type {
   AttachmentRepository,
   RevisionRepository,
 } from "../../domain/repositories";
+import { isDomainError, isQuotaExceededError } from "../../domain/errors";
 import {
   INTERVAL_REVISION_KEEP,
+  INTERVAL_REVISION_MAX_BYTES,
   shouldCreateIntervalRevision,
 } from "../../domain/revisions";
 import { collectAttachmentIds } from "../../editor/attachment";
@@ -48,9 +50,20 @@ export interface SaveResult {
 
 export type SaveStatus = "saved" | "dirty" | "saving" | "error";
 
+/**
+ * 保存失败分类（R004 阶段 6/7）：
+ * - quota = 本地存储空间不足，需用户清理后重试；
+ * - conflict = 乐观锁冲突（磁盘版本被其他标签页推进），不自动重试，
+ *   由冲突 UI 提供「重新载入 / 另存副本 / 强制覆盖 / 复制内容」；
+ * - generic = 其他写入失败。
+ */
+export type SaveErrorKind = "quota" | "conflict" | "generic";
+
 export interface SaveCoordinatorState {
   status: SaveStatus;
   savedAt: number | null;
+  /** status 为 error 时的失败分类；其余状态为 null。 */
+  errorKind: SaveErrorKind | null;
 }
 
 /** 恢复缓冲抽象：生产实现为 localStorage（documentRecovery），测试可注入内存版。 */
@@ -97,14 +110,26 @@ export class DocumentSaveCoordinator {
   private waiters: Waiter[] = [];
   private idleWaiters: (() => void)[] = [];
   private lastIntervalAt: number | null = null;
-  private state: SaveCoordinatorState = { status: "saved", savedAt: null };
+  /**
+   * 已落盘正文版本号（R004 阶段 7 乐观锁）：初始为编辑器加载时的
+   * content.version（经构造参数传入），每次提交成功后回填新版本；
+   * 强制覆盖时由调用方读磁盘最新版本后经 setLoadedVersion 更新。
+   */
+  private knownVersion: number;
+  private state: SaveCoordinatorState = {
+    status: "saved",
+    savedAt: null,
+    errorKind: null,
+  };
   /** 上一个 interval 版本时间的异步回填（取代原组件内的 lastIntervalAtRef）。 */
   private readonly initPromise: Promise<void>;
 
   constructor(
     private readonly pageId: string,
     private readonly deps: SaveCoordinatorDeps,
+    options?: { initialVersion?: number },
   ) {
+    this.knownVersion = options?.initialVersion ?? 0;
     this.initPromise = deps.revisions
       .listByPage(pageId)
       .then((list) => {
@@ -121,17 +146,34 @@ export class DocumentSaveCoordinator {
     return this.state;
   }
 
+  /** 当前已落盘版本号（乐观锁 expectedVersion 来源）。 */
+  getLoadedVersion(): number {
+    return this.knownVersion;
+  }
+
+  /**
+   * 更新已落盘版本号：编辑器加载/重载正文时以 content.version 初始化；
+   * 冲突后「强制覆盖」先读磁盘最新版本再调本方法，随后 retryLatest
+   * 即可以正确的 expectedVersion 重试当前快照（R004 阶段 7）。
+   */
+  setLoadedVersion(version: number): void {
+    this.knownVersion = version;
+  }
+
   /** 每次编辑调用：代次 +1 并发布 dirty；旧保存此后完成不得再发布 saved。 */
   noteEdit(): void {
     this.generation += 1;
-    this.publish({ ...this.state, status: "dirty" });
+    this.publish({ ...this.state, status: "dirty", errorKind: null });
   }
 
   /**
    * 提交保存快照（取当前代次盖章）。队列只保留最新快照：
    * 尚未执行的旧快照被替换，其等待者随更新快照的保存完成而兑现。
    */
-  enqueue(input: { contentJson: unknown; textSnapshot: string }): Promise<SaveResult> {
+  enqueue(input: {
+    contentJson: unknown;
+    textSnapshot: string;
+  }): Promise<SaveResult> {
     if (this.disposed) {
       return Promise.reject(new Error("保存协调器已销毁"));
     }
@@ -220,14 +262,24 @@ export class DocumentSaveCoordinator {
       const snapshot = this.pending;
       if (!snapshot) return;
       this.pending = null;
-      this.publish({ ...this.state, status: "saving" });
+      this.publish({ ...this.state, status: "saving", errorKind: null });
       try {
         await this.runSave(snapshot);
       } catch (err) {
         // 失败保留快照供重试；若有更新快照排队，循环继续（新内容覆盖旧失败）。
+        // 区分本地存储空间不足（quota）、乐观锁冲突（conflict）与普通写入失败，
+        // UI 给出不同提示（R004 阶段 6/7）；冲突不自动重试，等用户选择处理方式。
         this.lastFailed = snapshot;
         this.settleWaiters(snapshot.generation, null, err);
-        this.publish({ ...this.state, status: "error" });
+        this.publish({
+          ...this.state,
+          status: "error",
+          errorKind: isDomainError(err, "DOCUMENT_CONFLICT")
+            ? "conflict"
+            : isQuotaExceededError(err)
+              ? "quota"
+              : "generic",
+        });
       }
     }
   }
@@ -242,26 +294,34 @@ export class DocumentSaveCoordinator {
 
   private async runSave(snapshot: SaveSnapshot): Promise<void> {
     const savedAt = await this.commitContent(snapshot);
-    this.settleWaiters(snapshot.generation, { generation: snapshot.generation, savedAt }, null);
+    this.settleWaiters(
+      snapshot.generation,
+      { generation: snapshot.generation, savedAt },
+      null,
+    );
     // 旧快照：正文已按序落盘（提交服务已同步索引），维护与 saved 发布只属于当前 generation。
     if (!this.isCurrent(snapshot)) return;
     await this.runMaintenance(snapshot, savedAt);
     // 维护的挂起窗口内可能来了新编辑：发布前再查一次（INV-02）。
     if (this.isCurrent(snapshot)) {
       this.lastFailed = null;
-      this.publish({ status: "saved", savedAt });
+      this.publish({ status: "saved", savedAt, errorKind: null });
     }
   }
 
   /** 正文提交：唯一的致命步骤——失败即 error 态并保留快照供重试。 */
   private async commitContent(snapshot: SaveSnapshot): Promise<number> {
     const t0 = performance.now();
-    const { savedAt } = await this.deps.committer.commit(
+    // 乐观锁（R004 阶段 7）：以已落盘版本为 expectedVersion；
+    // 磁盘版本被其他标签页推进时抛 DOCUMENT_CONFLICT（errorKind: conflict）。
+    const { savedAt, version } = await this.deps.committer.commit(
       snapshot.pageId,
       snapshot.contentJson,
       snapshot.textSnapshot,
+      this.knownVersion,
     );
     trackTiming("idb-save", performance.now() - t0);
+    this.knownVersion = version;
     this.savedGeneration = snapshot.generation;
     return savedAt;
   }
@@ -271,7 +331,10 @@ export class DocumentSaveCoordinator {
    * 每个步骤独立兜底：维护失败时正文已落盘，经 onMaintenanceError 上报诊断，
    * 不进入 error 态、不要求用户重新保存正文。步骤之间重查最新性。
    */
-  private async runMaintenance(snapshot: SaveSnapshot, savedAt: number): Promise<void> {
+  private async runMaintenance(
+    snapshot: SaveSnapshot,
+    savedAt: number,
+  ): Promise<void> {
     try {
       // 间隔自动版本：跟随成功保存的最新快照。
       await this.initPromise;
@@ -285,9 +348,11 @@ export class DocumentSaveCoordinator {
         if (created) {
           this.lastIntervalAt = savedAt;
           if (this.isCurrent(snapshot)) {
+            // 数量上限 + 单文档自动版本总字节预算双重裁剪（R004 阶段 6）。
             await this.deps.revisions.pruneInterval(
               snapshot.pageId,
               INTERVAL_REVISION_KEEP,
+              INTERVAL_REVISION_MAX_BYTES,
             );
           }
         }

@@ -75,7 +75,13 @@ export function moveColumn(editor: Editor, from: number, to: number): boolean {
   const loc = findTable(editor);
   if (!loc) return false;
   const rows = tableRows(loc.node);
-  if (from === to || from < 0 || to < 0 || from >= rowCells(rows[0]).length || to >= rowCells(rows[0]).length) {
+  if (
+    from === to ||
+    from < 0 ||
+    to < 0 ||
+    from >= rowCells(rows[0]).length ||
+    to >= rowCells(rows[0]).length
+  ) {
     return false;
   }
   const newRows = rows.map((row) => {
@@ -95,7 +101,13 @@ export function moveRow(editor: Editor, from: number, to: number): boolean {
   const loc = findTable(editor);
   if (!loc) return false;
   const rows = tableRows(loc.node);
-  if (from === to || from < 0 || to < 0 || from >= rows.length || to >= rows.length) {
+  if (
+    from === to ||
+    from < 0 ||
+    to < 0 ||
+    from >= rows.length ||
+    to >= rows.length
+  ) {
     return false;
   }
   const next = [...rows];
@@ -116,7 +128,9 @@ export function sortByColumn(
   const rows = tableRows(loc.node);
   if (rows.length < 2) return false;
 
-  const firstIsHeader = rowCells(rows[0]).every((c) => c.type.name === "tableHeader");
+  const firstIsHeader = rowCells(rows[0]).every(
+    (c) => c.type.name === "tableHeader",
+  );
   const header = firstIsHeader ? [rows[0]] : [];
   const body = firstIsHeader ? rows.slice(1) : rows;
 
@@ -125,7 +139,9 @@ export function sortByColumn(
 
   const sorted = [...body].sort((a, b) => {
     // zh-Hans-CN + numeric：中文按拼音、数字串按数值比较，符合中文用户直觉。
-    const cmp = cellText(a).localeCompare(cellText(b), "zh-Hans-CN", { numeric: true });
+    const cmp = cellText(a).localeCompare(cellText(b), "zh-Hans-CN", {
+      numeric: true,
+    });
     return direction === "asc" ? cmp : -cmp;
   });
   replaceTable(editor, loc, [...header, ...sorted]);

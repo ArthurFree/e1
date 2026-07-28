@@ -129,7 +129,12 @@ describe("页面仓储", () => {
   it("带 index 的移动支持同级排序", async () => {
     const ws = await seedWorkspace();
     const make = (title: string) =>
-      pageRepository.create({ workspaceId: ws.id, parentId: null, kind: "document", title });
+      pageRepository.create({
+        workspaceId: ws.id,
+        parentId: null,
+        kind: "document",
+        title,
+      });
     const a = await make("A");
     const b = await make("B");
     const c = await make("C");
@@ -156,10 +161,16 @@ describe("页面仓储", () => {
   it("purge 永久删除整棵子树及其正文与标签关联", async () => {
     const ws = await seedWorkspace();
     const group = await pageRepository.create({
-      workspaceId: ws.id, parentId: null, kind: "group", title: "分组",
+      workspaceId: ws.id,
+      parentId: null,
+      kind: "group",
+      title: "分组",
     });
     const doc = await pageRepository.create({
-      workspaceId: ws.id, parentId: group.id, kind: "document", title: "文档",
+      workspaceId: ws.id,
+      parentId: group.id,
+      kind: "document",
+      title: "文档",
     });
     const tag = await tagRepository.create(ws.id, "标签", "#e16259");
     await tagRepository.setPageTags(doc.id, [tag.id]);
@@ -172,16 +183,24 @@ describe("页面仓储", () => {
     expect(await contentRepository.get(doc.id)).toBeUndefined();
     expect(await tagRepository.listPageTagIds(doc.id)).toEqual([]);
     // 标签本身保留。
-    expect((await tagRepository.listByWorkspace(ws.id)).map((t) => t.id)).toContain(tag.id);
+    expect(
+      (await tagRepository.listByWorkspace(ws.id)).map((t) => t.id),
+    ).toContain(tag.id);
   });
 
   it("purgeTrashed 清空回收站但保留未删除页面", async () => {
     const ws = await seedWorkspace();
     const keep = await pageRepository.create({
-      workspaceId: ws.id, parentId: null, kind: "document", title: "保留",
+      workspaceId: ws.id,
+      parentId: null,
+      kind: "document",
+      title: "保留",
     });
     const drop = await pageRepository.create({
-      workspaceId: ws.id, parentId: null, kind: "document", title: "丢弃",
+      workspaceId: ws.id,
+      parentId: null,
+      kind: "document",
+      title: "丢弃",
     });
     await pageRepository.remove(drop.id);
 
@@ -202,17 +221,22 @@ describe("标签仓储", () => {
   it("创建、列出、关联与覆盖页面标签", async () => {
     const ws = await seedWorkspace();
     const page = await pageRepository.create({
-      workspaceId: ws.id, parentId: null, kind: "document", title: "文档",
+      workspaceId: ws.id,
+      parentId: null,
+      kind: "document",
+      title: "文档",
     });
     const t1 = await tagRepository.create(ws.id, "工作", "#e16259");
     const t2 = await tagRepository.create(ws.id, "学习", "#0f7b6c");
 
-    expect((await tagRepository.listByWorkspace(ws.id)).map((t) => t.name).sort()).toEqual([
-      "学习", "工作",
-    ]);
+    expect(
+      (await tagRepository.listByWorkspace(ws.id)).map((t) => t.name).sort(),
+    ).toEqual(["学习", "工作"]);
 
     await tagRepository.setPageTags(page.id, [t1.id, t2.id, t1.id]);
-    expect((await tagRepository.listPageTagIds(page.id)).sort()).toEqual([t1.id, t2.id].sort());
+    expect((await tagRepository.listPageTagIds(page.id)).sort()).toEqual(
+      [t1.id, t2.id].sort(),
+    );
     const workspaceTags = await tagRepository.listWorkspacePageTags(ws.id);
     expect(workspaceTags.filter((r) => r.pageId === page.id)).toHaveLength(2);
 
@@ -223,7 +247,10 @@ describe("标签仓储", () => {
   it("删除标签时级联解除页面关联", async () => {
     const ws = await seedWorkspace();
     const page = await pageRepository.create({
-      workspaceId: ws.id, parentId: null, kind: "document", title: "文档",
+      workspaceId: ws.id,
+      parentId: null,
+      kind: "document",
+      title: "文档",
     });
     const tag = await tagRepository.create(ws.id, "临时", "#6940a5");
     await tagRepository.setPageTags(page.id, [tag.id]);
@@ -275,5 +302,75 @@ describe("偏好设置", () => {
     await db.put("preferences", { id: "preferences", aiConfig: "broken" });
     const prefs2 = await preferencesRepository.get();
     expect(prefs2.aiConfig).toBeNull();
+  });
+});
+
+describe("正文与标签关联的工作区维度（R004 阶段 5）", () => {
+  async function seedTwoWorkspaces() {
+    const ws1 = await workspaceRepository.create("甲库");
+    const ws2 = await workspaceRepository.create("乙库");
+    const p1 = await pageRepository.create({
+      workspaceId: ws1.id,
+      parentId: null,
+      kind: "document",
+      title: "甲库文档",
+    });
+    const p2 = await pageRepository.create({
+      workspaceId: ws2.id,
+      parentId: null,
+      kind: "document",
+      title: "乙库文档",
+    });
+    return { ws1, ws2, p1, p2 };
+  }
+
+  it("save 从页面回写 workspaceId，textSnapshot/updatedAt 语义不变", async () => {
+    const { ws1, p1 } = await seedTwoWorkspaces();
+    // 页面创建时已写入 version 1 的空正文：首次保存 expectedVersion 为 1。
+    await contentRepository.save(
+      p1.id,
+      { type: "doc", content: [] },
+      "新正文",
+      1,
+    );
+    const stored = await contentRepository.get(p1.id);
+    expect(stored?.workspaceId).toBe(ws1.id);
+    expect(stored?.textSnapshot).toBe("新正文");
+    expect(typeof stored?.updatedAt).toBe("number");
+  });
+
+  it("save 页面不存在时抛 PAGE_NOT_FOUND", async () => {
+    await expect(
+      contentRepository.save("missing-page", { type: "doc" }, "x", 0),
+    ).rejects.toSatisfy(
+      (e) => e instanceof Error && "code" in e && e.code === "PAGE_NOT_FOUND",
+    );
+  });
+
+  it("listByWorkspace 只返回目标库正文", async () => {
+    const { ws1, ws2, p1, p2 } = await seedTwoWorkspaces();
+    await contentRepository.save(p1.id, { type: "doc", content: [] }, "甲", 1);
+    await contentRepository.save(p2.id, { type: "doc", content: [] }, "乙", 1);
+
+    const ws1Contents = await contentRepository.listByWorkspace(ws1.id);
+    expect(ws1Contents.map((c) => c.pageId)).toEqual([p1.id]);
+    expect(ws1Contents[0].workspaceId).toBe(ws1.id);
+    const ws2Contents = await contentRepository.listByWorkspace(ws2.id);
+    expect(ws2Contents.map((c) => c.pageId)).toEqual([p2.id]);
+  });
+
+  it("setPageTags 写入带 workspaceId，listWorkspacePageTags 按工作区隔离", async () => {
+    const { ws1, ws2, p1, p2 } = await seedTwoWorkspaces();
+    const t1 = await tagRepository.create(ws1.id, "甲标签", "#000");
+    const t2 = await tagRepository.create(ws2.id, "乙标签", "#111");
+    await tagRepository.setPageTags(p1.id, [t1.id]);
+    await tagRepository.setPageTags(p2.id, [t2.id]);
+
+    expect(await tagRepository.listWorkspacePageTags(ws1.id)).toEqual([
+      { pageId: p1.id, tagId: t1.id, workspaceId: ws1.id },
+    ]);
+    expect(await tagRepository.listWorkspacePageTags(ws2.id)).toEqual([
+      { pageId: p2.id, tagId: t2.id, workspaceId: ws2.id },
+    ]);
   });
 });

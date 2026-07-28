@@ -28,7 +28,11 @@ describe("Button", () => {
 describe("IconButton", () => {
   beforeEach(() => cleanup());
   it("label 同时用于无障碍名称与 Tooltip", () => {
-    render(<IconButton label="收藏"><IconStar /></IconButton>);
+    render(
+      <IconButton label="收藏">
+        <IconStar />
+      </IconButton>,
+    );
     const button = screen.getByRole("button", { name: "收藏" });
     expect(button).toHaveAttribute("title", "收藏");
     expect(button).toHaveAttribute("aria-pressed", "false");

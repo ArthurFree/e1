@@ -40,6 +40,7 @@ function Harness() {
     <DocumentEditor
       pageId={pageId}
       initialContent={{ type: "doc", content: [{ type: "paragraph" }] }}
+      initialVersion={1}
       onEditorReady={(editor) => {
         host.editor = editor;
       }}

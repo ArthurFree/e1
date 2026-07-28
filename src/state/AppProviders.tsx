@@ -17,7 +17,7 @@ import { createNavigationBridge } from "./navigationBridge";
 /** 应用状态根：四个状态域 Provider 的唯一装配点。 */
 export function AppProviders({ children }: { children: ReactNode }) {
   // 命令桥生命周期与整棵状态树一致，创建一次。
-  const navBridge = useMemo(createNavigationBridge, []);
+  const navBridge = useMemo(() => createNavigationBridge(), []);
   return (
     <PreferencesProvider>
       <WorkspaceProvider navBridge={navBridge}>

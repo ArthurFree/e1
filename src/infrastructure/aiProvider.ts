@@ -47,7 +47,9 @@ export function createOpenAICompatibleProvider(config: AIConfig): AIProvider {
             "Content-Type": "application/json",
             Authorization: `Bearer ${config.apiKey}`,
           },
-          body: JSON.stringify(buildChatRequestBody(config, { ...request, mode })),
+          body: JSON.stringify(
+            buildChatRequestBody(config, { ...request, mode }),
+          ),
           signal: controller.signal,
         });
         if (!res.ok) throw new AIHttpError(res.status);
@@ -62,7 +64,7 @@ export function createOpenAICompatibleProvider(config: AIConfig): AIProvider {
         return content;
       } catch (err) {
         // 一切底层错误（HTTP 状态、网络、abort、空内容）统一翻译成用户可读文案。
-        throw new Error(mapAIError(err));
+        throw new Error(mapAIError(err), { cause: err });
       } finally {
         clearTimeout(timer);
       }

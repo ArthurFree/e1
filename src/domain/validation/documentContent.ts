@@ -29,12 +29,11 @@ export interface TiptapDoc {
 }
 
 export type ParseResult<T> =
-  | { ok: true; value: T }
-  | { ok: false; error: DomainError; raw: unknown };
+  { ok: true; value: T } | { ok: false; error: DomainError; raw: unknown };
 
 /**
  * 节点类型白名单：buildDocumentExtensions 注册的全部节点
- * （含 mention / inlineMath / blockMath / attachment）。
+ * （含 mention / inlineMath / blockMath / attachment / localImage）。
  */
 export const ALLOWED_NODE_TYPES: ReadonlySet<string> = new Set([
   "doc",
@@ -51,6 +50,7 @@ export const ALLOWED_NODE_TYPES: ReadonlySet<string> = new Set([
   "horizontalRule",
   "hardBreak",
   "image",
+  "localImage",
   "table",
   "tableRow",
   "tableCell",
@@ -85,6 +85,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  */
 const REQUIRED_ATTR_TYPES: Record<string, { attr: string; type: string }> = {
   attachment: { attr: "attachmentId", type: "string" },
+  localImage: { attr: "attachmentId", type: "string" },
   mention: { attr: "id", type: "string" },
   image: { attr: "src", type: "string" },
 };
@@ -93,7 +94,8 @@ const REQUIRED_ATTR_TYPES: Record<string, { attr: string; type: string }> = {
 function findNodeError(node: unknown, path: string): string | null {
   if (!isPlainObject(node)) return `${path} 不是对象`;
   if (typeof node.type !== "string") return `${path} 缺少 type`;
-  if (!ALLOWED_NODE_TYPES.has(node.type)) return `${path} 类型非法: ${node.type}`;
+  if (!ALLOWED_NODE_TYPES.has(node.type))
+    return `${path} 类型非法: ${node.type}`;
   if (node.type === "doc") return `${path} 不允许嵌套 doc`;
 
   if ("text" in node) {
@@ -125,7 +127,11 @@ function findNodeError(node: unknown, path: string): string | null {
       if (!ALLOWED_MARK_TYPES.has(mark.type)) {
         return `${path}.marks[${i}] 标记非法: ${mark.type}`;
       }
-      if ("attrs" in mark && mark.attrs !== undefined && !isPlainObject(mark.attrs)) {
+      if (
+        "attrs" in mark &&
+        mark.attrs !== undefined &&
+        !isPlainObject(mark.attrs)
+      ) {
         return `${path}.marks[${i}] attrs 必须是对象`;
       }
     }
@@ -149,14 +155,24 @@ export function parseDocumentContent(raw: unknown): ParseResult<TiptapDoc> {
   if (!isPlainObject(raw) || raw.type !== "doc") {
     return {
       ok: false,
-      error: new DomainError("CORRUPTED_DOCUMENT", "文档内容损坏：根节点不是 doc"),
+      error: new DomainError(
+        "CORRUPTED_DOCUMENT",
+        "文档内容损坏：根节点不是 doc",
+      ),
       raw,
     };
   }
-  if ("content" in raw && raw.content !== undefined && !Array.isArray(raw.content)) {
+  if (
+    "content" in raw &&
+    raw.content !== undefined &&
+    !Array.isArray(raw.content)
+  ) {
     return {
       ok: false,
-      error: new DomainError("CORRUPTED_DOCUMENT", "文档内容损坏：content 不是数组"),
+      error: new DomainError(
+        "CORRUPTED_DOCUMENT",
+        "文档内容损坏：content 不是数组",
+      ),
       raw,
     };
   }
@@ -195,7 +211,9 @@ function sanitizeNode(node: unknown): TiptapNode | TiptapNode[] | null {
     const required = REQUIRED_ATTR_TYPES[node.type];
     // 关键字段损坏的节点无法正确渲染，整体丢弃（子内容由上层提升逻辑处理）。
     if (required && typeof node.attrs[required.attr] !== required.type) {
-      return Array.isArray(node.content) ? sanitizeChildren(node.content) : null;
+      return Array.isArray(node.content)
+        ? sanitizeChildren(node.content)
+        : null;
     }
     out.attrs = { ...node.attrs };
   } else if (node.type in REQUIRED_ATTR_TYPES) {

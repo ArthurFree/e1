@@ -81,11 +81,18 @@ export const CommandList = forwardRef<CommandListRef, CommandListProps>(
     }));
 
     if (items.length === 0) {
-      return <div className="command-list command-list--empty">没有匹配的结果</div>;
+      return (
+        <div className="command-list command-list--empty">没有匹配的结果</div>
+      );
     }
 
     return (
-      <div ref={listRef} className="command-list" role="listbox" aria-label="命令列表">
+      <div
+        ref={listRef}
+        className="command-list"
+        role="listbox"
+        aria-label="命令列表"
+      >
         {items.map((item, index) => (
           <button
             key={item.id}

@@ -51,10 +51,17 @@ export interface Page {
 /** 文档正文：与 Page 一对一，pageId 即主键。 */
 export interface DocumentContent {
   pageId: string;
+  /** 所属知识库（R004 阶段 5）：会话加载按工作区索引直取，不再全表扫描。 */
+  workspaceId: string;
   /** Tiptap JSON，唯一编辑真相。 */
   contentJson: unknown;
   /** 纯文本快照，仅用于搜索与 Markdown 导出，不参与编辑。 */
   textSnapshot: string;
+  /**
+   * 乐观并发版本号（R004 阶段 7）：每次落盘 +1，保存时校验 expectedVersion。
+   * 存量记录无此字段，读路径归一化为 0（首次保存落 1），无需 schema 升级。
+   */
+  version: number;
   updatedAt: number;
 }
 
@@ -97,6 +104,8 @@ export interface Tag {
 export interface PageTag {
   pageId: string;
   tagId: string;
+  /** 所属知识库（R004 阶段 5）：冗余自页面，供工作区索引直取。 */
+  workspaceId: string;
 }
 
 export type ThemeName = "light" | "dark";

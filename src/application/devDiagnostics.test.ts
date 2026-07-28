@@ -35,7 +35,9 @@ describe("devDiagnostics", () => {
   it("启用时 trackTiming 输出毫秒指标", () => {
     setDevDiagnosticsEnabled(true);
     trackTiming("workspace-load", 12.4);
-    expect(console.debug).toHaveBeenCalledWith("[dev-diag] workspace-load: 12ms");
+    expect(console.debug).toHaveBeenCalledWith(
+      "[dev-diag] workspace-load: 12ms",
+    );
   });
 
   it("启用时 increment 输出计数与标识", () => {
@@ -43,6 +45,8 @@ describe("devDiagnostics", () => {
     increment("corrupted-content");
     increment("db-migration", "v2→v3");
     expect(console.debug).toHaveBeenCalledWith("[dev-diag] corrupted-content");
-    expect(console.debug).toHaveBeenCalledWith("[dev-diag] db-migration: v2→v3");
+    expect(console.debug).toHaveBeenCalledWith(
+      "[dev-diag] db-migration: v2→v3",
+    );
   });
 });

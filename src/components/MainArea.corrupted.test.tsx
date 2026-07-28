@@ -5,7 +5,13 @@
  * 「创建空白副本」覆盖为合法空文档并清除诊断记录。
  */
 import { beforeEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { TestApp } from "../test/TestApp";
 import { resetDB } from "../infrastructure/db";
 import {
@@ -35,7 +41,7 @@ async function renderWithCorruptedDoc() {
     kind: "document",
     title: "损坏文档",
   });
-  await contentRepository.save(page.id, CORRUPTED_JSON, "坏文本");
+  await contentRepository.save(page.id, CORRUPTED_JSON, "坏文本", 1);
   // 通过持久化路由让 AppProvider 启动后直接打开该文档。
   await preferencesRepository.update({
     lastRoute: serializeRoute({

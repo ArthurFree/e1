@@ -41,7 +41,8 @@ export function resolveDrop(
     if (wouldCreateCycle(pages, draggedId, targetId)) return null;
     return {
       parentId: targetId,
-      index: childrenOf(pages, targetId).filter((p) => p.id !== draggedId).length,
+      index: childrenOf(pages, targetId).filter((p) => p.id !== draggedId)
+        .length,
     };
   }
   if (wouldCreateCycle(pages, draggedId, target.parentId)) return null;
@@ -66,7 +67,9 @@ export function childrenOf(pages: Page[], parentId: string | null): Page[] {
  * 子级按 position 升序；含已删除页面（调用方按需过滤）。
  * 供 collectSubtreeIds 与树渲染避免反复全数组 filter 的 O(n²)。
  */
-export function buildChildrenByParent(pages: Page[]): Map<string | null, Page[]> {
+export function buildChildrenByParent(
+  pages: Page[],
+): Map<string | null, Page[]> {
   const map = new Map<string | null, Page[]>();
   for (const p of pages) {
     const list = map.get(p.parentId);

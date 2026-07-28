@@ -82,7 +82,9 @@ describe("附件插入", () => {
     );
     expect(ok).toBe(false);
     expect(alert).toHaveBeenCalledOnce();
-    expect(editor.getJSON().content?.some((n) => n.type === "attachment")).toBeFalsy();
+    expect(
+      editor.getJSON().content?.some((n) => n.type === "attachment"),
+    ).toBeFalsy();
     editor.destroy();
     alert.mockRestore();
     addSpy.mockRestore();
@@ -141,8 +143,12 @@ describe("附件节点视图", () => {
   it("显示文件名与大小，提供下载和移除", () => {
     editor = createWithAttachment();
     const dom = editor.view.dom;
-    expect(dom.querySelector(".attachment-block__name")?.textContent).toBe("丢失.zip");
-    expect(dom.querySelector(".attachment-block__meta")?.textContent).toContain("1.0 KB");
+    expect(dom.querySelector(".attachment-block__name")?.textContent).toBe(
+      "丢失.zip",
+    );
+    expect(dom.querySelector(".attachment-block__meta")?.textContent).toContain(
+      "1.0 KB",
+    );
     expect(
       dom.querySelector<HTMLButtonElement>("[aria-label^='下载附件']"),
     ).not.toBeNull();
@@ -159,11 +165,14 @@ describe("附件节点视图", () => {
     download.click();
     await vi.waitFor(() => {
       expect(
-        editor!.view.dom.querySelector(".attachment-block__status")?.textContent,
+        editor!.view.dom.querySelector(".attachment-block__status")
+          ?.textContent,
       ).toBe("附件不可用");
     });
     // 节点仍在，可手动移除。
-    expect(editor.getJSON().content?.some((n) => n.type === "attachment")).toBe(true);
+    expect(editor.getJSON().content?.some((n) => n.type === "attachment")).toBe(
+      true,
+    );
   });
 
   it("移除按钮只删除文档引用", async () => {
@@ -176,7 +185,9 @@ describe("附件节点视图", () => {
       "[aria-label^='移除附件']",
     )!;
     remove.click();
-    expect(editor2.getJSON().content?.some((n) => n.type === "attachment")).toBe(false);
+    expect(
+      editor2.getJSON().content?.some((n) => n.type === "attachment"),
+    ).toBe(false);
     // 附件记录仍在，等待保存后的孤儿清理。
     expect(await attachmentRepository.get(record.id)).toBeDefined();
     editor2.destroy();

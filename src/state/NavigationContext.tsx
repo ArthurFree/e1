@@ -5,7 +5,8 @@
 import { createContext, useContext } from "react";
 
 /** 主区域视图种类：与持久化路由 AppRoute.view 一一对应。 */
-export type MainView = "start" | "recent" | "favorites" | "workspace" | "document";
+export type MainView =
+  "start" | "recent" | "favorites" | "workspace" | "document";
 
 /** 导航域暴露给组件的状态与动作。 */
 export interface NavigationContextValue {

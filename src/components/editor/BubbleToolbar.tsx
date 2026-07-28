@@ -43,7 +43,9 @@ const AI_ACTIONS: { mode: AIMode; label: string }[] = [
 
 /** 文本选区浮动工具栏：行内格式、链接、颜色、高亮、AI 选区操作。 */
 export function BubbleToolbar({ editor }: BubbleToolbarProps) {
-  const [panel, setPanel] = useState<"none" | "link" | "color" | "highlight" | "ai">("none");
+  const [panel, setPanel] = useState<
+    "none" | "link" | "color" | "highlight" | "ai"
+  >("none");
   const [linkUrl, setLinkUrl] = useState("");
 
   const openAI = (mode: AIMode) => {
@@ -89,11 +91,41 @@ export function BubbleToolbar({ editor }: BubbleToolbarProps) {
     active: boolean;
     run(): void;
   }[] = [
-    { id: "bold", label: "加粗", icon: <IconBold />, active: editor.isActive("bold"), run: () => editor.chain().focus().toggleBold().run() },
-    { id: "italic", label: "斜体", icon: <IconItalic />, active: editor.isActive("italic"), run: () => editor.chain().focus().toggleItalic().run() },
-    { id: "underline", label: "下划线", icon: <IconUnderline />, active: editor.isActive("underline"), run: () => editor.chain().focus().toggleUnderline().run() },
-    { id: "strike", label: "删除线", icon: <IconStrikethrough />, active: editor.isActive("strike"), run: () => editor.chain().focus().toggleStrike().run() },
-    { id: "code", label: "行内代码", icon: <IconCodeInline />, active: editor.isActive("code"), run: () => editor.chain().focus().toggleCode().run() },
+    {
+      id: "bold",
+      label: "加粗",
+      icon: <IconBold />,
+      active: editor.isActive("bold"),
+      run: () => editor.chain().focus().toggleBold().run(),
+    },
+    {
+      id: "italic",
+      label: "斜体",
+      icon: <IconItalic />,
+      active: editor.isActive("italic"),
+      run: () => editor.chain().focus().toggleItalic().run(),
+    },
+    {
+      id: "underline",
+      label: "下划线",
+      icon: <IconUnderline />,
+      active: editor.isActive("underline"),
+      run: () => editor.chain().focus().toggleUnderline().run(),
+    },
+    {
+      id: "strike",
+      label: "删除线",
+      icon: <IconStrikethrough />,
+      active: editor.isActive("strike"),
+      run: () => editor.chain().focus().toggleStrike().run(),
+    },
+    {
+      id: "code",
+      label: "行内代码",
+      icon: <IconCodeInline />,
+      active: editor.isActive("code"),
+      run: () => editor.chain().focus().toggleCode().run(),
+    },
   ];
 
   return (
@@ -174,7 +206,11 @@ export function BubbleToolbar({ editor }: BubbleToolbarProps) {
         </button>
 
         {panel === "ai" && (
-          <div className="bubble-toolbar__panel" role="menu" aria-label="AI 选区操作">
+          <div
+            className="bubble-toolbar__panel"
+            role="menu"
+            aria-label="AI 选区操作"
+          >
             {AI_ACTIONS.map((action) => (
               <button
                 key={action.mode}
@@ -207,7 +243,11 @@ export function BubbleToolbar({ editor }: BubbleToolbarProps) {
         )}
 
         {panel === "color" && (
-          <div className="bubble-toolbar__panel bubble-toolbar__palette" role="menu" aria-label="文本颜色">
+          <div
+            className="bubble-toolbar__panel bubble-toolbar__palette"
+            role="menu"
+            aria-label="文本颜色"
+          >
             {TEXT_COLORS.map((c) => (
               <button
                 key={c.name}
@@ -220,7 +260,9 @@ export function BubbleToolbar({ editor }: BubbleToolbarProps) {
                   setPanel("none");
                 }}
               >
-                <span style={{ color: c.value ?? "var(--color-text-primary)" }}>A</span>
+                <span style={{ color: c.value ?? "var(--color-text-primary)" }}>
+                  A
+                </span>
                 <span>{c.name}</span>
               </button>
             ))}
@@ -228,7 +270,11 @@ export function BubbleToolbar({ editor }: BubbleToolbarProps) {
         )}
 
         {panel === "highlight" && (
-          <div className="bubble-toolbar__panel bubble-toolbar__palette" role="menu" aria-label="高亮颜色">
+          <div
+            className="bubble-toolbar__panel bubble-toolbar__palette"
+            role="menu"
+            aria-label="高亮颜色"
+          >
             {HIGHLIGHT_COLORS.map((c) => (
               <button
                 key={c.name}

@@ -26,7 +26,10 @@ export function Dialog({ label, onClose, className, children }: DialogProps) {
 
   useEffect(() => {
     // 记录触发元素，关闭时归还焦点（键盘用户回到原位继续操作）
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previous =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     // 优先聚焦首个可交互控件（如输入框），否则聚焦对话框本身
     const target = ref.current?.querySelector<HTMLElement>(
       "input, textarea, select, button, [tabindex]",

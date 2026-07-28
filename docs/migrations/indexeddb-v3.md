@@ -4,11 +4,11 @@
 
 纯索引迁移，无数据改写：
 
-| store | 新增索引 | 用途 |
-| --- | --- | --- |
-| pages | `workspaceId_parentId`（复合） | 同知识库同父级兄弟查询 |
+| store | 新增索引                        | 用途                        |
+| ----- | ------------------------------- | --------------------------- |
+| pages | `workspaceId_parentId`（复合）  | 同知识库同父级兄弟查询      |
 | pages | `workspaceId_updatedAt`（复合） | 工作区内按更新时间排序/过滤 |
-| trash | `deletedAt` | 回收站时间维度操作 |
+| trash | `deletedAt`                     | 回收站时间维度操作          |
 
 同时把 upgrade 回调修正为 async（v2 分支此前未 await 的遗留问题一并修复）。
 

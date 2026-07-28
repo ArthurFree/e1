@@ -45,7 +45,10 @@ describe("nextPosition", () => {
   });
 
   it("追加到同级末尾", () => {
-    const pages = [makePage({ id: "a", position: 0 }), makePage({ id: "b", position: 4 })];
+    const pages = [
+      makePage({ id: "a", position: 0 }),
+      makePage({ id: "b", position: 4 }),
+    ];
     expect(nextPosition(pages, null)).toBe(5);
     expect(nextPosition(pages, "x")).toBe(0);
   });
@@ -146,7 +149,9 @@ describe("movePage", () => {
       "a",
       "f",
     ]);
-    expect(childrenOf(result, null).map((p) => p.position)).toEqual([0, 1, 2, 3]);
+    expect(childrenOf(result, null).map((p) => p.position)).toEqual([
+      0, 1, 2, 3,
+    ]);
   });
 
   it("index 超出范围时收敛到两端", () => {

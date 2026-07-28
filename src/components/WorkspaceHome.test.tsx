@@ -1,6 +1,12 @@
 import { useEffect, useRef } from "react";
 import { beforeEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { useApp } from "../state/AppState";
 import { TestApp } from "../test/TestApp";
 import { resetDB } from "../infrastructure/db";
@@ -40,9 +46,15 @@ describe("WorkspaceHome", () => {
     expect(screen.getByText("3 篇文档")).toBeInTheDocument();
     expect(screen.getByText(/共 [\d,]+ 字/)).toBeInTheDocument();
     // 分组作为分段标题，文档带相对时间。
-    expect(screen.getByRole("button", { name: /产品资料/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /会议纪要示例/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /任务清单/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /产品资料/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /会议纪要示例/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /任务清单/ }),
+    ).toBeInTheDocument();
   });
 
   it("分组可展开收起，点击文档进入编辑", async () => {
@@ -71,9 +83,13 @@ describe("WorkspaceHome", () => {
     );
     const favorite = await screen.findByRole("button", { name: "收藏知识库" });
     fireEvent.click(favorite);
-    expect(await screen.findByRole("button", { name: "取消收藏知识库" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: "取消收藏知识库" }),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "新建分组" }));
-    expect(await screen.findByRole("button", { name: /新建分组/ })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: /新建分组/ }),
+    ).toBeInTheDocument();
   });
 });

@@ -11,7 +11,6 @@
   overflow: clip;
 }
 
-
 .icon-button {
   display: inline-flex;
   align-items: center;
@@ -1306,6 +1305,29 @@
   line-height: 1.5;
 }
 
+/* 本地存储区（R004 阶段 6）：用量展示与阈值警告。 */
+.settings-panel__section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 10px 10px;
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.settings-panel__storage {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.settings-panel__storage-warning {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .ai-panel__selection {
   margin: 4px 10px;
   padding: 6px 10px;
@@ -1783,7 +1805,8 @@
   border-radius: var(--radius-md);
   background: var(--color-canvas);
   text-align: left;
-  transition: border-color var(--motion-fast) var(--motion-ease),
+  transition:
+    border-color var(--motion-fast) var(--motion-ease),
     background var(--motion-fast) var(--motion-ease);
 }
 
@@ -2773,6 +2796,35 @@
   color: var(--color-text-primary);
 }
 
+/* ----- 本地图片块（R004 阶段 6）：Blob 存 attachments store，渲染走 Object URL ----- */
+
+.local-image {
+  margin: 8px 0;
+}
+
+.local-image__img {
+  display: block;
+  max-width: 100%;
+  border-radius: var(--radius-md);
+}
+
+.local-image__placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 80px;
+  padding: 16px;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-md);
+  color: var(--color-text-tertiary);
+  font-size: 13px;
+  background: var(--color-sidebar-global);
+}
+
+.local-image--missing .local-image__placeholder {
+  color: var(--color-danger);
+}
+
 /* 恢复提示条（R003 §1.4）：检测到未落盘编辑时显示在文档顶部。 */
 .recovery-banner {
   display: flex;
@@ -2827,4 +2879,55 @@
   margin: 8px 0 0;
   font-size: 13px;
   color: var(--color-danger);
+}
+
+/* 存储连接事件提示条（R004 阶段 7 §7.1）：固定在视口顶部，不参与网格布局。 */
+.storage-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: var(--z-toast, 60);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: var(--color-warning);
+  color: #fff;
+  font-size: 13px;
+}
+
+.storage-banner__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.storage-banner__action {
+  padding: 4px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.storage-banner__action:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.storage-banner__dismiss {
+  padding: 2px 8px;
+  border: none;
+  background: transparent;
+  color: #fff;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* 冲突提示条（R004 阶段 7 §7.2/§7.3）：复用 recovery-banner 布局，警示色左边框。 */
+.conflict-banner {
+  border-left: 3px solid var(--color-warning);
+  flex-wrap: wrap;
 }

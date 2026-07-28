@@ -124,6 +124,9 @@ export function favoriteWorkspaces(workspaces: Workspace[]): Workspace[] {
 /** 收藏的文档：只含未删除文档，按收藏时间倒序；删除后保留时间但不展示。 */
 export function favoritePages(pages: Page[]): Page[] {
   return pages
-    .filter((p) => p.kind === "document" && p.deletedAt === null && p.favoriteAt !== null)
+    .filter(
+      (p) =>
+        p.kind === "document" && p.deletedAt === null && p.favoriteAt !== null,
+    )
     .sort((a, b) => (b.favoriteAt ?? 0) - (a.favoriteAt ?? 0));
 }

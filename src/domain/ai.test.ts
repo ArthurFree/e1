@@ -18,9 +18,9 @@ const validConfig: AIConfig = {
 
 describe("validateAIConfig", () => {
   it("非法 URL 返回错误", () => {
-    expect(
-      validateAIConfig({ ...validConfig, endpoint: "not-a-url" }),
-    ).toBe("Endpoint 必须是合法的 http(s) 地址");
+    expect(validateAIConfig({ ...validConfig, endpoint: "not-a-url" })).toBe(
+      "Endpoint 必须是合法的 http(s) 地址",
+    );
   });
 
   it("非 http(s) 协议返回错误", () => {
@@ -44,7 +44,10 @@ describe("validateAIConfig", () => {
   it("合法配置返回 null", () => {
     expect(validateAIConfig(validConfig)).toBeNull();
     expect(
-      validateAIConfig({ ...validConfig, endpoint: "http://localhost:11434/v1" }),
+      validateAIConfig({
+        ...validConfig,
+        endpoint: "http://localhost:11434/v1",
+      }),
     ).toBeNull();
   });
 });
@@ -124,7 +127,9 @@ describe("buildPrompt", () => {
       selection: "选中的话",
       documentContext: "上下文",
     });
-    expect(user).toBe("问题：这段话什么意思？\n\n选区内容：\n选中的话\n\n文档上下文：\n上下文");
+    expect(user).toBe(
+      "问题：这段话什么意思？\n\n选区内容：\n选中的话\n\n文档上下文：\n上下文",
+    );
   });
 });
 
@@ -159,12 +164,18 @@ describe("mapAIError", () => {
   });
 
   it("5xx 映射为服务不可用并带状态码", () => {
-    expect(mapAIError(new AIHttpError(500))).toBe("AI 服务暂时不可用（状态码 500）");
-    expect(mapAIError(new AIHttpError(503))).toBe("AI 服务暂时不可用（状态码 503）");
+    expect(mapAIError(new AIHttpError(500))).toBe(
+      "AI 服务暂时不可用（状态码 500）",
+    );
+    expect(mapAIError(new AIHttpError(503))).toBe(
+      "AI 服务暂时不可用（状态码 503）",
+    );
   });
 
   it("其他状态码映射为通用 HTTP 错误", () => {
-    expect(mapAIError(new AIHttpError(400))).toBe("AI 服务返回错误（状态码 400）");
+    expect(mapAIError(new AIHttpError(400))).toBe(
+      "AI 服务返回错误（状态码 400）",
+    );
   });
 
   it("AbortError 映射为超时", () => {

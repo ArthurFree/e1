@@ -109,12 +109,25 @@ async function writeV1Fixture() {
     });
   }
 
-  await db.put(STORE_TRASH, { pageId: "d3", deletedAt: NOW, originalParentId: null });
+  await db.put(STORE_TRASH, {
+    pageId: "d3",
+    deletedAt: NOW,
+    originalParentId: null,
+  });
 
-  await db.put(STORE_TAGS, { id: "t1", workspaceId: "ws1", name: "旧标签", color: "#e16259" });
+  await db.put(STORE_TAGS, {
+    id: "t1",
+    workspaceId: "ws1",
+    name: "旧标签",
+    color: "#e16259",
+  });
   await db.put(STORE_PAGE_TAGS, { pageId: "d1", tagId: "t1" });
 
-  await db.put(STORE_PREFERENCES, { id: "preferences", theme: "dark", sidebarWidth: 300 });
+  await db.put(STORE_PREFERENCES, {
+    id: "preferences",
+    theme: "dark",
+    sidebarWidth: 300,
+  });
 
   db.close();
 }
@@ -152,7 +165,9 @@ describe("v1 → v2 迁移", () => {
     expect(content?.textSnapshot).toBe("组内文档正文");
     expect((content?.contentJson as { type: string }).type).toBe("doc");
 
-    expect((await tagRepository.listByWorkspace("ws1")).map((t) => t.name)).toEqual(["旧标签"]);
+    expect(
+      (await tagRepository.listByWorkspace("ws1")).map((t) => t.name),
+    ).toEqual(["旧标签"]);
     expect(await tagRepository.listPageTagIds("d1")).toEqual(["t1"]);
 
     const prefs = await preferencesRepository.get();
@@ -201,7 +216,9 @@ describe("v1 → v2 迁移", () => {
 
     // 仓储层再次读取结果一致。
     const secondPages = await pageRepository.listByWorkspace("ws1");
-    expect(secondPages.map((p) => p.id).sort()).toEqual(firstPages.map((p) => p.id).sort());
+    expect(secondPages.map((p) => p.id).sort()).toEqual(
+      firstPages.map((p) => p.id).sort(),
+    );
     expect(secondPages.find((p) => p.id === "g1")?.kind).toBe("group");
   });
 });

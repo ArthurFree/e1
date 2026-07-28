@@ -2,14 +2,14 @@
 
 ## 规则清单
 
-| 规则 | 说明 |
-| --- | --- |
-| `src/components/**` 不得 import `src/infrastructure/**` | UI 只经 AppServices 容器与状态层取数 |
-| `src/state/**` 不得 import `src/infrastructure/**` | 状态层经 `useAppServices()` 取服务 |
-| `src/editor/**` 不得 import `src/infrastructure/**` | 编辑器内核不知道 IndexedDB 的存在 |
-| `src/application/**` 不得 import `src/infrastructure/**`、`src/components/**` | 应用服务只依赖 domain port |
-| `src/domain/**` 不得 import `src/infrastructure/**`、`react` | 领域层纯逻辑、零框架依赖 |
-| `src/infrastructure/**` 可实现/依赖 domain 与 application | 装配根（`browserServices.ts`）是唯一汇合点 |
+| 规则                                                                          | 说明                                       |
+| ----------------------------------------------------------------------------- | ------------------------------------------ |
+| `src/components/**` 不得 import `src/infrastructure/**`                       | UI 只经 AppServices 容器与状态层取数       |
+| `src/state/**` 不得 import `src/infrastructure/**`                            | 状态层经 `useAppServices()` 取服务         |
+| `src/editor/**` 不得 import `src/infrastructure/**`                           | 编辑器内核不知道 IndexedDB 的存在          |
+| `src/application/**` 不得 import `src/infrastructure/**`、`src/components/**` | 应用服务只依赖 domain port                 |
+| `src/domain/**` 不得 import `src/infrastructure/**`、`react`                  | 领域层纯逻辑、零框架依赖                   |
+| `src/infrastructure/**` 可实现/依赖 domain 与 application                     | 装配根（`browserServices.ts`）是唯一汇合点 |
 
 ## 强制方式
 

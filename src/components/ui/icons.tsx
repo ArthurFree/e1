@@ -15,7 +15,11 @@ interface IconProps {
 }
 
 /** 所有图标共用的 SVG 外壳：统一描边与继承色，具体图形由各图标提供 path。 */
-function Svg({ size = 16, className, children }: IconProps & { children: ReactNode }) {
+function Svg({
+  size = 16,
+  className,
+  children,
+}: IconProps & { children: ReactNode }) {
   return (
     <svg
       width={size}

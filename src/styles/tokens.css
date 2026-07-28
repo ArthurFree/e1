@@ -4,9 +4,10 @@
  */
 
 :root {
-  --font-sans: "Chinese Quote", -apple-system, BlinkMacSystemFont, "Segoe UI",
-    Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
-    "Helvetica Neue", Arial, sans-serif;
+  --font-sans:
+    "Chinese Quote", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue",
+    Arial, sans-serif;
   --font-mono: SFMono-Regular, Consolas, "Liberation Mono", monospace;
 
   /* ===== 颜色（浅色） ===== */
@@ -36,10 +37,10 @@
   --radius-xl: 12px;
 
   /* ===== 阴影（仅浮层使用） ===== */
-  --shadow-popover: 0 6px 20px rgba(18, 20, 18, 0.12),
-    0 1px 4px rgba(18, 20, 18, 0.08);
-  --shadow-dialog: 0 18px 48px rgba(18, 20, 18, 0.2),
-    0 2px 8px rgba(18, 20, 18, 0.1);
+  --shadow-popover:
+    0 6px 20px rgba(18, 20, 18, 0.12), 0 1px 4px rgba(18, 20, 18, 0.08);
+  --shadow-dialog:
+    0 18px 48px rgba(18, 20, 18, 0.2), 0 2px 8px rgba(18, 20, 18, 0.1);
 
   /* ===== 层级 ===== */
   --z-sticky: 10;
@@ -80,10 +81,9 @@
   --color-overlay: rgba(0, 0, 0, 0.64);
 
   /* 深色阴影减弱扩散，主要靠边框区分浮层。 */
-  --shadow-popover: 0 6px 20px rgba(0, 0, 0, 0.4),
-    0 1px 4px rgba(0, 0, 0, 0.3);
-  --shadow-dialog: 0 18px 48px rgba(0, 0, 0, 0.5),
-    0 2px 8px rgba(0, 0, 0, 0.35);
+  --shadow-popover: 0 6px 20px rgba(0, 0, 0, 0.4), 0 1px 4px rgba(0, 0, 0, 0.3);
+  --shadow-dialog:
+    0 18px 48px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.35);
 }
 
 /* 减少动效：取消位移与缩放，只保留快速透明度变化。 */

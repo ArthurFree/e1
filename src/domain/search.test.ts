@@ -20,7 +20,14 @@ function makePage(partial: Partial<Page> & { id: string }): Page {
 }
 
 function makeContent(pageId: string, textSnapshot: string): DocumentContent {
-  return { pageId, contentJson: null, textSnapshot, updatedAt: 0 };
+  return {
+    pageId,
+    workspaceId: "ws1",
+    contentJson: null,
+    textSnapshot,
+    version: 1,
+    updatedAt: 0,
+  };
 }
 
 describe("searchPages", () => {

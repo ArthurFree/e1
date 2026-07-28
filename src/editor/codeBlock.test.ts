@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Editor } from "@tiptap/core";
 import { buildDocumentExtensions } from "./extensions";
-import { CODE_LANGUAGES, codeLanguageName, normalizeCodeLanguage } from "./codeBlock";
+import {
+  CODE_LANGUAGES,
+  codeLanguageName,
+  normalizeCodeLanguage,
+} from "./codeBlock";
 
 function createEditor(content?: unknown) {
   return new Editor({
@@ -23,8 +27,18 @@ describe("代码语言", () => {
   it("覆盖需求要求的全部语言", () => {
     const names = CODE_LANGUAGES.map((l) => l.name);
     for (const required of [
-      "纯文本", "JavaScript", "TypeScript", "JSON", "HTML", "CSS",
-      "Shell", "Python", "C", "C++", "Rust", "Java",
+      "纯文本",
+      "JavaScript",
+      "TypeScript",
+      "JSON",
+      "HTML",
+      "CSS",
+      "Shell",
+      "Python",
+      "C",
+      "C++",
+      "Rust",
+      "Java",
     ]) {
       expect(names).toContain(required);
     }
@@ -65,7 +79,9 @@ describe("代码块节点", () => {
         },
       ],
     });
-    const select = editor.view.dom.querySelector<HTMLSelectElement>(".codeblock__language");
+    const select = editor.view.dom.querySelector<HTMLSelectElement>(
+      ".codeblock__language",
+    );
     expect(select?.value).toBe("python");
 
     const writeText = vi.fn().mockResolvedValue(undefined);
@@ -73,7 +89,8 @@ describe("代码块节点", () => {
       value: { writeText },
       configurable: true,
     });
-    const copy = editor.view.dom.querySelector<HTMLButtonElement>(".codeblock__copy");
+    const copy =
+      editor.view.dom.querySelector<HTMLButtonElement>(".codeblock__copy");
     copy?.click();
     await vi.waitFor(() => {
       expect(writeText).toHaveBeenCalledWith("print(1)");
@@ -91,7 +108,9 @@ describe("代码块节点", () => {
         },
       ],
     });
-    const select = editor.view.dom.querySelector<HTMLSelectElement>(".codeblock__language")!;
+    const select = editor.view.dom.querySelector<HTMLSelectElement>(
+      ".codeblock__language",
+    )!;
     select.value = "rust";
     select.dispatchEvent(new Event("change"));
     expect(editor.getJSON().content?.[0]?.attrs?.language).toBe("rust");
@@ -108,7 +127,9 @@ describe("代码块节点", () => {
         },
       ],
     });
-    const select = editor.view.dom.querySelector<HTMLSelectElement>(".codeblock__language");
+    const select = editor.view.dom.querySelector<HTMLSelectElement>(
+      ".codeblock__language",
+    );
     expect(select?.value).toBe("plaintext");
     expect(editor.getText()).toContain("DISPLAY 1");
   });
