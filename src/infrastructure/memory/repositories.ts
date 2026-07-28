@@ -10,6 +10,7 @@
  * 全部保持一致；差异仅在不持久化（无 seed、无跨会话恢复）。
  */
 import { DomainError } from "../../domain/errors";
+import { parseDocumentContent } from "../../domain/validation/documentContent";
 import {
   childrenOf,
   collectSubtreeIds,
@@ -21,6 +22,7 @@ import type {
   AttachmentRepository,
   ContentRepository,
   CreatePageInput,
+  DocumentWriteRepository,
   PageRepository,
   PreferencesRepository,
   RevisionRepository,
@@ -87,6 +89,7 @@ export interface MemoryRepositories {
   workspace: WorkspaceRepository;
   page: PageRepository;
   content: ContentRepository;
+  documentWrite: DocumentWriteRepository;
   revision: RevisionRepository;
   attachment: AttachmentRepository;
   tag: TagRepository;
@@ -336,6 +339,80 @@ export function createInMemoryRepositories(
     },
   };
 
+  // 原子文档写（R004 阶段 2，INV-04）：与 IndexedDB 实现同契约——
+  // 校验失败或目标非法时不产生任何写入（内存操作天然同步，无中间态可见）。
+  const documentWrite: DocumentWriteRepository = {
+    async createWithContent(input) {
+      validateCreatePageInput({
+        workspaceId: input.workspaceId,
+        parentId: input.parentId,
+        kind: "document",
+        title: input.title,
+        icon: input.icon,
+      });
+      const parsed = parseDocumentContent(input.contentJson);
+      if (!parsed.ok) {
+        throw new DomainError(
+          "CORRUPTED_DOCUMENT",
+          "初始正文 JSON 未通过白名单校验",
+        );
+      }
+      if (!store.workspaces.has(input.workspaceId)) {
+        throw new DomainError(
+          "WORKSPACE_NOT_FOUND",
+          `知识库不存在或数据损坏: ${input.workspaceId}`,
+        );
+      }
+      if (input.parentId !== null) {
+        assertValidParent(input.parentId, input.workspaceId);
+      }
+      const siblings = allPages().filter(
+        (p) => p.workspaceId === input.workspaceId,
+      );
+      const now = Date.now();
+      const created: Page = {
+        id: createId(),
+        workspaceId: input.workspaceId,
+        parentId: input.parentId,
+        kind: "document",
+        title: input.title,
+        icon: input.icon ?? null,
+        position: nextPosition(siblings, input.parentId),
+        favoriteAt: null,
+        lastOpenedAt: null,
+        deletedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      store.pages.set(created.id, created);
+      store.contents.set(created.id, {
+        pageId: created.id,
+        contentJson: parsed.value,
+        textSnapshot: input.textSnapshot,
+        updatedAt: now,
+      });
+      return created;
+    },
+    async replaceContent(input) {
+      const parsed = parseDocumentContent(input.contentJson);
+      if (!parsed.ok) {
+        throw new DomainError(
+          "CORRUPTED_DOCUMENT",
+          "正文 JSON 未通过白名单校验",
+        );
+      }
+      getRequiredPage(input.pageId);
+      const record: DocumentContent = {
+        pageId: input.pageId,
+        contentJson: parsed.value,
+        textSnapshot: input.textSnapshot,
+        updatedAt: Date.now(),
+      };
+      store.contents.set(input.pageId, record);
+      return record;
+    },
+  };
+
   const revision: RevisionRepository = {
     async listByPage(pageId) {
       return [...store.revisions.values()]
@@ -395,10 +472,15 @@ export function createInMemoryRepositories(
     async remove(id) {
       store.attachments.delete(id);
     },
-    async removeOrphans(pageId, referencedIds) {
+    async removeOrphans(pageId, referencedIds, options) {
       const referenced = new Set(referencedIds);
+      const cutoff = options?.createdBeforeOrAt;
+      // 与 IndexedDB 实现同约束：只清理快照产生之前已存在的孤儿（R004 INV-03）。
       const orphans = [...store.attachments.values()].filter(
-        (a) => a.pageId === pageId && !referenced.has(a.id),
+        (a) =>
+          a.pageId === pageId &&
+          !referenced.has(a.id) &&
+          (cutoff === undefined || a.createdAt <= cutoff),
       );
       for (const a of orphans) store.attachments.delete(a.id);
       return orphans.length;
@@ -472,5 +554,5 @@ export function createInMemoryRepositories(
     },
   };
 
-  return { workspace, page, content, revision, attachment, tag, preferences };
+  return { workspace, page, content, documentWrite, revision, attachment, tag, preferences };
 }

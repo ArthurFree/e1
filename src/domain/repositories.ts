@@ -80,6 +80,34 @@ export interface ContentRepository {
   listAll(): Promise<DocumentContent[]>;
 }
 
+/** 原子创建文档（页面 + 初始正文）入参（R004 阶段 2，INV-04）。 */
+export interface CreateDocumentWithContentInput {
+  workspaceId: string;
+  parentId: string | null;
+  title: string;
+  icon?: string | null;
+  contentJson: unknown;
+  textSnapshot: string;
+}
+
+/** 覆盖正文入参。 */
+export interface ReplaceDocumentContentInput {
+  pageId: string;
+  contentJson: unknown;
+  textSnapshot: string;
+}
+
+/**
+ * 原子文档写仓储（R004 阶段 2）：
+ * - createWithContent 单事务完成「校验 + 写页面 + 写初始正文」，
+ *   任一步失败整体回滚，不留只有页面、没有正确正文的中间状态（INV-04）；
+ * - 正文 JSON 一律经白名单校验，校验失败不写入。
+ */
+export interface DocumentWriteRepository {
+  createWithContent(input: CreateDocumentWithContentInput): Promise<Page>;
+  replaceContent(input: ReplaceDocumentContentInput): Promise<DocumentContent>;
+}
+
 /** 本地版本历史仓储（策略常量见 revisions.ts）。 */
 export interface RevisionRepository {
   /** 按创建时间倒序；损坏记录跳过。 */
@@ -111,8 +139,16 @@ export interface AttachmentRepository {
   listByPage(pageId: string): Promise<Attachment[]>;
   add(input: CreateAttachmentInput): Promise<Attachment>;
   remove(id: string): Promise<void>;
-  /** 清理文档不再引用的孤儿附件，返回清理数量。 */
-  removeOrphans(pageId: string, referencedIds: string[]): Promise<number>;
+  /**
+   * 清理文档不再引用的孤儿附件，返回清理数量。
+   * `createdBeforeOrAt`（R004 INV-03）：只清理创建时间不晚于该时间戳的附件，
+   * 保护快照产生后新建、尚未进入新正文快照的附件不被旧快照误删。
+   */
+  removeOrphans(
+    pageId: string,
+    referencedIds: string[],
+    options?: { createdBeforeOrAt?: number },
+  ): Promise<number>;
 }
 
 /** 标签与页面-标签关联仓储。 */

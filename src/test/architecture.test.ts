@@ -73,4 +73,36 @@ describe("架构分层约束", () => {
     expect(format(violations)).toBe("");
     expect(violations).toEqual([]);
   });
+
+  /**
+   * R004 INV-07 基线：components 不得直接调用正文/版本/附件/页面写仓储。
+   * 阶段 0 以白名单快照记录现存 8 处直写点（见
+   * docs/architecture/document-write-path.md），新增违规立即失败；
+   * 阶段 3 迁移时同步收缩白名单直至清零。
+   */
+  it("components 直写仓储仅限白名单快照（R004 阶段 3 清零）", () => {
+    const pattern =
+      /services\.(content\.save|revision\.add|attachment\.(?:add|remove|removeOrphans)|page\.create)/;
+    const violations: string[] = [];
+    for (const [path, content] of entries) {
+      if (!path.startsWith("../components/")) continue;
+      content.split("\n").forEach((text) => {
+        const match = text.match(pattern);
+        if (match) {
+          violations.push(`${path} services.${match[1]}`);
+        }
+      });
+    }
+    violations.sort();
+    expect(violations).toEqual([
+      "../components/AIDraftModal.tsx services.content.save",
+      "../components/AIDraftModal.tsx services.page.create",
+      "../components/MainArea.tsx services.content.save",
+      "../components/PageTreeSidebar.tsx services.content.save",
+      "../components/TemplateCenter.tsx services.content.save",
+      "../components/TemplateCenter.tsx services.page.create",
+      "../components/VersionPanel.tsx services.content.save",
+      "../components/VersionPanel.tsx services.revision.add",
+    ]);
+  });
 });

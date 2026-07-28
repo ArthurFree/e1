@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDB, resetDB, STORE_ATTACHMENTS, STORE_REVISIONS } from "./db";
+import { sleep } from "../test/fixtures";
 import {
   attachmentRepository,
   contentRepository,
@@ -162,6 +163,37 @@ describe("附件仓储", () => {
     await attachmentRepository.remove(keep.id);
     expect(await attachmentRepository.get(keep.id)).toBeUndefined();
     expect(orphanA.id).not.toBe(orphanB.id);
+  });
+
+  it("removeOrphans 时间边界：快照之后新建的附件不清理（R004 INV-03）", async () => {
+    const doc = await seedDoc();
+    const make = (name: string) =>
+      attachmentRepository.add({
+        pageId: doc.id,
+        name,
+        mimeType: "text/plain",
+        size: 1,
+        blob: new Blob(["x"]),
+      });
+    // capturedAt 之前已存在的孤儿：允许清理。
+    const oldOrphan = await make("旧孤儿.txt");
+    const capturedAt = Date.now();
+    // 跨过毫秒边界，保证新附件 createdAt 严格晚于 capturedAt。
+    await sleep(5);
+    // capturedAt 之后新建的附件：即使未被引用也不得删除。
+    const newAttachment = await make("新附件.txt");
+
+    const removed = await attachmentRepository.removeOrphans(doc.id, [], {
+      createdBeforeOrAt: capturedAt,
+    });
+    expect(removed).toBe(1);
+    expect((await attachmentRepository.listByPage(doc.id)).map((a) => a.id)).toEqual([
+      newAttachment.id,
+    ]);
+    expect(await attachmentRepository.get(oldOrphan.id)).toBeUndefined();
+    // 不传时间边界时保持原语义：清理全部未引用附件。
+    expect(await attachmentRepository.removeOrphans(doc.id, [])).toBe(1);
+    expect((await attachmentRepository.listByPage(doc.id)).length).toBe(0);
   });
 
   it("损坏的附件记录被跳过", async () => {

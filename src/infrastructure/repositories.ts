@@ -3,6 +3,7 @@ import type {
   ContentRepository,
   CreateAttachmentInput,
   CreatePageInput,
+  DocumentWriteRepository,
   PageRepository,
   PreferencesRepository,
   RevisionRepository,
@@ -18,6 +19,7 @@ import {
   wouldCreateCycle,
 } from "../domain/pageTree";
 import { DomainError } from "../domain/errors";
+import { parseDocumentContent } from "../domain/validation/documentContent";
 import {
   DEFAULT_PREFERENCES,
   type Attachment,
@@ -531,6 +533,111 @@ export const contentRepository: ContentRepository = {
   },
 };
 
+/**
+ * 原子文档写仓储（R004 阶段 2，INV-04）：页面与初始正文在单个 IndexedDB
+ * 事务中创建，校验失败或任一步写入失败时事务整体回滚，不留空文档；
+ * 正文 JSON 一律经白名单校验（parseDocumentContent），拒绝则不写入。
+ */
+export const documentWriteRepository: DocumentWriteRepository = {
+  async createWithContent(input) {
+    validateCreatePageInput({
+      workspaceId: input.workspaceId,
+      parentId: input.parentId,
+      kind: "document",
+      title: input.title,
+      icon: input.icon,
+    });
+    const parsed = parseDocumentContent(input.contentJson);
+    if (!parsed.ok) {
+      throw new DomainError(
+        "CORRUPTED_DOCUMENT",
+        "初始正文 JSON 未通过白名单校验",
+      );
+    }
+    const db = await getDB();
+    // 校验与写入同一事务：任一步失败整体回滚（INV-04）。
+    const tx = db.transaction(
+      [STORE_WORKSPACES, STORE_PAGES, STORE_CONTENTS],
+      "readwrite",
+    );
+    const workspace = normalizeWorkspace(
+      await tx.objectStore(STORE_WORKSPACES).get(input.workspaceId),
+    );
+    if (!workspace) {
+      throw new DomainError(
+        "WORKSPACE_NOT_FOUND",
+        `知识库不存在或数据损坏: ${input.workspaceId}`,
+      );
+    }
+    if (input.parentId !== null) {
+      const parent = normalizePage(
+        await tx.objectStore(STORE_PAGES).get(input.parentId),
+      );
+      assertValidParent(parent, input.parentId, input.workspaceId);
+    }
+    const rows = (await tx
+      .objectStore(STORE_PAGES)
+      .index("workspaceId")
+      .getAll(input.workspaceId)) as unknown[];
+    const pages = rows.map(normalizePage).filter((p): p is Page => p !== null);
+    const now = Date.now();
+    const page: Page = {
+      id: createId(),
+      workspaceId: input.workspaceId,
+      parentId: input.parentId,
+      kind: "document",
+      title: input.title,
+      icon: input.icon ?? null,
+      position: nextPosition(pages, input.parentId),
+      favoriteAt: null,
+      lastOpenedAt: null,
+      deletedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await tx.objectStore(STORE_PAGES).put(page);
+    const content: DocumentContent = {
+      pageId: page.id,
+      contentJson: parsed.value,
+      textSnapshot: input.textSnapshot,
+      updatedAt: now,
+    };
+    await tx.objectStore(STORE_CONTENTS).put(content);
+    await tx.done;
+    return page;
+  },
+
+  async replaceContent(input) {
+    const parsed = parseDocumentContent(input.contentJson);
+    if (!parsed.ok) {
+      throw new DomainError(
+        "CORRUPTED_DOCUMENT",
+        "正文 JSON 未通过白名单校验",
+      );
+    }
+    const db = await getDB();
+    const tx = db.transaction([STORE_PAGES, STORE_CONTENTS], "readwrite");
+    const page = normalizePage(
+      await tx.objectStore(STORE_PAGES).get(input.pageId),
+    );
+    if (!page) {
+      throw new DomainError(
+        "PAGE_NOT_FOUND",
+        `页面不存在或数据损坏: ${input.pageId}`,
+      );
+    }
+    const content: DocumentContent = {
+      pageId: input.pageId,
+      contentJson: parsed.value,
+      textSnapshot: input.textSnapshot,
+      updatedAt: Date.now(),
+    };
+    await tx.objectStore(STORE_CONTENTS).put(content);
+    await tx.done;
+    return content;
+  },
+};
+
 function isValidRevision(record: unknown): record is DocumentRevision {
   const r = record as DocumentRevision;
   return (
@@ -642,10 +749,16 @@ export const attachmentRepository: AttachmentRepository = {
     await db.delete(STORE_ATTACHMENTS, id);
   },
 
-  async removeOrphans(pageId, referencedIds) {
+  async removeOrphans(pageId, referencedIds, options) {
     const referenced = new Set(referencedIds);
+    const cutoff = options?.createdBeforeOrAt;
     const all = await attachmentRepository.listByPage(pageId);
-    const orphans = all.filter((a) => !referenced.has(a.id));
+    // 只清理快照产生之前已存在的孤儿：快照之后新建的附件可能尚未进入
+    // 新正文快照，删除会误伤（R004 INV-03）。
+    const orphans = all.filter(
+      (a) =>
+        !referenced.has(a.id) && (cutoff === undefined || a.createdAt <= cutoff),
+    );
     if (orphans.length === 0) return 0;
     const db = await getDB();
     const tx = db.transaction(STORE_ATTACHMENTS, "readwrite");

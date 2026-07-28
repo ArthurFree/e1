@@ -29,11 +29,16 @@
 | 面板开关统一（R003 阶段 6） | OverlayContext 自包含持有 settings/search/trash/treeDrawer 开关，删除 onOpenTree prop 链 | 三处分散的局部状态统一；prop drilling 消除 |
 | 提及候选更新（R003 阶段 6） | 扩展经 `getMentionPages` 函数 + ref 动态读取候选，编辑器不随 pages 重建 | 闭包快照曾导致新建/重命名后 @ 候选过期 |
 | IndexedDB v3（R003 阶段 7） | 纯索引迁移（pages 复合索引 + trash deletedAt），不做数据迁移、不加 nullable 规范化列 | 所有回收站过滤都在工作区数据集内内存完成；纯索引零数据风险 |
-| 搜索索引（R003 阶段 7） | 会话加载时构建工作区级内存索引；页面写操作 syncPages/upsertPage、正文保存经协调器 onSaved 增量更新 | 查询不再全扫 pages + content.listAll；语义与 searchPages 等价由测试强制 |
+| 搜索索引（R003 阶段 7，R004 修订） | 会话加载时构建工作区级内存索引；页面写操作 syncPages/upsertPage、正文保存经 `DocumentCommitService.commit` 增量更新（不再走协调器 onSaved 回调） | 查询不再全扫 pages + content.listAll；语义与 searchPages 等价由测试强制；索引同步收敛到提交服务单点（INV-05） |
 | 页面树邻接表（R003 阶段 7） | `buildChildrenByParent` 一次 O(n) 构建，collectSubtreeIds 与树渲染共用 | 原逐层全数组 filter 为 O(n²) |
 | 清空回收站（R003 阶段 7） | 单事务跨六 store 级联删除，不再逐根页面循环 purge | 中性数据量下避免 N 个独立事务与 N 次全量读 |
 | 开发诊断（R003 阶段 8） | `devDiagnostics` 只记录指标名/毫秒/计数，默认仅 Vite dev 启用（生产与测试静默） | 性能与损坏可观测，同时不泄漏文档正文与密钥 |
 | 文档结构（R003 阶段 8） | 架构文档拆分为 `docs/architecture/` 六主题 + `docs/adr/` 四 ADR + `docs/migrations/`；本表保持全部决策的汇总地位 | 单文件架构文档已无法承载现状；新开发者可按主题定位 |
+| 保存后半程保护（R004 阶段 1） | `isCurrent()` 在每个 await 后重查（不缓存布尔）；维护任务（版本/附件清理/恢复缓冲）整段跳过过期快照 | 正文落盘后的挂起窗口内继续编辑时，旧快照曾照发 saved、误清恢复缓冲、误删新附件 |
+| 附件清理时间边界（R004 阶段 1） | `removeOrphans` 增加 `createdBeforeOrAt`，协调器传快照 `capturedAt` | 快照产生后新建、尚未进入新正文快照的附件不被旧快照误删（INV-03） |
+| 维护失败分流（R004 阶段 1） | 正文提交失败才进 error 态；维护失败经 `onMaintenanceError` 上报开发诊断，正文视为已保存 | 附件清理等失败曾让用户误以为正文未保存 |
+| 原子文档写（R004 阶段 2） | `DocumentWriteRepository.createWithContent` 单事务「校验 + 写页面 + 写正文」，正文 JSON 经白名单校验，失败整体回滚 | 模板/AI/导入的「先建空页再覆盖」两段式曾留下空文档中间态（INV-04） |
+| 正文提交单点（R004 阶段 2） | `DocumentCommitService`：commit（协调器通道）与 createWithContent/replaceContent（外部路径）统一「落盘 + 搜索索引同步」；协调器 deps 由 ContentRepository 收窄为 DocumentContentCommitter | INV-05 由单点保证；onSaved 回调随之移除 |
 
 重大架构决策另有 ADR 详述（背景/替代方案），见 [adr/](./adr/)。
 

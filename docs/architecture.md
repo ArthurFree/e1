@@ -10,6 +10,7 @@
 4. [architecture/editor-save-pipeline.md](./architecture/editor-save-pipeline.md)：SaveCoordinator 保存管线、防抖与恢复缓冲。
 5. [architecture/persistence.md](./architecture/persistence.md)：DB v3 schema 与索引、迁移策略、仓储横切策略、搜索索引、内存仓储。
 6. [architecture/error-handling.md](./architecture/error-handling.md)：DomainError 错误码、正文校验、损坏恢复流程、开发诊断。
+7. [architecture/document-write-path.md](./architecture/document-write-path.md)：全部正文写入路径盘点、保存状态机、generation 语义与 R004 一致性不变量。
 
 ## 决策记录
 

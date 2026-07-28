@@ -15,6 +15,7 @@ import type { AIProvider } from "../domain/ai";
 import type {
   AttachmentRepository,
   ContentRepository,
+  DocumentWriteRepository,
   PageRepository,
   PreferencesRepository,
   RevisionRepository,
@@ -24,6 +25,7 @@ import type {
 import type { AIConfig } from "../domain/types";
 import type { WorkspaceSessionService } from "./services/WorkspaceSessionService";
 import type { SearchIndexService } from "./services/SearchIndexService";
+import type { DocumentCommitService } from "./services/DocumentCommitService";
 import type {
   DocumentSaveCoordinator,
   SaveCoordinatorState,
@@ -38,6 +40,10 @@ export interface AppServices {
   attachment: AttachmentRepository;
   tag: TagRepository;
   preferences: PreferencesRepository;
+  /** 原子文档写仓储（R004 阶段 2，INV-04）：页面与初始正文单事务创建。 */
+  documentWrite: DocumentWriteRepository;
+  /** 文档提交服务（R004 阶段 2）：正文写入 + 搜索索引同步单点（INV-05）。 */
+  documentCommit: DocumentCommitService;
   /** 知识库会话原子加载（无状态，可共享单例）。 */
   session: WorkspaceSessionService;
   /** 工作区级内存搜索索引（R003 阶段 7）。 */

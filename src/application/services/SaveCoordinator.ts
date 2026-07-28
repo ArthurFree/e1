@@ -6,19 +6,20 @@
  *   覆盖新内容，且旧保存会把仍有未保存内容的 UI 误报为「已保存」；
  * - 旧快照的孤儿附件清理会误删新快照引用的附件。
  *
- * 核心规则（R003 §1.1）：
+ * 核心规则（R003 §1.1 + R004 阶段 1）：
  * 1. 每次编辑 generation + 1（noteEdit）；
  * 2. 同一文档所有保存串行执行；
  * 3. 队列中只保留最新尚未执行的快照；
- * 4. 旧 generation 保存完成后不发布 saved；
- * 5. 只有最新 generation 保存成功时才执行附件清理与间隔版本；
- * 6. 保存失败后保留最新快照用于重试。
+ * 4. 旧 generation 保存完成后不发布 saved（每个 await 之后重查 isCurrent）；
+ * 5. 只有当前 generation 才执行维护任务（间隔版本/附件清理/恢复缓冲清理），
+ *    附件清理只删快照 capturedAt 之前已存在的孤儿（INV-03）；
+ * 6. 正文提交失败保留最新快照用于重试；维护失败不污染正文保存状态，
+ *    经 onMaintenanceError 上报诊断（INV-02 与 R004 §1.5）。
  *
  * 仓储经构造函数注入（domain port），本模块不依赖 IndexedDB 具体实现。
  */
 import type {
   AttachmentRepository,
-  ContentRepository,
   RevisionRepository,
 } from "../../domain/repositories";
 import {
@@ -27,12 +28,15 @@ import {
 } from "../../domain/revisions";
 import { collectAttachmentIds } from "../../editor/attachment";
 import { increment, trackTiming } from "../devDiagnostics";
+import type { DocumentContentCommitter } from "./DocumentCommitService";
 import type { DocumentRecoveryRecord } from "./documentRecovery";
 
-/** 待保存快照；generation 由协调器在入队时盖章。 */
+/** 待保存快照；generation 与 capturedAt 由协调器在入队时盖章。 */
 export interface SaveSnapshot {
   pageId: string;
   generation: number;
+  /** 快照产生时间：附件清理只删该时间之前已存在的孤儿（R004 INV-03）。 */
+  capturedAt: number;
   contentJson: unknown;
   textSnapshot: string;
 }
@@ -56,16 +60,20 @@ export interface RecoveryStore {
 }
 
 export interface SaveCoordinatorDeps {
-  content: ContentRepository;
+  /** 正文提交通道（R004 阶段 2）：落盘 + 搜索索引同步由提交服务单点保证。 */
+  committer: DocumentContentCommitter;
   revisions: RevisionRepository;
   attachments: AttachmentRepository;
   /** 可选恢复缓冲；每次入队写、保存成功清。 */
   recovery?: RecoveryStore;
   /**
-   * 保存成功回调（R003 阶段 7：搜索索引增量更新）。
-   * 串行队列保证按提交顺序触发，最后一次携带最新文本。
+   * 维护步骤失败回调（R004 阶段 1）：版本创建、附件清理、恢复缓冲清理
+   * 失败时正文已落盘，不进 error 态，只经此回调上报诊断。
    */
-  onSaved?(pageId: string, textSnapshot: string, savedAt: number): void;
+  onMaintenanceError?(
+    stage: "revision" | "attachment-cleanup" | "recovery-cleanup",
+    error: unknown,
+  ): void;
   onStateChange?(state: SaveCoordinatorState): void;
 }
 
@@ -130,6 +138,7 @@ export class DocumentSaveCoordinator {
     const snapshot: SaveSnapshot = {
       pageId: this.pageId,
       generation: this.generation,
+      capturedAt: Date.now(),
       contentJson: input.contentJson,
       textSnapshot: input.textSnapshot,
     };
@@ -160,6 +169,10 @@ export class DocumentSaveCoordinator {
   retryLatest(): Promise<SaveResult> {
     if (this.disposed) {
       return Promise.reject(new Error("保存协调器已销毁"));
+    }
+    if (!this.pending && !this.lastFailed) {
+      // 空状态没有可重试的快照：显式拒绝，避免等待者永远挂起（R004 §1.6）。
+      return Promise.reject(new Error("没有可重试的保存"));
     }
     if (!this.pending && this.lastFailed) {
       this.pending = this.lastFailed;
@@ -219,21 +232,50 @@ export class DocumentSaveCoordinator {
     }
   }
 
+  /**
+   * 最新性判定（R004 §1.2）：每次 await 之后必须重新调用，
+   * 不得缓存为布尔值——后处理的每个挂起窗口内都可能产生新编辑。
+   */
+  private isCurrent(snapshot: SaveSnapshot): boolean {
+    return !this.disposed && snapshot.generation === this.generation;
+  }
+
   private async runSave(snapshot: SaveSnapshot): Promise<void> {
+    const savedAt = await this.commitContent(snapshot);
+    this.settleWaiters(snapshot.generation, { generation: snapshot.generation, savedAt }, null);
+    // 旧快照：正文已按序落盘（提交服务已同步索引），维护与 saved 发布只属于当前 generation。
+    if (!this.isCurrent(snapshot)) return;
+    await this.runMaintenance(snapshot, savedAt);
+    // 维护的挂起窗口内可能来了新编辑：发布前再查一次（INV-02）。
+    if (this.isCurrent(snapshot)) {
+      this.lastFailed = null;
+      this.publish({ status: "saved", savedAt });
+    }
+  }
+
+  /** 正文提交：唯一的致命步骤——失败即 error 态并保留快照供重试。 */
+  private async commitContent(snapshot: SaveSnapshot): Promise<number> {
     const t0 = performance.now();
-    await this.deps.content.save(
+    const { savedAt } = await this.deps.committer.commit(
       snapshot.pageId,
       snapshot.contentJson,
       snapshot.textSnapshot,
     );
     trackTiming("idb-save", performance.now() - t0);
     this.savedGeneration = snapshot.generation;
-    const isLatest = snapshot.generation === this.generation;
-    const now = Date.now();
-    if (isLatest) {
+    return savedAt;
+  }
+
+  /**
+   * 维护任务（R004 §1.4/§1.5）：自动版本、版本裁剪、孤儿附件清理、恢复缓冲清理。
+   * 每个步骤独立兜底：维护失败时正文已落盘，经 onMaintenanceError 上报诊断，
+   * 不进入 error 态、不要求用户重新保存正文。步骤之间重查最新性。
+   */
+  private async runMaintenance(snapshot: SaveSnapshot, savedAt: number): Promise<void> {
+    try {
       // 间隔自动版本：跟随成功保存的最新快照。
       await this.initPromise;
-      if (shouldCreateIntervalRevision(this.lastIntervalAt, now)) {
+      if (shouldCreateIntervalRevision(this.lastIntervalAt, savedAt)) {
         const created = await this.deps.revisions.add(
           snapshot.pageId,
           snapshot.contentJson,
@@ -241,27 +283,34 @@ export class DocumentSaveCoordinator {
           "interval",
         );
         if (created) {
-          this.lastIntervalAt = now;
-          await this.deps.revisions.pruneInterval(
-            snapshot.pageId,
-            INTERVAL_REVISION_KEEP,
-          );
+          this.lastIntervalAt = savedAt;
+          if (this.isCurrent(snapshot)) {
+            await this.deps.revisions.pruneInterval(
+              snapshot.pageId,
+              INTERVAL_REVISION_KEEP,
+            );
+          }
         }
       }
-      // 只有最新快照才允许清理孤儿附件，防止旧快照误删新附件。
+    } catch (err) {
+      this.deps.onMaintenanceError?.("revision", err);
+    }
+    if (!this.isCurrent(snapshot)) return;
+    try {
+      // 附件清理只删快照产生之前已存在的孤儿，防止误删窗口内新建附件（INV-03）。
       await this.deps.attachments.removeOrphans(
         snapshot.pageId,
         collectAttachmentIds(snapshot.contentJson),
+        { createdBeforeOrAt: snapshot.capturedAt },
       );
-      this.deps.recovery?.clear(snapshot.pageId, this.savedGeneration);
+    } catch (err) {
+      this.deps.onMaintenanceError?.("attachment-cleanup", err);
     }
-    this.settleWaiters(snapshot.generation, { generation: snapshot.generation, savedAt: now }, null);
-    // 保存成功回调（搜索索引增量更新等）；按串行队列顺序触发。
-    this.deps.onSaved?.(snapshot.pageId, snapshot.textSnapshot, now);
-    // 规则 4：旧代次完成不发布 saved（此时必有更新快照排队或在编辑中）。
-    if (isLatest) {
-      this.lastFailed = null;
-      this.publish({ status: "saved", savedAt: now });
+    if (!this.isCurrent(snapshot)) return;
+    try {
+      this.deps.recovery?.clear(snapshot.pageId, this.savedGeneration);
+    } catch (err) {
+      this.deps.onMaintenanceError?.("recovery-cleanup", err);
     }
   }
 

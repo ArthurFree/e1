@@ -6,6 +6,8 @@
  */
 import type { AppServices } from "../../application/AppServices";
 import type { AIProvider } from "../../domain/ai";
+import { increment } from "../../application/devDiagnostics";
+import { DocumentCommitService } from "../../application/services/DocumentCommitService";
 import { DocumentSaveCoordinator } from "../../application/services/SaveCoordinator";
 import { WorkspaceSessionService } from "../../application/services/WorkspaceSessionService";
 import { SearchIndexService } from "../../application/services/SearchIndexService";
@@ -35,6 +37,12 @@ export function createInMemoryAppServices(options: InMemoryAppServicesOptions = 
     content: repos.content,
   });
   const searchIndex = new SearchIndexService();
+  // 文档提交服务（R004 阶段 2）：与生产容器同装配。
+  const documentCommit = new DocumentCommitService({
+    content: repos.content,
+    documentWrite: repos.documentWrite,
+    searchIndex,
+  });
   // 内存恢复缓冲：与 localStorage 版同接口，数据随容器存活。
   const recoveryData = new Map<
     string,
@@ -50,6 +58,7 @@ export function createInMemoryAppServices(options: InMemoryAppServicesOptions = 
   };
   const services: AppServices = {
     ...repos,
+    documentCommit,
     session,
     searchIndex,
     createAIProvider:
@@ -60,7 +69,7 @@ export function createInMemoryAppServices(options: InMemoryAppServicesOptions = 
           },
     createSaveCoordinator: (pageId, onStateChange) =>
       new DocumentSaveCoordinator(pageId, {
-        content: repos.content,
+        committer: documentCommit,
         revisions: repos.revision,
         attachments: repos.attachment,
         recovery: {
@@ -72,7 +81,8 @@ export function createInMemoryAppServices(options: InMemoryAppServicesOptions = 
             }
           },
         },
-        onSaved: (pid, text, at) => searchIndex.updateText(pid, text, at),
+        // 维护失败只记录开发诊断（R004 阶段 1），与生产容器一致。
+        onMaintenanceError: (stage) => increment("save-maintenance-error", stage),
         onStateChange,
       }),
   };
