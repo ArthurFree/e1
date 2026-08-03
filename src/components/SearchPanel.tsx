@@ -8,8 +8,11 @@
 import { useRef, useState } from "react";
 import type { SuggestionKeyDownProps } from "@tiptap/suggestion";
 import type { SearchResult } from "../domain/types";
-import { useWorkspaceSession } from "../state/WorkspaceSessionContext";
-import { useNavigation } from "../state/NavigationContext";
+import {
+  useWorkspaceCommands,
+  useWorkspaceData,
+} from "../state/WorkspaceSessionContext";
+import { useNavigationCommands } from "../state/NavigationContext";
 import { useDebouncedCallback } from "../hooks/useDebouncedCallback";
 import { Dialog } from "./ui/Dialog";
 import { PageIcon } from "./ui/icons";
@@ -26,8 +29,9 @@ interface SearchPanelProps {
 
 /** 全局搜索面板：按标题与正文匹配当前知识库，Enter 跳转。 */
 export function SearchPanel({ onClose }: SearchPanelProps) {
-  const { pages, search } = useWorkspaceSession();
-  const { selectPage } = useNavigation();
+  const { pages } = useWorkspaceData();
+  const { search } = useWorkspaceCommands();
+  const { selectPage } = useNavigationCommands();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const listRef = useRef<CommandListRef>(null);

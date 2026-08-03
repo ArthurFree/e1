@@ -9,7 +9,7 @@
 import { useEffect, useState } from "react";
 import { usePreferences } from "../state/PreferencesContext";
 import { useOverlay } from "../state/OverlayContext";
-import { useNavigation } from "../state/NavigationContext";
+import { useNavigationState } from "../state/NavigationContext";
 import { useAppServices } from "../state/AppServicesProvider";
 import { validateAIConfig } from "../domain/ai";
 import { revisionContentBytes } from "../domain/revisions";
@@ -35,7 +35,7 @@ interface RevisionUsage {
 export function SettingsPanel() {
   const { preferences, setAIConfig } = usePreferences();
   const { closeSettings } = useOverlay();
-  const { selectedPageId } = useNavigation();
+  const { selectedPageId } = useNavigationState();
   const services = useAppServices();
   const current = preferences.aiConfig;
 

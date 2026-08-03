@@ -8,8 +8,14 @@
  */
 
 import { useState } from "react";
-import { useWorkspaceSession } from "../../state/WorkspaceSessionContext";
-import { useNavigation } from "../../state/NavigationContext";
+import {
+  useWorkspaceCommands,
+  useWorkspaceData,
+} from "../../state/WorkspaceSessionContext";
+import {
+  useNavigationCommands,
+  useNavigationState,
+} from "../../state/NavigationContext";
 import { useOverlay } from "../../state/OverlayContext";
 import { SearchPanel } from "../SearchPanel";
 import { TrashPanel } from "../TrashPanel";
@@ -33,9 +39,10 @@ import {
  * 面板开关统一由 OverlayContext 持有（R003 阶段 6）。
  */
 export function GlobalSidebar() {
-  const { workspaces, workspace, switchWorkspace, createWorkspace } =
-    useWorkspaceSession();
-  const { view, showStart, showRecent, showFavorites } = useNavigation();
+  const { workspaces, workspace } = useWorkspaceData();
+  const { switchWorkspace, createWorkspace } = useWorkspaceCommands();
+  const { view } = useNavigationState();
+  const { showStart, showRecent, showFavorites } = useNavigationCommands();
   const {
     settingsOpen,
     searchOpen,

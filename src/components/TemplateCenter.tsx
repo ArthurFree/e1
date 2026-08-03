@@ -9,8 +9,11 @@ import { useState } from "react";
 import { jsonToText } from "../editor/markdown";
 import { DOC_TEMPLATES, type DocTemplate } from "../editor/templates";
 import type { PickerTarget } from "../domain/picker";
-import { useWorkspaceSession } from "../state/WorkspaceSessionContext";
-import { useNavigation } from "../state/NavigationContext";
+import {
+  useWorkspaceCommands,
+  useWorkspaceData,
+} from "../state/WorkspaceSessionContext";
+import { useNavigationCommands } from "../state/NavigationContext";
 import { Dialog } from "./ui/Dialog";
 import { TargetPicker } from "./TargetPicker";
 
@@ -24,8 +27,9 @@ interface TemplateCenterProps {
  * 选择模板 → 选择目标知识库/分组 → 创建副本并打开；取消不产生任何文档。
  */
 export function TemplateCenter({ onClose }: TemplateCenterProps) {
-  const { workspaces, createDocumentWithContent } = useWorkspaceSession();
-  const { openDocument } = useNavigation();
+  const { workspaces } = useWorkspaceData();
+  const { createDocumentWithContent } = useWorkspaceCommands();
+  const { openDocument } = useNavigationCommands();
   const [selected, setSelected] = useState<DocTemplate | null>(null);
 
   const createFromTemplate = async (

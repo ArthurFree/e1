@@ -24,8 +24,14 @@ import {
   parseDocumentContent,
   sanitizeDocumentContent,
 } from "../domain/validation/documentContent";
-import { useWorkspaceSession } from "../state/WorkspaceSessionContext";
-import { useNavigation } from "../state/NavigationContext";
+import {
+  useWorkspaceCommands,
+  useWorkspaceData,
+} from "../state/WorkspaceSessionContext";
+import {
+  useNavigationCommands,
+  useNavigationState,
+} from "../state/NavigationContext";
 import { usePreferences } from "../state/PreferencesContext";
 import { useOverlay } from "../state/OverlayContext";
 import { Button } from "./ui/Button";
@@ -68,23 +74,16 @@ function emptyContent(pageId: string, workspaceId: string): DocumentContent {
 /** 主栏：按视图渲染开始首页 / 知识库首页 / 文档编辑区。 */
 export function MainArea() {
   const services = useAppServices();
+  const { pages, workspaceStatus, workspaceError } = useWorkspaceData();
   const {
-    pages,
     renamePage,
     markOpened,
     togglePageFavorite,
     createDocumentWithContent,
-    workspaceStatus,
-    workspaceError,
     retryLoad,
-  } = useWorkspaceSession();
-  const {
-    view,
-    selectedPageId,
-    titleFocusPageId,
-    clearTitleFocus,
-    openDocument,
-  } = useNavigation();
+  } = useWorkspaceCommands();
+  const { view, selectedPageId, titleFocusPageId } = useNavigationState();
+  const { clearTitleFocus, openDocument } = useNavigationCommands();
   const { preferences, setTheme } = usePreferences();
   const { openTreeDrawer } = useOverlay();
   const page = pages.find((p) => p.id === selectedPageId) ?? null;

@@ -1,7 +1,14 @@
 /**
- * 知识库会话状态域（R003 阶段 6）：当前知识库及其页面/标签/关联数据
- * 与全部写操作。Provider 由 AppState 的 AppProvider 统一供给（单一状态
- * 所有者 + 窄 Context 分发），本文件定义契约与读取入口。
+ * 知识库会话状态域（R003 阶段 6 引入，R004 §4.6 细分）：当前知识库及其
+ * 页面/标签/关联数据与全部写操作。Provider 由 AppProviders 统一装配，
+ * 本文件定义契约与读取入口。
+ *
+ * Context 细分为两片（R004 §4.6）：
+ * - WorkspaceDataContext：数据切片，随会话/页面/标签变化而更新；
+ * - WorkspaceCommandContext：命令切片，全部动作引用稳定（经 ref 读取
+ *   最新数据），数据变化不会引起纯命令消费者重渲染。
+ * 聚合 hook useWorkspaceSession() 同时订阅两片，value 形状与细分前一致，
+ * 供既有测试与尚未细分的调用方过渡使用；生产组件按需取其一或两者。
  */
 import { createContext, useContext } from "react";
 import type {
@@ -16,14 +23,12 @@ import type {
 /** 知识库会话加载状态。 */
 export type WorkspaceSessionStatus = "idle" | "loading" | "ready" | "error";
 
-/** 知识库会话域暴露给组件的状态与动作。 */
-export interface WorkspaceSessionContextValue {
+/** 知识库会话域的数据切片：随会话数据变化而更新。 */
+export interface WorkspaceDataContextValue {
   /** 初始加载（含路由恢复）完成后置为 true。 */
   ready: boolean;
   /** 初始加载失败时的错误信息；为 null 表示正常。 */
   error: string | null;
-  /** 初始加载失败后重试。 */
-  retryLoad(): void;
   /** 全部知识库（含未选中的）。 */
   workspaces: Workspace[];
   /** 当前知识库；未匹配时为 null。 */
@@ -37,6 +42,12 @@ export interface WorkspaceSessionContextValue {
   tags: Tag[];
   /** 当前工作区的全部页面-标签关联。 */
   pageTags: PageTag[];
+}
+
+/** 知识库会话域的命令切片：全部动作引用稳定。 */
+export interface WorkspaceCommandContextValue {
+  /** 初始加载失败后重试。 */
+  retryLoad(): void;
   /** 切换当前知识库：原子重载其页面/标签/关联并进入知识库首页。 */
   switchWorkspace(id: string): Promise<void>;
   /** 创建知识库并立即切换过去。 */
@@ -86,14 +97,39 @@ export interface WorkspaceSessionContextValue {
   search(query: string): Promise<SearchResult[]>;
 }
 
-export const WorkspaceSessionContext =
-  createContext<WorkspaceSessionContextValue | null>(null);
+/** 聚合形状（与细分前一致）：数据切片 + 命令切片。 */
+export type WorkspaceSessionContextValue = WorkspaceDataContextValue &
+  WorkspaceCommandContextValue;
 
-/** 读取知识库会话域；在 Provider 外调用直接抛错。 */
-export function useWorkspaceSession(): WorkspaceSessionContextValue {
-  const ctx = useContext(WorkspaceSessionContext);
+export const WorkspaceDataContext =
+  createContext<WorkspaceDataContextValue | null>(null);
+
+export const WorkspaceCommandContext =
+  createContext<WorkspaceCommandContextValue | null>(null);
+
+/** 读取知识库会话数据切片；在 Provider 外调用直接抛错。 */
+export function useWorkspaceData(): WorkspaceDataContextValue {
+  const ctx = useContext(WorkspaceDataContext);
   if (!ctx) {
-    throw new Error("useWorkspaceSession 必须在 AppProvider 内使用");
+    throw new Error("useWorkspaceData 必须在 AppProvider 内使用");
   }
   return ctx;
+}
+
+/** 读取知识库会话命令切片；在 Provider 外调用直接抛错。 */
+export function useWorkspaceCommands(): WorkspaceCommandContextValue {
+  const ctx = useContext(WorkspaceCommandContext);
+  if (!ctx) {
+    throw new Error("useWorkspaceCommands 必须在 AppProvider 内使用");
+  }
+  return ctx;
+}
+
+/**
+ * 聚合读取知识库会话域（数据 + 命令，形状不变）；同时订阅两片 Context，
+ * 仅供既有测试与过渡调用方使用，生产组件应改用 useWorkspaceData /
+ * useWorkspaceCommands 以获得更细的渲染粒度。
+ */
+export function useWorkspaceSession(): WorkspaceSessionContextValue {
+  return { ...useWorkspaceData(), ...useWorkspaceCommands() };
 }

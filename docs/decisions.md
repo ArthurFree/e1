@@ -52,6 +52,7 @@
 | 多标签页同步（R004 阶段 7）                | BroadcastChannel 频道 + tabId 回声抑制；页面/工作区/正文/偏好四类事件；当前文档 dirty 时给冲突提示（与乐观锁冲突面板汇合）                                                                | 跨标签页增量刷新替代各自为政的过期镜像                                                                        |
 | 连接生命周期（R004 阶段 7）                | db.ts 处理 blocked/blocking/versionchange/terminated：他页升级时同步关连接清缓存，terminated 后下次操作重连，UI 提示条经回调注入                                                          | 升级阻塞与连接终止不再白屏或僵死                                                                              |
 | 工程门禁（R004 阶段 7）                    | ESLint flat + Prettier + dependency-cruiser（no-circular + 分层 forbidden）+ `npm run ci` 统一门禁 + GitHub Actions 双 job（quality/e2e）；视觉基线不进 CI                                | 循环依赖与分层违规阻止合并；TS 7 原生编译器经 typescript6 别名供 JS API 工具链                                |
+| Context 数据/命令细分（R004 §4.6）         | Workspace/Navigation 各拆为 Data(State)/Command 双 Context；命令回调经 sessionRef/workspacesRef 读取最新数据保持引用恒定；组件一律用细粒度 hook（架构测试强制），聚合 hook 仅供测试       | 纯命令消费者（AI 草稿/新建知识库/搜索导航等）不随数据与路由变化重渲染；memo 子树 props 不再因回调身份漂移失效 |
 
 重大架构决策另有 ADR 详述（背景/替代方案），见 [adr/](./adr/)。
 

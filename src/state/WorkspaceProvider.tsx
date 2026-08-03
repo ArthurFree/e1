@@ -9,7 +9,10 @@
  * - 跨域动作（切换知识库后导航、新建文档后打开等）经 navigationBridge
  *   调用导航域命令，不复制导航逻辑；
  * - 导航域所需的会话能力（loadSession/loadPages/会话快照）经内部通道
- *   WorkspaceInternalsContext 暴露，公开 value 形状不变。
+ *   WorkspaceInternalsContext 暴露，公开 value 形状不变；
+ * - 公开 Context 细分为数据/命令两片（R004 §4.6）：命令回调全部经 ref
+ *   读取最新数据（sessionRef/workspacesRef），引用恒定，数据变化不会
+ *   引起纯命令消费者重渲染。
  */
 import {
   createContext,
@@ -29,8 +32,10 @@ import type { WorkspaceSessionData } from "../application/services/WorkspaceSess
 import { trackTiming } from "../application/devDiagnostics";
 import { useAppServices } from "./AppServicesProvider";
 import {
-  WorkspaceSessionContext,
-  type WorkspaceSessionContextValue,
+  WorkspaceCommandContext,
+  WorkspaceDataContext,
+  type WorkspaceCommandContextValue,
+  type WorkspaceDataContextValue,
 } from "./WorkspaceSessionContext";
 import { initialSession, sessionReducer } from "./workspace/sessionReducer";
 import { usePreferencesRoute } from "./PreferencesProvider";
@@ -90,9 +95,12 @@ export function WorkspaceProvider({
   const [session, dispatchSession] = useReducer(sessionReducer, initialSession);
   // 会话加载请求序号：每次加载递增，过期响应据此丢弃（R003 阶段 2）。
   const sessionRequestRef = useRef(0);
-  // 会话快照镜像：getSnapshot 经 ref 读取最新状态，保持引用稳定。
+  // 会话快照镜像：命令回调与 getSnapshot 经 ref 读取最新状态，保持引用稳定。
   const sessionRef = useRef(session);
   sessionRef.current = session;
+  // workspaces 镜像：命令回调经 ref 读取最新列表，保持引用稳定（R004 §4.6）。
+  const workspacesRef = useRef(workspaces);
+  workspacesRef.current = workspaces;
 
   const workspaceId = session.workspaceId;
   const pages = session.pages;
@@ -250,11 +258,14 @@ export function WorkspaceProvider({
     setLoadKey((k) => k + 1);
   }, []);
 
+  // —— 以下命令回调统一经 sessionRef/workspacesRef 读取最新数据，
+  //    依赖只剩稳定引用（仓储/服务/桥），回调身份恒定（R004 §4.6）——
+
   const togglePageFavorite = useCallback(
     async (pageId: string) => {
       // 收藏视图可跨知识库操作，目标页面不一定在当前镜像中，需回退全量查询。
       const page =
-        pages.find((p) => p.id === pageId) ??
+        sessionRef.current.pages.find((p) => p.id === pageId) ??
         (await pageRepository.listAll()).find((p) => p.id === pageId);
       if (!page) return;
       // favoriteAt 兼作排序依据：收藏时写入时间戳，取消时清空。
@@ -266,12 +277,12 @@ export function WorkspaceProvider({
           prev.map((p) => (p.id === pageId ? { ...p, favoriteAt: next } : p)),
       });
     },
-    [pages, pageRepository],
+    [pageRepository],
   );
 
   const toggleWorkspaceFavorite = useCallback(
     async (id: string) => {
-      const ws = workspaces.find((w) => w.id === id);
+      const ws = workspacesRef.current.find((w) => w.id === id);
       if (!ws) return;
       const next = ws.favoriteAt === null ? Date.now() : null;
       await workspaceRepository.setFavorite(id, next);
@@ -279,7 +290,7 @@ export function WorkspaceProvider({
         prev.map((w) => (w.id === id ? { ...w, favoriteAt: next } : w)),
       );
     },
-    [workspaces, workspaceRepository],
+    [workspaceRepository],
   );
 
   const createDocumentIn = useCallback(
@@ -290,7 +301,7 @@ export function WorkspaceProvider({
         kind: "document",
         title: "无标题",
       });
-      if (wsId !== workspaceId) {
+      if (wsId !== sessionRef.current.workspaceId) {
         // 在其他知识库中创建（如开始首页选择目标库）：原子切换会话上下文。
         const data = await loadSession(wsId);
         // 会话加载被更新的请求取代时中止导航，避免混入过期知识库。
@@ -315,7 +326,6 @@ export function WorkspaceProvider({
       return page;
     },
     [
-      workspaceId,
       loadSession,
       loadPages,
       navBridge,
@@ -327,6 +337,7 @@ export function WorkspaceProvider({
 
   const createPage = useCallback(
     async (kind: PageKind, parentId: string | null) => {
+      const workspaceId = sessionRef.current.workspaceId;
       if (!workspaceId) return null;
       const page = await pageRepository.create({
         workspaceId,
@@ -346,7 +357,7 @@ export function WorkspaceProvider({
       });
       return page;
     },
-    [workspaceId, loadPages, navBridge, pageRepository, services],
+    [loadPages, navBridge, pageRepository, services],
   );
 
   // 原子创建「页面 + 初始正文」（R004）：模板/AI 草稿/Markdown 导入不再
@@ -361,7 +372,7 @@ export function WorkspaceProvider({
     }) => {
       const page = await services.documentCommit.createWithContent(input);
       // 属于当前知识库时全量刷新页面镜像（与 createPage 同一刷新方式）。
-      if (input.workspaceId === workspaceId) {
+      if (input.workspaceId === sessionRef.current.workspaceId) {
         await loadPages(input.workspaceId);
       }
       services.syncChannel.post({
@@ -371,7 +382,7 @@ export function WorkspaceProvider({
       });
       return page;
     },
-    [workspaceId, loadPages, services],
+    [loadPages, services],
   );
 
   const renamePage = useCallback(
@@ -385,12 +396,10 @@ export function WorkspaceProvider({
           prev.map((p) => (p.id === id ? { ...p, title, updatedAt: now } : p)),
       });
       // 搜索索引同步标题（不刷新整库列表的路径）。
-      const current = pages.find((p) => p.id === id);
+      const current = sessionRef.current.pages.find((p) => p.id === id);
       if (current) {
         services.searchIndex.upsertPage({ ...current, title, updatedAt: now });
-      }
-      // 跨标签页同步（R004 §7.2）：其他标签页刷新页面镜像。
-      if (current) {
+        // 跨标签页同步（R004 §7.2）：其他标签页刷新页面镜像。
         services.syncChannel.post({
           type: "page-changed",
           workspaceId: current.workspaceId,
@@ -398,11 +407,12 @@ export function WorkspaceProvider({
         });
       }
     },
-    [pageRepository, pages, services],
+    [pageRepository, services],
   );
 
   const deletePage = useCallback(
     async (id: string) => {
+      const workspaceId = sessionRef.current.workspaceId;
       await pageRepository.remove(id);
       if (workspaceId) await loadPages(workspaceId);
       // 删除当前正在编辑的文档：主区域返回知识库首页。
@@ -416,11 +426,12 @@ export function WorkspaceProvider({
         });
       }
     },
-    [workspaceId, loadPages, navBridge, pageRepository, services],
+    [loadPages, navBridge, pageRepository, services],
   );
 
   const movePage = useCallback(
     async (id: string, parentId: string | null, index: number) => {
+      const workspaceId = sessionRef.current.workspaceId;
       await pageRepository.move(id, parentId, index);
       if (workspaceId) await loadPages(workspaceId);
       if (workspaceId) {
@@ -431,11 +442,12 @@ export function WorkspaceProvider({
         });
       }
     },
-    [workspaceId, loadPages, pageRepository, services],
+    [loadPages, pageRepository, services],
   );
 
   const restorePage = useCallback(
     async (id: string) => {
+      const workspaceId = sessionRef.current.workspaceId;
       await pageRepository.restore(id);
       if (workspaceId) await loadPages(workspaceId);
       if (workspaceId) {
@@ -446,11 +458,12 @@ export function WorkspaceProvider({
         });
       }
     },
-    [workspaceId, loadPages, pageRepository, services],
+    [loadPages, pageRepository, services],
   );
 
   const purgePage = useCallback(
     async (id: string) => {
+      const workspaceId = sessionRef.current.workspaceId;
       await pageRepository.purge(id);
       if (workspaceId) await loadPages(workspaceId);
       // 与软删一致：彻底删除当前文档时主区域回到知识库首页。
@@ -464,10 +477,11 @@ export function WorkspaceProvider({
         });
       }
     },
-    [workspaceId, loadPages, navBridge, pageRepository, services],
+    [loadPages, navBridge, pageRepository, services],
   );
 
   const emptyTrash = useCallback(async () => {
+    const workspaceId = sessionRef.current.workspaceId;
     if (!workspaceId) return;
     await pageRepository.purgeTrashed(workspaceId);
     await loadPages(workspaceId);
@@ -475,32 +489,35 @@ export function WorkspaceProvider({
       type: "workspace-changed",
       workspaceId,
     });
-  }, [workspaceId, loadPages, pageRepository, services]);
+  }, [loadPages, pageRepository, services]);
 
   const createTag = useCallback(
     async (name: string, color: string) => {
+      const workspaceId = sessionRef.current.workspaceId;
       if (!workspaceId) return null;
       const tag = await tagRepository.create(workspaceId, name, color);
       await loadTags(workspaceId);
       return tag;
     },
-    [workspaceId, loadTags, tagRepository],
+    [loadTags, tagRepository],
   );
 
   const deleteTag = useCallback(
     async (id: string) => {
+      const workspaceId = sessionRef.current.workspaceId;
       await tagRepository.remove(id);
       if (workspaceId) await loadTags(workspaceId);
     },
-    [workspaceId, loadTags, tagRepository],
+    [loadTags, tagRepository],
   );
 
   const setPageTags = useCallback(
     async (pageId: string, tagIds: string[]) => {
+      const workspaceId = sessionRef.current.workspaceId;
       await tagRepository.setPageTags(pageId, tagIds);
       if (workspaceId) await loadTags(workspaceId);
     },
-    [workspaceId, loadTags, tagRepository],
+    [loadTags, tagRepository],
   );
 
   const markOpened = useCallback(
@@ -518,6 +535,7 @@ export function WorkspaceProvider({
 
   const search = useCallback(
     async (query: string) => {
+      const { workspaceId, pages } = sessionRef.current;
       // 优先走工作区级内存索引（R003 阶段 7）；索引未构建时回退全量扫描。
       if (workspaceId && services.searchIndex.has(workspaceId)) {
         return services.searchIndex.query(workspaceId, query);
@@ -526,7 +544,7 @@ export function WorkspaceProvider({
       const contents = await contentRepository.listAll();
       return searchPages(pages, contents, query);
     },
-    [pages, workspaceId, services, contentRepository],
+    [services, contentRepository],
   );
 
   const createWorkspace = useCallback(
@@ -589,13 +607,12 @@ export function WorkspaceProvider({
     });
   }, [services, loadPages]);
 
-  // —— 公开 value（形状不变）+ 内部通道分别 memo ——
+  // —— 公开 value 细分为数据/命令两片（R004 §4.6，聚合形状不变）——
 
-  const sessionValue = useMemo<WorkspaceSessionContextValue>(
+  const dataValue = useMemo<WorkspaceDataContextValue>(
     () => ({
       ready,
       error,
-      retryLoad,
       workspaces,
       workspace,
       workspaceStatus: session.status,
@@ -603,6 +620,25 @@ export function WorkspaceProvider({
       pages,
       tags,
       pageTags,
+    }),
+    [
+      ready,
+      error,
+      workspaces,
+      workspace,
+      session.status,
+      session.error,
+      pages,
+      tags,
+      pageTags,
+    ],
+  );
+
+  // 命令成员全部引用稳定（经 ref 读取最新数据），本 value 恒定：
+  // 页面/标签/会话变化不会引起纯命令消费者重渲染。
+  const commandValue = useMemo<WorkspaceCommandContextValue>(
+    () => ({
+      retryLoad,
       switchWorkspace,
       createWorkspace,
       toggleWorkspaceFavorite,
@@ -623,16 +659,7 @@ export function WorkspaceProvider({
       search,
     }),
     [
-      ready,
-      error,
       retryLoad,
-      workspaces,
-      workspace,
-      session.status,
-      session.error,
-      pages,
-      tags,
-      pageTags,
       switchWorkspace,
       createWorkspace,
       toggleWorkspaceFavorite,
@@ -662,9 +689,11 @@ export function WorkspaceProvider({
 
   return (
     <WorkspaceInternalsContext.Provider value={internalsValue}>
-      <WorkspaceSessionContext.Provider value={sessionValue}>
-        {children}
-      </WorkspaceSessionContext.Provider>
+      <WorkspaceDataContext.Provider value={dataValue}>
+        <WorkspaceCommandContext.Provider value={commandValue}>
+          {children}
+        </WorkspaceCommandContext.Provider>
+      </WorkspaceDataContext.Provider>
     </WorkspaceInternalsContext.Provider>
   );
 }

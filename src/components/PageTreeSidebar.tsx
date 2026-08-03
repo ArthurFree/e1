@@ -18,8 +18,14 @@ import {
   type DropZone,
 } from "../domain/pageTree";
 import { jsonToText, markdownToJson } from "../editor/markdown";
-import { useWorkspaceSession } from "../state/WorkspaceSessionContext";
-import { useNavigation } from "../state/NavigationContext";
+import {
+  useWorkspaceCommands,
+  useWorkspaceData,
+} from "../state/WorkspaceSessionContext";
+import {
+  useNavigationCommands,
+  useNavigationState,
+} from "../state/NavigationContext";
 import { usePreferences } from "../state/PreferencesContext";
 import { useOverlay } from "../state/OverlayContext";
 import {
@@ -364,20 +370,17 @@ const PageTreeBody = memo(function PageTreeBody({
 
 /** 文档树侧栏：层级展示、新建、重命名、删除、拖拽移动、标签筛选、Markdown 导入。 */
 export function PageTreeSidebar() {
+  const { pages, tags, pageTags, workspace } = useWorkspaceData();
   const {
-    pages,
-    tags,
-    pageTags,
-    workspace,
     createPage,
     createDocumentWithContent,
     renamePage,
     deletePage,
     movePage,
     deleteTag,
-  } = useWorkspaceSession();
-  const { view, selectedPageId, selectPage, showWorkspaceHome } =
-    useNavigation();
+  } = useWorkspaceCommands();
+  const { view, selectedPageId } = useNavigationState();
+  const { selectPage, showWorkspaceHome } = useNavigationCommands();
   const { preferences, setSidebarWidth } = usePreferences();
   const { treeDrawerOpen, closeTreeDrawer } = useOverlay();
   const [renamingSeed, setRenamingSeed] = useState<Page | null>(null);

@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import type { StorageConnectionEvent } from "../application/services/StorageConnectionEventBus";
 import { useAppServices } from "../state/AppServicesProvider";
-import { useWorkspaceSession } from "../state/WorkspaceSessionContext";
+import {
+  useWorkspaceCommands,
+  useWorkspaceData,
+} from "../state/WorkspaceSessionContext";
 import { usePreferences } from "../state/PreferencesContext";
 import { useOverlay } from "../state/OverlayContext";
 import { GlobalSidebar } from "./shell/GlobalSidebar";
@@ -21,7 +24,8 @@ import { MainArea } from "./MainArea";
 /** 应用壳：全局侧栏 + 知识库侧栏（窄屏抽屉化）+ 主区。 */
 export function AppShell() {
   const services = useAppServices();
-  const { ready, error, retryLoad } = useWorkspaceSession();
+  const { ready, error } = useWorkspaceData();
+  const { retryLoad } = useWorkspaceCommands();
   const { preferences } = usePreferences();
   const { treeDrawerOpen, closeTreeDrawer } = useOverlay();
   // 存储连接事件（R004 §7.1）：blocked 与 versionchange 需要用户动作；

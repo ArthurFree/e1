@@ -8,7 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Page } from "../domain/types";
 import { buildPickerTargets, type PickerTarget } from "../domain/picker";
 import { useAppServices } from "../state/AppServicesProvider";
-import { useWorkspaceSession } from "../state/WorkspaceSessionContext";
+import { useWorkspaceData } from "../state/WorkspaceSessionContext";
 import { IconBook, IconFolder } from "./ui/icons";
 
 interface TargetPickerProps {
@@ -21,7 +21,7 @@ interface TargetPickerProps {
 /** 创建位置选择器：知识库根目录 + 全部分组，跨知识库列出。 */
 export function TargetPicker({ onSelect, className }: TargetPickerProps) {
   const services = useAppServices();
-  const { workspaces } = useWorkspaceSession();
+  const { workspaces } = useWorkspaceData();
   const [allPages, setAllPages] = useState<Page[]>([]);
 
   useEffect(() => {

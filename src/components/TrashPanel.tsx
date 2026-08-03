@@ -6,7 +6,10 @@
  */
 
 import { useMemo, useState } from "react";
-import { useWorkspaceSession } from "../state/WorkspaceSessionContext";
+import {
+  useWorkspaceCommands,
+  useWorkspaceData,
+} from "../state/WorkspaceSessionContext";
 import { Dialog } from "./ui/Dialog";
 import { EmptyState } from "./ui/EmptyState";
 import { IconRestore, IconTrash, PageIcon } from "./ui/icons";
@@ -18,7 +21,8 @@ interface TrashPanelProps {
 
 /** 回收站面板：列出已删除页面，支持恢复、永久删除与清空。 */
 export function TrashPanel({ onClose }: TrashPanelProps) {
-  const { pages, restorePage, purgePage, emptyTrash } = useWorkspaceSession();
+  const { pages } = useWorkspaceData();
+  const { restorePage, purgePage, emptyTrash } = useWorkspaceCommands();
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [confirmEmpty, setConfirmEmpty] = useState(false);
 

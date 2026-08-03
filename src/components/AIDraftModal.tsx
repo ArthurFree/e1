@@ -10,8 +10,8 @@ import { useState } from "react";
 import type { PickerTarget } from "../domain/picker";
 import { jsonToText, markdownToJson } from "../editor/markdown";
 import { useAppServices } from "../state/AppServicesProvider";
-import { useWorkspaceSession } from "../state/WorkspaceSessionContext";
-import { useNavigation } from "../state/NavigationContext";
+import { useWorkspaceCommands } from "../state/WorkspaceSessionContext";
+import { useNavigationCommands } from "../state/NavigationContext";
 import { usePreferences } from "../state/PreferencesContext";
 import { useOverlay } from "../state/OverlayContext";
 import { Dialog } from "./ui/Dialog";
@@ -34,8 +34,8 @@ type Step = "input" | "generating" | "preview" | "error";
  */
 export function AIDraftModal({ onClose }: AIDraftModalProps) {
   const services = useAppServices();
-  const { createDocumentWithContent } = useWorkspaceSession();
-  const { openDocument } = useNavigation();
+  const { createDocumentWithContent } = useWorkspaceCommands();
+  const { openDocument } = useNavigationCommands();
   const { preferences } = usePreferences();
   const { openSettings } = useOverlay();
   const [topic, setTopic] = useState("");

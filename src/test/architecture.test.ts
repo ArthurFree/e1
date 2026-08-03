@@ -75,6 +75,26 @@ describe("架构分层约束", () => {
   });
 
   /**
+   * R004 §4.6：components 不得使用聚合 hook（useWorkspaceSession /
+   * useNavigation），一律按需订阅数据/命令细粒度 hook，避免无关
+   * 订阅导致的重渲染回潮。
+   */
+  it("components 不得使用聚合状态 hook（R004 §4.6）", () => {
+    const pattern = /\b(useWorkspaceSession|useNavigation)\s*\(/;
+    const violations: Violation[] = [];
+    for (const [path, content] of entries) {
+      if (!path.startsWith("../components/")) continue;
+      content.split("\n").forEach((text, index) => {
+        if (pattern.test(text)) {
+          violations.push({ file: path, line: index + 1, text: text.trim() });
+        }
+      });
+    }
+    expect(format(violations)).toBe("");
+    expect(violations).toEqual([]);
+  });
+
+  /**
    * R004 INV-07 基线：components 不得直接调用正文/版本/附件/页面写仓储。
    * 阶段 0 以白名单快照记录现存 8 处直写点（见
    * docs/architecture/document-write-path.md），新增违规立即失败；

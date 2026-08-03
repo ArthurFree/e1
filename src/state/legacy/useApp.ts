@@ -1,8 +1,9 @@
 /**
  * 兼容聚合门面（R003 阶段 6 引入，R004 阶段 4 迁入 legacy）：
- * 读取四个窄 Context 并聚合为原 AppState 全集，仅供未迁移的既有测试
- * 过渡使用。生产代码一律使用 useWorkspaceSession / useNavigation /
- * usePreferences / useOverlay 窄 hook 以获得渲染隔离。
+ * 读取四个状态域 Context 并聚合为原 AppState 全集，仅供未迁移的既有测试
+ * 过渡使用。生产代码一律使用 useWorkspaceData / useWorkspaceCommands /
+ * useNavigationState / useNavigationCommands / usePreferences / useOverlay
+ * 细粒度 hook 以获得渲染隔离（R004 §4.6）。
  */
 import { useContext, useMemo } from "react";
 import type {
@@ -16,10 +17,15 @@ import type {
   Workspace,
 } from "../../domain/types";
 import {
-  WorkspaceSessionContext,
+  useWorkspaceCommands,
+  useWorkspaceData,
   type WorkspaceSessionStatus,
 } from "../WorkspaceSessionContext";
-import { NavigationContext, type MainView } from "../NavigationContext";
+import {
+  useNavigationCommands,
+  useNavigationState,
+  type MainView,
+} from "../NavigationContext";
 import { PreferencesContext } from "../PreferencesContext";
 import { useOverlay } from "../OverlayContext";
 
@@ -134,22 +140,26 @@ export interface AppState {
  * 聚合四个窄 Context 为原 AppState 全集；必须在 AppProviders 内使用。
  */
 export function useApp(): AppState {
-  const session = useContext(WorkspaceSessionContext);
-  const navigation = useContext(NavigationContext);
+  const sessionData = useWorkspaceData();
+  const sessionCommands = useWorkspaceCommands();
+  const navigationState = useNavigationState();
+  const navigationCommands = useNavigationCommands();
   const preferencesCtx = useContext(PreferencesContext);
   const overlay = useOverlay();
   // 派生字段：回收站页面由会话 pages 派生（R003 §6.5 派生状态本地化）。
-  const sessionPages = session?.pages;
+  const sessionPages = sessionData.pages;
   const trashedPages = useMemo(
-    () => (sessionPages ?? []).filter((p) => p.deletedAt !== null),
+    () => sessionPages.filter((p) => p.deletedAt !== null),
     [sessionPages],
   );
-  if (!session || !navigation || !preferencesCtx) {
+  if (!preferencesCtx) {
     throw new Error("useApp 必须在 AppProviders 内使用");
   }
   return {
-    ...session,
-    ...navigation,
+    ...sessionData,
+    ...sessionCommands,
+    ...navigationState,
+    ...navigationCommands,
     ...preferencesCtx,
     trashedPages,
     settingsOpen: overlay.settingsOpen,

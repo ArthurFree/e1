@@ -14,20 +14,20 @@ import {
   formatRelativeTime,
 } from "../domain/activity";
 import { useAppServices } from "../state/AppServicesProvider";
-import { useWorkspaceSession } from "../state/WorkspaceSessionContext";
-import { useNavigation } from "../state/NavigationContext";
+import {
+  useWorkspaceCommands,
+  useWorkspaceData,
+} from "../state/WorkspaceSessionContext";
+import { useNavigationCommands } from "../state/NavigationContext";
 import { useOverlay } from "../state/OverlayContext";
 import { IconMenu, IconStarFilled, PageIcon } from "./ui/icons";
 
 /** 全局“收藏”视图：先收藏的知识库，后收藏的文档，均按收藏时间倒序。 */
 export function FavoritesPage() {
-  const {
-    workspaces,
-    switchWorkspace,
-    togglePageFavorite,
-    toggleWorkspaceFavorite,
-  } = useWorkspaceSession();
-  const { openDocument } = useNavigation();
+  const { workspaces } = useWorkspaceData();
+  const { switchWorkspace, togglePageFavorite, toggleWorkspaceFavorite } =
+    useWorkspaceCommands();
+  const { openDocument } = useNavigationCommands();
   const { openTreeDrawer } = useOverlay();
   const services = useAppServices();
   const [allPages, setAllPages] = useState<Page[]>([]);

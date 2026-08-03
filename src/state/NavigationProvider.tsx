@@ -20,9 +20,11 @@ import {
 } from "react";
 import { useAppServices } from "./AppServicesProvider";
 import {
-  NavigationContext,
+  NavigationCommandContext,
+  NavigationStateContext,
   type MainView,
-  type NavigationContextValue,
+  type NavigationCommandContextValue,
+  type NavigationStateContextValue,
 } from "./NavigationContext";
 import { usePreferencesRoute } from "./PreferencesProvider";
 import { useWorkspaceInternals } from "./WorkspaceProvider";
@@ -34,7 +36,7 @@ interface NavigationProviderProps {
   children: ReactNode;
 }
 
-/** 导航状态 Provider：公开 NavigationContext（value 形状不变）。 */
+/** 导航状态 Provider：公开状态/命令双 Context（R004 §4.6，聚合形状不变）。 */
 export function NavigationProvider({
   navBridge,
   children,
@@ -207,12 +209,20 @@ export function NavigationProvider({
     exitDocumentIfSelected,
   ]);
 
-  const navigationValue = useMemo<NavigationContextValue>(
+  const stateValue = useMemo<NavigationStateContextValue>(
     () => ({
       view,
       selectedPageId,
       titleFocusPageId,
       routePersistenceStatus,
+    }),
+    [view, selectedPageId, titleFocusPageId, routePersistenceStatus],
+  );
+
+  // 命令成员全部引用稳定，本 value 恒定：路由变化不会引起纯命令
+  // 消费者重渲染（R004 §4.6）。
+  const commandValue = useMemo<NavigationCommandContextValue>(
+    () => ({
       selectPage,
       openDocument,
       locatePage,
@@ -223,10 +233,6 @@ export function NavigationProvider({
       clearTitleFocus,
     }),
     [
-      view,
-      selectedPageId,
-      titleFocusPageId,
-      routePersistenceStatus,
       selectPage,
       openDocument,
       locatePage,
@@ -239,8 +245,10 @@ export function NavigationProvider({
   );
 
   return (
-    <NavigationContext.Provider value={navigationValue}>
-      {children}
-    </NavigationContext.Provider>
+    <NavigationStateContext.Provider value={stateValue}>
+      <NavigationCommandContext.Provider value={commandValue}>
+        {children}
+      </NavigationCommandContext.Provider>
+    </NavigationStateContext.Provider>
   );
 }

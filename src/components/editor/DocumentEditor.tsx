@@ -15,7 +15,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import type { Page } from "../../domain/types";
 import { useAppServices } from "../../state/AppServicesProvider";
-import { useWorkspaceSession } from "../../state/WorkspaceSessionContext";
+import { useWorkspaceData } from "../../state/WorkspaceSessionContext";
 import { useDebouncedCallback } from "../../hooks/useDebouncedCallback";
 import { buildEditorExtensions } from "../../editor/extensions";
 import type {
@@ -77,7 +77,7 @@ export function DocumentEditor({
   restoreRequestId,
   onControllerReady,
 }: DocumentEditorProps) {
-  const { pages } = useWorkspaceSession();
+  const { pages } = useWorkspaceData();
   const services = useAppServices();
   const editorRef = useRef<Editor | null>(null);
   const [saveState, setSaveState] = useState<SaveState>({
