@@ -46,7 +46,7 @@ export function VersionPanel({
   const [restoreError, setRestoreError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
-    setRevisions(await services.revision.listByPage(pageId));
+    setRevisions(await services.queries.document.listRevisions(pageId));
   }, [pageId, services]);
 
   useEffect(() => {

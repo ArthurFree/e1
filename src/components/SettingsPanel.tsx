@@ -71,8 +71,8 @@ export function SettingsPanel() {
       return;
     }
     let cancelled = false;
-    void services.revision
-      .listByPage(selectedPageId)
+    void services.queries.document
+      .listRevisions(selectedPageId)
       .then((list) => {
         if (cancelled) return;
         setRevisionUsage({

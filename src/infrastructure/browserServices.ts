@@ -2,7 +2,8 @@
  * 生产环境服务装配根（R003 阶段 5）：把 IndexedDB 仓储、AI HTTP
  * provider、localStorage 恢复缓冲组装为 AppServices 容器。
  * 这是 application 层接口与浏览器/IndexedDB 实现之间的唯一汇合点；
- * main.tsx 与测试装配（TestApp）共用。
+ * 生产由 platform/web/createWebRuntime 调用（R005 阶段 2），
+ * 测试装配（TestApp）亦可直接使用。
  */
 import type { AppServices } from "../application/AppServices";
 import { increment } from "../application/devDiagnostics";
@@ -10,8 +11,16 @@ import { DocumentCommitService } from "../application/services/DocumentCommitSer
 import { DocumentSaveCoordinator } from "../application/services/SaveCoordinator";
 import { WorkspaceSessionService } from "../application/services/WorkspaceSessionService";
 import { SearchIndexService } from "../application/services/SearchIndexService";
+import { PreferencesService } from "../application/services/PreferencesService";
 import { SyncChannelService } from "../application/services/SyncChannelService";
 import { StorageConnectionEventBus } from "../application/services/StorageConnectionEventBus";
+import { WorkspaceCommandService } from "../application/commands/WorkspaceCommandService";
+import { PageCommandService } from "../application/commands/PageCommandService";
+import { TagCommandService } from "../application/commands/TagCommandService";
+import { DocumentCommandService } from "../application/commands/DocumentCommandService";
+import { WorkspaceQueryService } from "../application/queries/WorkspaceQueryService";
+import { DocumentQueryService } from "../application/queries/DocumentQueryService";
+import { SearchQueryService } from "../application/queries/SearchQueryService";
 import {
   clearRecovery,
   writeRecovery,
@@ -19,6 +28,7 @@ import {
 import { createOpenAICompatibleProvider } from "./aiProvider";
 import { createId } from "./id";
 import { setStorageConnectionCallbacks } from "./db";
+import { webCapabilities } from "../platform/web/webCapabilities";
 import {
   attachmentRepository,
   contentRepository,
@@ -59,20 +69,55 @@ export function createBrowserAppServices(): AppServices {
     searchIndex,
     syncChannel,
   });
-  instance = {
-    workspace: workspaceRepository,
-    page: pageRepository,
-    content: contentRepository,
-    revision: revisionRepository,
-    attachment: attachmentRepository,
-    tag: tagRepository,
+  // 偏好写入服务单例（R005 批次 2）：串行队列防读-改-写竞态；
+  // 非路由写入落盘后广播 preferences-changed（R004 §7.2，原 Provider 接线迁入）。
+  const preferencesService = new PreferencesService({
     preferences: preferencesRepository,
-    documentWrite: documentWriteRepository,
-    documentCommit,
-    session,
-    searchIndex,
+    onError: (err) => console.error("偏好写入失败", err),
+    onPersisted: () => syncChannel.post({ type: "preferences-changed" }),
+  });
+  // 命令/查询服务（R005 批次 1）：业务编排入口，注入既有仓储与服务实例。
+  const commands = {
+    workspace: new WorkspaceCommandService({
+      workspace: workspaceRepository,
+      syncChannel,
+    }),
+    page: new PageCommandService({
+      page: pageRepository,
+      searchIndex,
+      syncChannel,
+    }),
+    tag: new TagCommandService({ tag: tagRepository }),
+    document: new DocumentCommandService({ documentCommit, syncChannel }),
+  };
+  const queries = {
+    workspace: new WorkspaceQueryService({
+      workspace: workspaceRepository,
+      page: pageRepository,
+      tag: tagRepository,
+      session,
+      searchIndex,
+    }),
+    document: new DocumentQueryService({
+      content: contentRepository,
+      revisions: revisionRepository,
+    }),
+    search: new SearchQueryService({
+      searchIndex,
+      content: contentRepository,
+    }),
+  };
+  instance = {
+    // TODO(R005-13/14)：阶段 5 Asset 抽象后移除公开附件仓储。
+    attachment: attachmentRepository,
+    // 运行时能力矩阵（R005 阶段 2）：写死在容器内部而非 spread 合并，
+    // 保持模块级单例的引用相等（TestApp/消费者依赖同一实例身份）。
+    capabilities: webCapabilities,
+    preferencesService,
     syncChannel,
     storageEvents,
+    commands,
+    queries,
     createAIProvider: createOpenAICompatibleProvider,
     createSaveCoordinator: (pageId, onStateChange, options) =>
       new DocumentSaveCoordinator(

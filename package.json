@@ -5,9 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:web": "vite",
     "build": "tsc --noEmit && vite build",
+    "build:web": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:web": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "PLAYWRIGHT_BROWSERS_PATH=0 playwright test",
     "test:e2e:update": "PLAYWRIGHT_BROWSERS_PATH=0 playwright test --update-snapshots",

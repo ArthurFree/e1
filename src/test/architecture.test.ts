@@ -95,6 +95,47 @@ describe("架构分层约束", () => {
   });
 
   /**
+   * R005 批次 2（阶段 1 / DUAL-02）：components/state 不得 import
+   * domain/repositories——type-only import 同样违规（与上方
+   * infrastructure 规则同判定：import 行匹配即计）。仓储只经构造
+   * 函数注入 application 服务，UI/状态层一律经 commands/queries。
+   */
+  it("components/state 不得 import domain/repositories（R005 批次 2）", () => {
+    const violations = scan(["components", "state"], /domain\/repositories/);
+    expect(format(violations)).toBe("");
+    expect(violations).toEqual([]);
+  });
+
+  /**
+   * R005 批次 2：components/state 不得访问已从 AppServices 移除的原始
+   * 仓储/服务字段——属性访问（services.xxx）与 useAppServices() 解构
+   * 两种形态都拦截，编排一律经 services.commands / services.queries /
+   * services.preferencesService。
+   * attachment 为例外（保留在 AppServices 上）：经 editor.storage 通道
+   * 供 Tiptap 附件扩展读取，阶段 5 Asset 抽象后移除（TODO(R005-13/14)）。
+   */
+  it("components/state 不得访问 AppServices 已移除的原始仓储字段（R005 批次 2）", () => {
+    const REMOVED =
+      "workspace|page|content|revision|tag|preferences|documentWrite|documentCommit|session|searchIndex";
+    const propertyAccess = new RegExp(`services\\.(${REMOVED})\\b`);
+    const destructuring = new RegExp(
+      `\\{[^}]*\\b(?:${REMOVED})\\b[^}]*\\}\\s*=\\s*useAppServices\\(\\)`,
+    );
+    const violations: Violation[] = [];
+    for (const [path, content] of entries) {
+      if (!path.startsWith("../components/") && !path.startsWith("../state/"))
+        continue;
+      content.split("\n").forEach((text, index) => {
+        if (propertyAccess.test(text) || destructuring.test(text)) {
+          violations.push({ file: path, line: index + 1, text: text.trim() });
+        }
+      });
+    }
+    expect(format(violations)).toBe("");
+    expect(violations).toEqual([]);
+  });
+
+  /**
    * R004 INV-07 基线：components 不得直接调用正文/版本/附件/页面写仓储。
    * 阶段 0 以白名单快照记录现存 8 处直写点（见
    * docs/architecture/document-write-path.md），新增违规立即失败；
@@ -114,6 +155,39 @@ describe("架构分层约束", () => {
       });
     }
     violations.sort();
+    expect(violations).toEqual([]);
+  });
+
+  /**
+   * R005 阶段 2（Bootstrap 拆分）：仅 Web 装配根（main.web.tsx）与
+   * platform/web 允许 import infrastructure/browserServices，防止
+   * UI/状态层回流直接装配；测试基建（src/test/，glob 下为 ./ 前缀）
+   * 与 *.test.* 豁免——TestApp 经 fake-indexeddb 用生产容器属既有惯例。
+   */
+  it("仅 main.web.tsx 与 platform/web 允许 import infrastructure/browserServices（R005 阶段 2）", () => {
+    const violations: Violation[] = [];
+    for (const [path, content] of entries) {
+      if (
+        path === "../main.web.tsx" ||
+        path.startsWith("../platform/web/") ||
+        path.startsWith("./")
+      )
+        continue;
+      violations.push(
+        ...findImports(path, content, /infrastructure\/browserServices/),
+      );
+    }
+    expect(format(violations)).toBe("");
+    expect(violations).toEqual([]);
+  });
+
+  /**
+   * R005 阶段 2：bootstrap 为平台无关的共享挂载入口，不得 import
+   * infrastructure；平台差异只经 AppServices 容器注入。
+   */
+  it("bootstrap 不得 import infrastructure（R005 阶段 2）", () => {
+    const violations = scan(["bootstrap"], /infrastructure\//);
+    expect(format(violations)).toBe("");
     expect(violations).toEqual([]);
   });
 });

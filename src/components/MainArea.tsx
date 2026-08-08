@@ -130,7 +130,7 @@ export function MainArea() {
     setRemoteConflict(false);
     pendingExitToBodyRef.current = false;
     if (view === "document" && page?.kind === "document") {
-      void services.content.get(page.id).then((result) => {
+      void services.queries.document.getContent(page.id).then((result) => {
         if (cancelled) return;
         // 新建文档尚无内容行：以空文档作为初始内容，首次编辑即落盘。
         const base = result ?? emptyContent(page.id, page.workspaceId);
@@ -192,12 +192,12 @@ export function MainArea() {
   const reloadFromDisk = useCallback(async () => {
     const current = pageRef.current;
     if (!current) return;
-    const latest = await services.content.get(current.id);
+    const latest = await services.queries.document.getContent(current.id);
     if (!latest || pageRef.current?.id !== current.id) return;
     const parsed = parseDocumentContent(latest.contentJson);
     if (!parsed.ok) return;
     discardRecovery(current.id);
-    services.searchIndex.updateText(
+    services.queries.search.syncText(
       current.id,
       latest.textSnapshot,
       latest.updatedAt,
@@ -253,11 +253,11 @@ export function MainArea() {
         }
         return;
       }
-      void services.content
-        .get(event.pageId)
+      void services.queries.document
+        .getContent(event.pageId)
         .then((latest) => {
           if (latest) {
-            services.searchIndex.updateText(
+            services.queries.search.syncText(
               event.pageId,
               latest.textSnapshot,
               latest.updatedAt,
@@ -312,10 +312,10 @@ export function MainArea() {
   }, [corrupted, page]);
 
   // 损坏正文：以空白文档覆盖（原始 JSON 已保留在诊断记录中，可先导出）。
-  // 经 DocumentCommitService 原子覆盖并同步搜索索引（R004 阶段 3）。
+  // 经文档命令服务原子覆盖并同步搜索索引（R004 阶段 3 / R005 批次 2）。
   const blankCorrupted = useCallback(async () => {
     if (!page) return;
-    await services.documentCommit.replaceContent({
+    await services.commands.document.replaceContent({
       pageId: page.id,
       contentJson: { type: "doc", content: [{ type: "paragraph" }] },
       textSnapshot: "",

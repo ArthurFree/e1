@@ -11,16 +11,25 @@ import { DocumentCommitService } from "../../application/services/DocumentCommit
 import { DocumentSaveCoordinator } from "../../application/services/SaveCoordinator";
 import { WorkspaceSessionService } from "../../application/services/WorkspaceSessionService";
 import { SearchIndexService } from "../../application/services/SearchIndexService";
+import { PreferencesService } from "../../application/services/PreferencesService";
 import {
   SyncChannelService,
   type BroadcastChannelLike,
 } from "../../application/services/SyncChannelService";
 import { StorageConnectionEventBus } from "../../application/services/StorageConnectionEventBus";
+import { WorkspaceCommandService } from "../../application/commands/WorkspaceCommandService";
+import { PageCommandService } from "../../application/commands/PageCommandService";
+import { TagCommandService } from "../../application/commands/TagCommandService";
+import { DocumentCommandService } from "../../application/commands/DocumentCommandService";
+import { WorkspaceQueryService } from "../../application/queries/WorkspaceQueryService";
+import { DocumentQueryService } from "../../application/queries/DocumentQueryService";
+import { SearchQueryService } from "../../application/queries/SearchQueryService";
 import {
   createInMemoryRepositories,
   createMemoryStore,
   type MemoryStore,
 } from "./repositories";
+import { webCapabilities } from "../../platform/web/webCapabilities";
 
 export interface InMemoryAppServicesOptions {
   /** 预置数据；缺省为全新空库。 */
@@ -34,11 +43,23 @@ export interface InMemoryAppServicesOptions {
   syncChannel?: BroadcastChannelLike | null;
 }
 
+/**
+ * 内存容器返回类型：公开面以 AppServices 为准（R005 批次 2 已收紧，
+ * 不再暴露原始仓储）；此处额外携带底层仓储与服务实例，仅作测试
+ * 直取数据的过渡通道——生产代码一律按 AppServices 类型访问。
+ */
+export type InMemoryAppServices = AppServices &
+  ReturnType<typeof createInMemoryRepositories> & {
+    documentCommit: DocumentCommitService;
+    session: WorkspaceSessionService;
+    searchIndex: SearchIndexService;
+  };
+
 /** 创建内存容器；返回 store 便于测试直接断言底层数据。 */
 export function createInMemoryAppServices(
   options: InMemoryAppServicesOptions = {},
 ): {
-  services: AppServices;
+  services: InMemoryAppServices;
   store: MemoryStore;
 } {
   const store = options.store ?? createMemoryStore();
@@ -62,6 +83,12 @@ export function createInMemoryAppServices(
     searchIndex,
     syncChannel,
   });
+  // 偏好写入服务单例（R005 批次 2）：与生产容器同装配（广播走注入的频道）。
+  const preferencesService = new PreferencesService({
+    preferences: repos.preferences,
+    onError: (err) => console.error("偏好写入失败", err),
+    onPersisted: () => syncChannel.post({ type: "preferences-changed" }),
+  });
   // 内存恢复缓冲：与 localStorage 版同接口，数据随容器存活。
   const recoveryData = new Map<
     string,
@@ -80,13 +107,46 @@ export function createInMemoryAppServices(
   }) => {
     recoveryData.set(record.pageId, record);
   };
-  const services: AppServices = {
+  const services: InMemoryAppServices = {
+    // 底层仓储与服务实例：仅作测试过渡通道（见 InMemoryAppServices 注释），
+    // AppServices 公开面不再包含这些字段（R005 批次 2）。
     ...repos,
     documentCommit,
     session,
     searchIndex,
+    preferencesService,
     syncChannel,
     storageEvents: new StorageConnectionEventBus(),
+    // 运行时能力矩阵（R005 阶段 2）：测试环境即 Web 语义，复用同一常量。
+    capabilities: webCapabilities,
+    // 命令/查询服务（R005 批次 1）：与生产容器同装配。
+    commands: {
+      workspace: new WorkspaceCommandService({
+        workspace: repos.workspace,
+        syncChannel,
+      }),
+      page: new PageCommandService({
+        page: repos.page,
+        searchIndex,
+        syncChannel,
+      }),
+      tag: new TagCommandService({ tag: repos.tag }),
+      document: new DocumentCommandService({ documentCommit, syncChannel }),
+    },
+    queries: {
+      workspace: new WorkspaceQueryService({
+        workspace: repos.workspace,
+        page: repos.page,
+        tag: repos.tag,
+        session,
+        searchIndex,
+      }),
+      document: new DocumentQueryService({
+        content: repos.content,
+        revisions: repos.revision,
+      }),
+      search: new SearchQueryService({ searchIndex, content: repos.content }),
+    },
     createAIProvider:
       options.aiProvider !== undefined
         ? () => options.aiProvider as AIProvider

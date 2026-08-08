@@ -38,12 +38,12 @@ export function ActivityList() {
   const [limit, setLimit] = useState(ACTIVITY_PAGE_SIZE);
   const [now, setNow] = useState(() => Date.now());
 
-  // 直接经仓储取全量页面而非走 AppState：活动列表需要跨知识库的软删排除全集，
+  // 经查询服务取全量页面而非走 AppState：活动列表需要跨知识库的软删排除全集，
   // AppState 只持有当前知识库的页面子集
   useEffect(() => {
     let cancelled = false;
-    void services.page
-      .listAll()
+    void services.queries.workspace
+      .listAllPages()
       .then((pages) => {
         if (!cancelled) {
           setAllPages(pages);

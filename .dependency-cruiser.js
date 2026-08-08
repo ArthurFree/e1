@@ -39,7 +39,7 @@ export default {
     {
       name: "ui-no-infrastructure",
       comment:
-        "components/state/editor 不直接依赖 infrastructure（含深层路径）；infrastructure 只能由装配根（main.tsx / infrastructure 自身 / 测试）引用",
+        "components/state/editor 不直接依赖 infrastructure（含深层路径）；infrastructure 只能由装配根（main.web.tsx / platform/web / infrastructure 自身 / 测试）引用",
       severity: "error",
       from: {
         path: "^src/(components|state|editor)",

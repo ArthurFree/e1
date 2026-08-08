@@ -41,7 +41,7 @@ export function WorkspaceHome() {
   // 总字数统计需要正文快照，页面元数据里没有，只能额外取内容行
   useEffect(() => {
     let cancelled = false;
-    void services.content.listAll().then((list) => {
+    void services.queries.document.listAllContents().then((list) => {
       if (!cancelled) setContents(list);
     });
     return () => {

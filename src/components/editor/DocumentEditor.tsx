@@ -149,8 +149,8 @@ export function DocumentEditor({
         const pid = pageIdRef.current;
         const coordinator = coordinatorsRef.current.get(pid);
         if (!coordinator) return;
-        void services.content
-          .get(pid)
+        void services.queries.document
+          .getContent(pid)
           .then((latest) => {
             coordinator.setLoadedVersion(latest?.version ?? 0);
             return coordinator.retryLatest();
@@ -253,7 +253,7 @@ export function DocumentEditor({
           contentJson: editor.getJSON(),
           textSnapshot: editor.getText(),
         };
-        await services.documentCommit.restoreRevision({
+        await services.commands.document.restoreRevision({
           pageId,
           current,
           target,

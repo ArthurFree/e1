@@ -10,12 +10,14 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
-import type { AppServices } from "../application/AppServices";
 import type { BroadcastChannelLike } from "../application/services/SyncChannelService";
 import { writeRecovery } from "../application/services/documentRecovery";
 import { serializeRoute } from "../domain/route";
 import type { Page } from "../domain/types";
-import { createInMemoryAppServices } from "../infrastructure/memory/createInMemoryAppServices";
+import {
+  createInMemoryAppServices,
+  type InMemoryAppServices,
+} from "../infrastructure/memory/createInMemoryAppServices";
 import { AppProvider } from "../state/AppState";
 import { AppServicesProvider } from "../state/AppServicesProvider";
 import { MainArea } from "./MainArea";
@@ -40,7 +42,7 @@ function makeMockChannel() {
   return { channel, emitRemote };
 }
 
-function renderMainArea(services: AppServices) {
+function renderMainArea(services: InMemoryAppServices) {
   render(
     <AppServicesProvider services={services}>
       <AppProvider>
@@ -51,7 +53,7 @@ function renderMainArea(services: AppServices) {
 }
 
 interface Fixture {
-  services: AppServices;
+  services: InMemoryAppServices;
   emitRemote: (event: unknown) => void;
   workspaceId: string;
   pageA: Page;
@@ -59,7 +61,7 @@ interface Fixture {
 }
 
 /** 预置知识库 + 两个文档（正文 version 2）+ 指向文档甲的路由。 */
-async function seedWorkspace(services: AppServices) {
+async function seedWorkspace(services: InMemoryAppServices) {
   const ws = await services.workspace.create("知识库");
   const pageA = await services.page.create({
     workspaceId: ws.id,

@@ -35,8 +35,8 @@ export function StartPreview({ onClose }: StartPreviewProps) {
 
   useEffect(() => {
     let cancelled = false;
-    void services.page
-      .listAll()
+    void services.queries.workspace
+      .listAllPages()
       .then((pages) => {
         if (!cancelled) setAllPages(pages);
       })

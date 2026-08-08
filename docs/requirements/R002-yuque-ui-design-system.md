@@ -559,7 +559,7 @@ src/components/
 - 新增 `src/styles/tokens.css`（浅/深语义颜色、字体栈、圆角、阴影、z-index、动效与 `prefers-reduced-motion`）、`reset.css`（盒模型/按钮/2px 品牌焦点环）、`typography.css`（编辑正文 16px/1.75、等宽字体）、`index.css`（Cascade Layers：`tokens → reset → base → components`，`global.css` 作为迁移期组件层挂在 components）。
 - 旧变量（`--bg-*`、`--text-*`、`--accent` 等）在 `tokens.css` 底部以别名映射到新令牌，阶段 6 删除。
 - 主色按冻结项从蓝色切换为项目自有绿色 `#22A06B`（深色 `#42C98A`），信息蓝保留为 `--color-info`。
-- 新增 `src/components/ui/Button`（primary/secondary/ghost/danger，高 32px）与 `IconButton`（label 必填、aria-pressed、Tooltip）及组件测试；`main.tsx` 改引 `styles/index.css`。
+- 新增 `src/components/ui/Button`（primary/secondary/ghost/danger，高 32px）与 `IconButton`（label 必填、aria-pressed、Tooltip）及组件测试；`main.tsx` 改引 `styles/index.css`（R005 阶段 2 起样式 import 移至 `bootstrap/mountApplication.tsx`）。
 - 13 张视觉基线按新令牌重建，208 项单元/组件测试、33 项 Playwright、typecheck、生产构建全部通过。
 
 **偏差：** 字号令牌目前只定义了文本级变量，页面级标题尺寸（page-title/knowledge-title 等）随阶段 3/4 页面迁移落地；组件状态展示页为建议项，本期未建。

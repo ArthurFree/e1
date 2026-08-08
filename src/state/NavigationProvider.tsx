@@ -42,7 +42,8 @@ export function NavigationProvider({
   children,
 }: NavigationProviderProps) {
   const services = useAppServices();
-  const { workspace: workspaceRepository, page: pageRepository } = services;
+  const workspaceQueries = services.queries.workspace;
+  const workspaceCommands = services.commands.workspace;
   const { persistRoute, routePersistenceStatus } = usePreferencesRoute();
   const workspaceInternals = useWorkspaceInternals();
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
@@ -99,8 +100,7 @@ export function NavigationProvider({
       let target = pages.find((p) => p.id === pageId);
       if (!target) {
         // 不在当前知识库镜像中（跨知识库打开）：回退全量查询定位。
-        const all = await pageRepository.listAll();
-        target = all.find((p) => p.id === pageId) ?? undefined;
+        target = await workspaceQueries.findPage(pageId);
       }
       if (!target || target.kind !== "document") return;
       if (target.workspaceId !== wsId) {
@@ -108,9 +108,9 @@ export function NavigationProvider({
         wsId = target.workspaceId;
         const data = await workspaceInternals.loadSession(wsId);
         if (!data) return;
-        void workspaceRepository.setLastOpened(wsId, Date.now());
+        void workspaceCommands.setLastOpened(wsId, Date.now());
       } else if (!inState && wsId) {
-        // 页面由仓储直接创建（模板/AI 流程），当前列表未包含时同步刷新。
+        // 页面由命令服务直接创建（模板/AI 流程），当前列表未包含时同步刷新。
         await workspaceInternals.loadPages(wsId);
       }
       if (!wsId) return;
@@ -118,7 +118,7 @@ export function NavigationProvider({
       setView("document");
       persistRoute({ view: "document", workspaceId: wsId, pageId });
     },
-    [workspaceInternals, pageRepository, workspaceRepository, persistRoute],
+    [workspaceInternals, workspaceQueries, workspaceCommands, persistRoute],
   );
 
   const locatePage = useCallback(
@@ -128,8 +128,7 @@ export function NavigationProvider({
       let target = pages.find((p) => p.id === pageId);
       if (!target) {
         // 与 openDocument 相同：目标可能在其他知识库，回退全量查询。
-        const all = await pageRepository.listAll();
-        target = all.find((p) => p.id === pageId) ?? undefined;
+        target = await workspaceQueries.findPage(pageId);
       }
       if (!target) return;
       if (target.workspaceId !== wsId) {
@@ -137,7 +136,7 @@ export function NavigationProvider({
         wsId = target.workspaceId;
         const data = await workspaceInternals.loadSession(wsId);
         if (!data) return;
-        void workspaceRepository.setLastOpened(wsId, Date.now());
+        void workspaceCommands.setLastOpened(wsId, Date.now());
       }
       if (!wsId) return;
       // 与 openDocument 的区别：主区域停在知识库首页，由页面树高亮目标。
@@ -145,7 +144,7 @@ export function NavigationProvider({
       setView("workspace");
       persistRoute({ view: "workspace", workspaceId: wsId });
     },
-    [workspaceInternals, pageRepository, workspaceRepository, persistRoute],
+    [workspaceInternals, workspaceQueries, workspaceCommands, persistRoute],
   );
 
   // —— 注册到命令桥：供工作区域的跨域动作触发导航（R004 阶段 4）——

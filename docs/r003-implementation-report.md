@@ -53,7 +53,7 @@
 
 **目标**：UI 不直接依赖 IndexedDB 实现，仓储可整体替换。
 
-- `src/application/AppServices.ts` 容器接口 + `src/state/AppServicesProvider.tsx` 注入 + `src/infrastructure/browserServices.ts` 生产装配根（main.tsx 顶层装配）。
+- `src/application/AppServices.ts` 容器接口 + `src/state/AppServicesProvider.tsx` 注入 + `src/infrastructure/browserServices.ts` 生产装配根（时经 main.tsx 顶层装配；R005 阶段 2 起为 `main.web.tsx` → `platform/web/createWebRuntime` → `bootstrap/mountApplication`）。
 - 12 个生产文件迁离 infrastructure 直接导入；Tiptap 附件扩展经 `editor.storage.attachmentRepository` 通道注入（唯一非 Context 通道）；删除 AppState 底部无消费方的 `export { contentRepository }`。
 - `src/infrastructure/memory/`：7 个 port 纯内存实现（复用 domain/pageTree，与 IndexedDB 版共用不变量断言）+ `createInMemoryAppServices`；`AppState.memory.test.tsx` 证明 AppProvider 全流程可脱离 IndexedDB。
 - `src/test/architecture.test.ts`：`import.meta.glob` 源码扫描强制分层规则（替代 ESLint）；21 个测试文件迁移到 `TestApp` 装配；`setup.ts` 补 jsdom getClientRects polyfill。

@@ -26,8 +26,8 @@ export function TargetPicker({ onSelect, className }: TargetPickerProps) {
 
   useEffect(() => {
     let cancelled = false;
-    void services.page
-      .listAll()
+    void services.queries.workspace
+      .listAllPages()
       .then((pages) => {
         if (!cancelled) setAllPages(pages);
       })

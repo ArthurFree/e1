@@ -1,7 +1,8 @@
 /**
  * 应用服务注入（R003 阶段 5）：AppServices 容器的 React 入口。
  *
- * 生产环境在 main.tsx 注入 IndexedDB 实现（createBrowserAppServices），
+ * 生产环境在 main.web.tsx 经 bootstrap/mountApplication 注入 IndexedDB
+ * 实现（createBrowserAppServices，R005 阶段 2），
  * 测试可注入内存实现（createInMemoryAppServices）；组件与状态层一律
  * 经 useAppServices() 取服务，不再直接 import infrastructure。
  */

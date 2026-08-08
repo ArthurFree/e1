@@ -1,7 +1,8 @@
 /**
  * 偏好状态 Provider（R004 阶段 4）：preferences 与路由持久化状态的
- * 所有者。持有 PreferencesService 实例（串行写入队列），卸载时 dispose
- * （清侧栏防抖定时器并等待写入队列排空）。
+ * 所有者。消费装配根构造的 PreferencesService 单例（R005 批次 2，
+ * 串行写入队列），卸载时 dispose（清侧栏防抖定时器并等待写入队列排空）、
+ * 挂载时 resume 恢复写入。
  *
  * 除公开的 PreferencesContext（value 形状不变）外，还提供内部路由通道
  * PreferencesRouteContext 供导航域持久化路由、供初始加载等待偏好就绪——
@@ -19,7 +20,6 @@ import {
 import type { AIConfig, Preferences } from "../domain/types";
 import { DEFAULT_PREFERENCES } from "../domain/types";
 import { serializeRoute, type AppRoute } from "../domain/route";
-import { PreferencesService } from "../application/services/PreferencesService";
 import { useAppServices } from "./AppServicesProvider";
 import {
   PreferencesContext,
@@ -51,34 +51,29 @@ export function usePreferencesRoute(): PreferencesRouteContextValue {
 /** 偏好状态 Provider：挂载时加载偏好，卸载时 dispose 写入服务。 */
 export function PreferencesProvider({ children }: { children: ReactNode }) {
   const services = useAppServices();
-  const { preferences: preferencesRepository } = services;
+  // 偏好写入服务由装配根构造（R005 批次 2）：串行合并主题/侧栏宽度/AI 配置/
+  // 路由更新，杜绝读-改-写竞态；非路由写入落盘后的 preferences-changed
+  // 广播（R004 §7.2）也在装配根接线。
+  const preferencesService = services.preferencesService;
   const [preferences, setPreferences] =
     useState<Preferences>(DEFAULT_PREFERENCES);
   // 路由持久化状态（R003 阶段 3）：偏好异步写入错误可观测。
   const [routePersistenceStatus, setRoutePersistenceStatus] = useState<
     "idle" | "error"
   >("idle");
-  // 偏好写入服务：串行合并主题/侧栏宽度/AI 配置/路由更新，杜绝读-改-写竞态。
-  // 非路由写入落盘后广播 preferences-changed（R004 §7.2），其他标签页据此刷新。
-  const preferencesService = useMemo(
-    () =>
-      new PreferencesService({
-        preferences: preferencesRepository,
-        onError: (err) => {
-          console.error("偏好写入失败", err);
-          setRoutePersistenceStatus("error");
-        },
-        onPersisted: () =>
-          services.syncChannel.post({ type: "preferences-changed" }),
-      }),
-    [preferencesRepository, services],
-  );
+
+  // 写入错误订阅：服务为容器单例，onError 日志在装配根，这里只置位状态。
+  useEffect(() => {
+    return preferencesService.subscribeErrors(() => {
+      setRoutePersistenceStatus("error");
+    });
+  }, [preferencesService]);
 
   // 首次偏好加载：Promise 只创建一次，初始加载（路由恢复）经 whenLoaded
   // 等待同一份结果；写入内存镜像在 effect 中执行，卸载后不再 setState。
   const whenLoaded = useMemo(
-    () => preferencesRepository.get(),
-    [preferencesRepository],
+    () => preferencesService.get(),
+    [preferencesService],
   );
   useEffect(() => {
     let cancelled = false;
@@ -110,9 +105,9 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     return services.syncChannel.subscribe((event) => {
       if (event.type !== "preferences-changed") return;
-      void preferencesRepository.get().then(setPreferences);
+      void preferencesService.get().then(setPreferences);
     });
-  }, [services, preferencesRepository]);
+  }, [services, preferencesService]);
 
   // 视图/页面切换时把路由写入 preferences，刷新后恢复到同一位置；
   // 经 PreferencesService 串行写入（last-write-wins），内存镜像同步更新。

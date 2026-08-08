@@ -52,7 +52,7 @@ function createController(
         contentJson: editor.getJSON(),
         textSnapshot: editor.getText(),
       };
-      await services.documentCommit.restoreRevision({
+      await services.commands.document.restoreRevision({
         pageId: PAGE_ID,
         current,
         target,

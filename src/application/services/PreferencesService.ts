@@ -38,8 +38,23 @@ export class PreferencesService {
   private routeScheduled = false;
   /** dispose 后防抖/路由等 fire-and-forget 入口变为 no-op。 */
   private disposed = false;
+  /** 写入错误订阅者（R005 批次 2）：服务由装配根构造为单例后，状态层经订阅感知错误。 */
+  private readonly errorListeners = new Set<(error: unknown) => void>();
 
   constructor(private readonly deps: PreferencesServiceDeps) {}
+
+  /** 读取当前偏好（初始加载与跨标签页 preferences-changed 刷新共用）。 */
+  get(): Promise<Preferences> {
+    return this.deps.preferences.get();
+  }
+
+  /** 订阅写入错误；返回退订函数。 */
+  subscribeErrors(listener: (error: unknown) => void): () => void {
+    this.errorListeners.add(listener);
+    return () => {
+      this.errorListeners.delete(listener);
+    };
+  }
 
   /**
    * 排队执行一次偏好更新，返回该次更新合并后的完整偏好。
@@ -130,13 +145,14 @@ export class PreferencesService {
     return this.chain;
   }
 
-  /** 把任务挂到串行链尾；失败经 onError 上报但不断链。 */
+  /** 把任务挂到串行链尾；失败经 onError 与错误订阅者上报但不断链。 */
   private enqueue<T>(task: () => Promise<T>): Promise<T> {
     const run = this.chain.then(task);
     this.chain = run.then(
       () => undefined,
       (err: unknown) => {
         this.deps.onError?.(err);
+        for (const listener of this.errorListeners) listener(err);
       },
     );
     return run;
