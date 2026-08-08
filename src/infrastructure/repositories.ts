@@ -1,5 +1,5 @@
 import type {
-  AttachmentRepository,
+  AssetStore,
   ContentRepository,
   CreateAttachmentInput,
   CreatePageInput,
@@ -26,7 +26,9 @@ import {
 import { parseDocumentContent } from "../domain/validation/documentContent";
 import {
   DEFAULT_PREFERENCES,
+  INITIAL_CONTENT_VERSION_TOKEN,
   type Attachment,
+  type ContentVersionToken,
   type DocumentContent,
   type DocumentRevision,
   type Page,
@@ -59,6 +61,13 @@ import { createId } from "./id";
  * 与 IndexedDB 之间的唯一数据通道；页面树的纯逻辑（排序、子树收集、成环检测）
  * 全部委托给 `domain/pageTree.ts`，本文件只做持久化与多 store 事务编排。
  *
+ * 正文版本令牌（R005 阶段 3）：领域模型为不透明 ContentVersionToken，
+ * IndexedDB 内部仍存 number（不升 DB 版本、不做数据迁移），由本文件在
+ * 读写边界转换：number N ↔ "idb:N"；INITIAL_CONTENT_VERSION_TOKEN（空串）
+ * 映射为内部初始版本 0（尚无正文记录或存量记录无 version 字段）；
+ * 非 "idb:N" 编码的令牌无法对应本实现的持久化状态，一律视为冲突
+ * （DOCUMENT_CONFLICT），绝不猜测或透传。
+ *
  * 横切策略：
  * - 损坏数据降级：读路径一律经 normalize* / isValid* 校验，核心字段非法的记录
  *   跳过（返回 null/过滤掉），旧版本缺失的新字段按默认值补齐（对应 R001 §6.3）；
@@ -67,6 +76,29 @@ import { createId } from "./id";
  *   保证要么全部落库要么整体回滚，不留中间态。
  * - 列表接口先 `ensureSeeded`：首次启动惰性写入预置知识库，UI 无需感知。
  */
+
+/**
+ * contents store 的持久化 DTO：与 DocumentContent 同形，但 version 为
+ * 内部 number（存量记录可能无此字段）；只在读写边界转换为领域令牌。
+ */
+type StoredContent = Omit<DocumentContent, "version"> & { version?: number };
+
+/** 内部 number → 领域令牌（"idb:N"）。 */
+function versionToToken(version: number): ContentVersionToken {
+  return `idb:${version}`;
+}
+
+/**
+ * 领域令牌 → 内部 number：空令牌（INITIAL_CONTENT_VERSION_TOKEN）映射为
+ * 初始版本 0；非本实现编码（含其他实现的 "mem:N"、"sha256:..." 等）返回
+ * null，由调用方按 DOCUMENT_CONFLICT 处理。
+ */
+function tokenToVersion(token: ContentVersionToken): number | null {
+  if (token === INITIAL_CONTENT_VERSION_TOKEN) return 0;
+  if (!token.startsWith("idb:")) return null;
+  const n = Number(token.slice(4));
+  return Number.isInteger(n) && n >= 0 ? n : null;
+}
 
 /** 核心字段缺失/非法时返回 null；新增字段按默认值补齐（旧数据降级）。 */
 function normalizePage(record: unknown): Page | null {
@@ -331,12 +363,12 @@ export const pageRepository: PageRepository = {
     await tx.objectStore(STORE_PAGES).put(page);
     // 文档页同事务写入空正文，保证「有文档必有 contents 记录」这一不变量。
     if (page.kind === "document") {
-      const content: DocumentContent = {
+      const content: StoredContent = {
         pageId: page.id,
         workspaceId: page.workspaceId,
         contentJson: { type: "doc", content: [] },
         textSnapshot: "",
-        // 新文档首版正文（R004 阶段 7）。
+        // 新文档首版正文（内部 number，读边界转换为 "idb:1"，R005 阶段 3）。
         version: 1,
         updatedAt: now,
       };
@@ -566,7 +598,7 @@ export const contentRepository: ContentRepository = {
   async get(pageId) {
     const db = await getDB();
     const content = (await db.get(STORE_CONTENTS, pageId)) as
-      DocumentContent | undefined;
+      StoredContent | undefined;
     // 损坏记录按「无正文」处理，由上层走空文档逻辑，而不是把脏 JSON 塞进编辑器。
     if (!content || typeof content.pageId !== "string") return undefined;
     return normalizeContent(content);
@@ -577,6 +609,8 @@ export const contentRepository: ContentRepository = {
     // 单事务读页面取 workspaceId + 读当前正文 version 再写正文（R004 阶段 7
     // 乐观锁）：页面不存在抛 PAGE_NOT_FOUND；version 不匹配抛 DOCUMENT_CONFLICT，
     // 多标签页并发保存时后到者显式失败而不是静默覆盖。
+    // R005 阶段 3：expectedVersion 为不透明令牌，写边界经 tokenToVersion 转回
+    // 内部 number 参与比对；非本实现编码的令牌（expected === null）视为冲突。
     const tx = db.transaction([STORE_PAGES, STORE_CONTENTS], "readwrite");
     const page = normalizePage(await tx.objectStore(STORE_PAGES).get(pageId));
     if (!page) {
@@ -586,28 +620,31 @@ export const contentRepository: ContentRepository = {
       );
     }
     const existing = (await tx.objectStore(STORE_CONTENTS).get(pageId)) as
-      DocumentContent | undefined;
-    // 存量记录无 version 字段：读路径视为 0（首次保存落 1），无需 schema 升级。
+      StoredContent | undefined;
+    // 存量记录无 version 字段：内部视为 0（对应 INITIAL_CONTENT_VERSION_TOKEN），
+    // 无需 schema 升级。
     const currentVersion =
       existing && typeof existing.version === "number" ? existing.version : 0;
-    if (currentVersion !== expectedVersion) {
+    const expected = tokenToVersion(expectedVersion);
+    if (expected === null || currentVersion !== expected) {
       throw new DomainError(
         "DOCUMENT_CONFLICT",
-        `文档已在其他地方被修改（当前版本 ${currentVersion}，期望 ${expectedVersion}）`,
+        `文档已在其他地方被修改（当前版本 ${versionToToken(currentVersion)}，期望 ${expectedVersion || "（空令牌）"}）`,
       );
     }
     const updatedAt = Date.now();
-    const content: DocumentContent = {
+    const nextVersion = currentVersion + 1;
+    const content: StoredContent = {
       pageId,
       workspaceId: page.workspaceId,
       contentJson,
       textSnapshot,
-      version: currentVersion + 1,
+      version: nextVersion,
       updatedAt,
     };
     await tx.objectStore(STORE_CONTENTS).put(content);
     await tx.done;
-    return { version: content.version, updatedAt };
+    return { version: versionToToken(nextVersion), updatedAt };
   },
 
   async listAll() {
@@ -629,20 +666,25 @@ export const contentRepository: ContentRepository = {
 };
 
 /** 正文记录校验：核心字段非法的记录跳过（v4 迁移前的旧数据由迁移补齐 workspaceId）。 */
-function isValidContent(c: unknown): c is DocumentContent {
+function isValidContent(c: unknown): c is StoredContent {
   return (
     !!c &&
-    typeof (c as DocumentContent).pageId === "string" &&
-    typeof (c as DocumentContent).workspaceId === "string" &&
-    typeof (c as DocumentContent).textSnapshot === "string"
+    typeof (c as StoredContent).pageId === "string" &&
+    typeof (c as StoredContent).workspaceId === "string" &&
+    typeof (c as StoredContent).textSnapshot === "string"
   );
 }
 
-/** 版本号归一化：存量记录无 version 字段（R004 阶段 7 前），读路径一律视为 0。 */
-function normalizeContent(content: DocumentContent): DocumentContent {
+/**
+ * 读边界归一化（R005 阶段 3）：内部 number → 领域令牌 "idb:N"；
+ * 存量记录无 version 字段（R004 阶段 7 前）视为初始版本 0（"idb:0"）。
+ */
+function normalizeContent(content: StoredContent): DocumentContent {
   return {
     ...content,
-    version: typeof content.version === "number" ? content.version : 0,
+    version: versionToToken(
+      typeof content.version === "number" ? content.version : 0,
+    ),
   };
 }
 
@@ -694,6 +736,19 @@ export const documentWriteRepository: DocumentWriteRepository = {
       .getAll(input.workspaceId)) as unknown[];
     const pages = rows.map(normalizePage).filter((p): p is Page => p !== null);
     const now = Date.now();
+    // 迁移路径（Portable Vault 导入）可经入参保留原时间戳；非法值回退 now。
+    const createdAt =
+      typeof input.createdAt === "number" &&
+      Number.isFinite(input.createdAt) &&
+      input.createdAt > 0
+        ? input.createdAt
+        : now;
+    const updatedAt =
+      typeof input.updatedAt === "number" &&
+      Number.isFinite(input.updatedAt) &&
+      input.updatedAt > 0
+        ? input.updatedAt
+        : createdAt;
     const page: Page = {
       id: createId(),
       workspaceId: input.workspaceId,
@@ -705,16 +760,16 @@ export const documentWriteRepository: DocumentWriteRepository = {
       favoriteAt: null,
       lastOpenedAt: null,
       deletedAt: null,
-      createdAt: now,
-      updatedAt: now,
+      createdAt,
+      updatedAt,
     };
     await tx.objectStore(STORE_PAGES).put(page);
-    const content: DocumentContent = {
+    const content: StoredContent = {
       pageId: page.id,
       workspaceId: page.workspaceId,
       contentJson: parsed.value,
       textSnapshot: input.textSnapshot,
-      // 新文档首版正文（R004 阶段 7）。
+      // 新文档首版正文（内部 number，读边界转换为 "idb:1"，R005 阶段 3）。
       version: 1,
       updatedAt: now,
     };
@@ -741,12 +796,12 @@ export const documentWriteRepository: DocumentWriteRepository = {
     }
     const existing = (await tx
       .objectStore(STORE_CONTENTS)
-      .get(input.pageId)) as DocumentContent | undefined;
+      .get(input.pageId)) as StoredContent | undefined;
     // 外部覆盖路径（导入/模板/损坏面板）：不做冲突检查，但 version 照常递增，
     // 保证编辑器保存链路的乐观锁读到的是单调递增版本（R004 阶段 7）。
     const currentVersion =
       existing && typeof existing.version === "number" ? existing.version : 0;
-    const content: DocumentContent = {
+    const stored: StoredContent = {
       pageId: input.pageId,
       workspaceId: page.workspaceId,
       contentJson: parsed.value,
@@ -754,9 +809,10 @@ export const documentWriteRepository: DocumentWriteRepository = {
       version: currentVersion + 1,
       updatedAt: Date.now(),
     };
-    await tx.objectStore(STORE_CONTENTS).put(content);
+    await tx.objectStore(STORE_CONTENTS).put(stored);
     await tx.done;
-    return content;
+    // 写边界转换：内部 number → 领域令牌（R005 阶段 3）。
+    return normalizeContent(stored);
   },
 };
 
@@ -855,39 +911,102 @@ function isValidAttachment(record: unknown): record is Attachment {
 }
 
 /**
- * 附件仓储（R001 §7.6）。Blob 直接存 IndexedDB，随页面 purge 级联删除；
+ * 附件持久化记录（R005 阶段 5）：新记录以 `data: Uint8Array` 存字节
+ * （结构化克隆天然支持，且 fake-indexeddb 可完整往返）；R005 之前的
+ * 存量记录为 `blob: Blob`，读路径兼容转换，无需 DB 版本迁移。
+ */
+interface StoredAttachmentRecord {
+  id: string;
+  pageId: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  createdAt: number;
+  data?: Uint8Array;
+  /** 存量记录的二进制字段（R005 阶段 5 之前）；新写入不再产生。 */
+  blob?: Blob;
+}
+
+/** 持久化记录 → 领域元数据（剥离二进制字段）。 */
+function toAttachment(record: StoredAttachmentRecord): Attachment {
+  return {
+    id: record.id,
+    pageId: record.pageId,
+    name: record.name,
+    mimeType: record.mimeType,
+    size: record.size,
+    createdAt: record.createdAt,
+  };
+}
+
+/** 读出记录字节：优先新格式 data，兼容存量 blob；缺失/不可读返回 undefined。 */
+async function readAttachmentData(
+  record: StoredAttachmentRecord,
+): Promise<Uint8Array | undefined> {
+  // 用 ArrayBuffer.isView 而非 instanceof：结构化克隆跨 realm 时
+  // （fake-indexeddb 等测试环境）instanceof 会误判。
+  if (record.data && ArrayBuffer.isView(record.data)) {
+    return new Uint8Array(
+      record.data.buffer.slice(
+        record.data.byteOffset,
+        record.data.byteOffset + record.data.byteLength,
+      ) as ArrayBuffer,
+    );
+  }
+  if (record.blob instanceof Blob) {
+    try {
+      return new Uint8Array(await record.blob.arrayBuffer());
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * 附件资源存储（R001 §7.6；R005 阶段 5 演进为 AssetStore port）。
+ * 字节以 Uint8Array 存 IndexedDB，随页面 purge 级联删除；
  * `removeOrphans` 在保存后清理文档不再引用的附件，防止存储只增不减。
  */
-export const attachmentRepository: AttachmentRepository = {
-  async get(id) {
+export const assetStore: AssetStore = {
+  async getMetadata(id) {
     const db = await getDB();
     const record = await db.get(STORE_ATTACHMENTS, id);
-    return isValidAttachment(record) ? record : undefined;
+    return isValidAttachment(record) ? toAttachment(record) : undefined;
   },
 
-  async listByPage(pageId) {
+  async getBinary(id) {
+    const db = await getDB();
+    const record = await db.get(STORE_ATTACHMENTS, id);
+    if (!isValidAttachment(record)) return undefined;
+    const data = await readAttachmentData(record);
+    if (!data) return undefined;
+    return { attachment: toAttachment(record), data };
+  },
+
+  async listByDocument(pageId) {
     const db = await getDB();
     const all = (await db.getAllFromIndex(
       STORE_ATTACHMENTS,
       "pageId",
       pageId,
     )) as unknown[];
-    return all.filter(isValidAttachment);
+    return all.filter(isValidAttachment).map(toAttachment);
   },
 
   async add(input: CreateAttachmentInput) {
     const db = await getDB();
-    const attachment: Attachment = {
+    const record: StoredAttachmentRecord = {
       id: createId(),
       pageId: input.pageId,
       name: input.name,
       mimeType: input.mimeType,
       size: input.size,
-      blob: input.blob,
+      data: input.data,
       createdAt: Date.now(),
     };
-    await db.put(STORE_ATTACHMENTS, attachment);
-    return attachment;
+    await db.put(STORE_ATTACHMENTS, record);
+    return toAttachment(record);
   },
 
   async remove(id) {
@@ -898,7 +1017,7 @@ export const attachmentRepository: AttachmentRepository = {
   async removeOrphans(pageId, referencedIds, options) {
     const referenced = new Set(referencedIds);
     const cutoff = options?.createdBeforeOrAt;
-    const all = await attachmentRepository.listByPage(pageId);
+    const all = await assetStore.listByDocument(pageId);
     // 只清理快照产生之前已存在的孤儿：快照之后新建的附件可能尚未进入
     // 新正文快照，删除会误伤（R004 INV-03）。
     const orphans = all.filter(

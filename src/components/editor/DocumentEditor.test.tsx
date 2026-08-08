@@ -5,7 +5,7 @@ import { useApp } from "../../state/AppState";
 import { TestApp } from "../../test/TestApp";
 import { resetDB } from "../../infrastructure/db";
 import {
-  attachmentRepository,
+  assetStore,
   pageRepository,
   workspaceRepository,
 } from "../../infrastructure/repositories";
@@ -25,7 +25,7 @@ function Harness() {
     <DocumentEditor
       pageId={host.pageId}
       initialContent={{ type: "doc", content: [{ type: "paragraph" }] }}
-      initialVersion={1}
+      initialVersion="idb:1"
       onEditorReady={(editor) => {
         host.editor = editor;
       }}
@@ -63,13 +63,13 @@ describe("DocumentEditor 附件孤儿清理", () => {
       pageId,
       new File(["x"], "a.txt", { type: "text/plain" }),
     );
-    const [record] = await attachmentRepository.listByPage(pageId);
+    const [record] = await assetStore.listByDocument(pageId);
     expect(record).toBeDefined();
 
     // 等待首次防抖保存落盘（引用仍在，附件保留）。
     await waitFor(
       async () => {
-        expect((await attachmentRepository.listByPage(pageId)).length).toBe(1);
+        expect((await assetStore.listByDocument(pageId)).length).toBe(1);
       },
       { timeout: 3000 },
     );
@@ -95,7 +95,7 @@ describe("DocumentEditor 附件孤儿清理", () => {
     ).toBeFalsy();
     await waitFor(
       async () => {
-        expect((await attachmentRepository.listByPage(pageId)).length).toBe(0);
+        expect((await assetStore.listByDocument(pageId)).length).toBe(0);
       },
       { timeout: 3000 },
     );

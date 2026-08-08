@@ -8,7 +8,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Editor } from "@tiptap/core";
 import type { DocumentContent } from "../domain/types";
-import { jsonToMarkdown } from "../editor/markdown";
+import { INITIAL_CONTENT_VERSION_TOKEN } from "../domain/types";
+import { exportDocumentMarkdown } from "../application/markdown/documentExport";
 import { useAppServices } from "../state/AppServicesProvider";
 import type { DocumentEditorController } from "../application/services/DocumentEditorController";
 import {
@@ -65,8 +66,9 @@ function emptyContent(pageId: string, workspaceId: string): DocumentContent {
     workspaceId,
     contentJson: { type: "doc", content: [{ type: "paragraph" }] },
     textSnapshot: "",
-    // 尚无正文记录：乐观锁起点为 0，首次保存落 version 1（R004 阶段 7）。
-    version: 0,
+    // 尚无正文记录：乐观锁起点为初始版本令牌（空串），首次保存由仓储
+    // 生成首个令牌（R005 阶段 3；R004 阶段 7 乐观锁语义不变）。
+    version: INITIAL_CONTENT_VERSION_TOKEN,
     updatedAt: Date.now(),
   };
 }
@@ -342,16 +344,35 @@ export function MainArea() {
     void setTheme(preferences.theme === "dark" ? "light" : "dark");
   };
 
-  const exportMarkdown = () => {
-    if (!editor || !page) return;
-    const markdown = jsonToMarkdown(editor.getJSON());
+  const exportMarkdown = async () => {
+    if (!liveEditor || !page) return;
+    // R005 阶段 4B：导出经 MarkdownCodec 编排——含图片/附件时产出
+    // 含资源的 ZIP 包（标题.md + assets/…），不再静默丢弃资源节点；
+    // 无资源时维持单 .md 导出（无 Frontmatter，行为同现状）。
+    const result = await exportDocumentMarkdown({
+      title: page.title || "无标题",
+      document: liveEditor.getJSON(),
+      assetAccess: services.assets.access,
+    });
+    // 导出入口暂无 toast 反馈通道：有损转换明细先经 console.warn 暴露，
+    // 后续批次有统一通知通道后再接上「本次导出含有损转换」提示。
+    if (result.lossy) {
+      console.warn(
+        `本次导出含有损转换（${result.unsupported.length} 项）：`,
+        result.unsupported,
+      );
+    }
     // 通过临时 Blob + 隐藏 <a download> 触发浏览器下载，无需任何服务端参与
-    const url = URL.createObjectURL(
-      new Blob([markdown], { type: "text/markdown;charset=utf-8" }),
-    );
+    const blob =
+      result.kind === "zip"
+        ? new Blob([result.data.buffer as ArrayBuffer], {
+            type: "application/zip",
+          })
+        : new Blob([result.markdown], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `${page.title || "无标题"}.md`;
+    anchor.download = result.fileName;
     anchor.click();
     URL.revokeObjectURL(url);
   };
@@ -474,7 +495,7 @@ export function MainArea() {
           aria-label="导出 Markdown"
           title="导出 Markdown"
           disabled={!liveEditor}
-          onClick={exportMarkdown}
+          onClick={() => void exportMarkdown()}
         >
           <IconExport />
         </button>

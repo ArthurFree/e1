@@ -1297,6 +1297,23 @@
   background: var(--color-surface-hover);
 }
 
+/* 中性次要按钮（如导入知识库入口）：与 __clear 同形、非危险色。 */
+.settings-panel__secondary {
+  font: inherit;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-sm);
+  padding: 5px 12px;
+}
+
+.settings-panel__secondary:hover {
+  background: var(--color-surface-hover);
+}
+
+.settings-panel__secondary:disabled {
+  opacity: 0.5;
+}
+
 .settings-panel__note {
   margin: 0;
   padding: 4px 10px 10px;

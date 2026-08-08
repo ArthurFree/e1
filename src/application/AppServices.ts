@@ -13,8 +13,8 @@
  * 本文件不依赖任何具体实现。
  */
 import type { AIProvider } from "../domain/ai";
-import type { AttachmentRepository } from "../domain/repositories";
-import type { AIConfig } from "../domain/types";
+import type { AIConfig, ContentVersionToken } from "../domain/types";
+import type { AssetServices } from "./assets/assetServices";
 import type { PreferencesService } from "./services/PreferencesService";
 import type { WorkspaceCommandService } from "./commands/WorkspaceCommandService";
 import type { PageCommandService } from "./commands/PageCommandService";
@@ -33,9 +33,13 @@ import type { RuntimeCapabilities } from "../runtime/RuntimeCapabilities";
 
 /** 应用服务容器：命令/查询服务 + 跨领域应用服务工厂。 */
 export interface AppServices {
-  // TODO(R005-13/14)：阶段 5 Asset 抽象后移除公开附件仓储
-  // （当前经 editor.storage 通道供 Tiptap 附件扩展读取）。
-  attachment: AttachmentRepository;
+  /**
+   * 附件与资源访问服务组（R005 阶段 5）：导入/删除编排、二进制读取与
+   * 临时 URL/下载、文件选择、用户反馈通道。编辑器扩展经
+   * editor.storage.assetServices 消费（DocumentEditor 装配时注入），
+   * 容器不再公开原始附件 port。
+   */
+  assets: AssetServices;
   /**
    * 偏好写入服务单例（R005 批次 2）：装配根构造，串行写入队列 +
    * dispose/resume 生命周期；PreferencesProvider 直接消费本实例。
@@ -47,12 +51,13 @@ export interface AppServices {
    * 保存协调器工厂：隐藏正文/版本/附件三仓储与恢复缓冲的装配细节，
    * 每个文档一个实例，销毁由调用方负责。
    * initialVersion 为编辑器加载正文时的 content.version（乐观锁起点，
-   * R004 阶段 7）；缺省 0（尚无正文记录的新文档）。
+   * R004 阶段 7；R005 阶段 3 起为不透明 ContentVersionToken）；
+   * 缺省 INITIAL_CONTENT_VERSION_TOKEN（尚无正文记录的新文档）。
    */
   createSaveCoordinator(
     pageId: string,
     onStateChange?: (state: SaveCoordinatorState) => void,
-    options?: { initialVersion?: number },
+    options?: { initialVersion?: ContentVersionToken },
   ): DocumentSaveCoordinator;
   /** 跨标签页同步频道（R004 §7.2）；无 BroadcastChannel 环境为 no-op 实例。 */
   syncChannel: SyncChannelService;

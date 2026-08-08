@@ -41,7 +41,7 @@ async function renderWithCorruptedDoc() {
     kind: "document",
     title: "损坏文档",
   });
-  await contentRepository.save(page.id, CORRUPTED_JSON, "坏文本", 1);
+  await contentRepository.save(page.id, CORRUPTED_JSON, "坏文本", "idb:1");
   // 通过持久化路由让 AppProvider 启动后直接打开该文档。
   await preferencesRepository.update({
     lastRoute: serializeRoute({

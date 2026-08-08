@@ -8,7 +8,7 @@ Tiptap onUpdate
   ↓ noteEdit() / 800ms 防抖 enqueue()
 DocumentSaveCoordinator（application 层：串行队列 + 代次管理）
   ↓ DocumentContentCommitter（DocumentCommitService：落盘 + 搜索索引同步）
-contentRepository.save → revisionRepository.add/prune → attachmentRepository.removeOrphans
+contentRepository.save → revisionRepository.add/prune → assetStore.removeOrphans（R005 阶段 5 起为 AssetStore port）
 ```
 
 `DocumentEditor` 只做编辑器装配与快照提交，持久化流程全部在 `DocumentSaveCoordinator`（`src/application/services/SaveCoordinator.ts`）。每个文档一个协调器实例，文档切换时旧实例排空后销毁。
@@ -33,7 +33,7 @@ contentRepository.save → revisionRepository.add/prune → attachmentRepository
 
 ## 恢复缓冲（R003 §1.4）
 
-每次 enqueue 把快照写入 `localStorage["pending-document-recovery:{pageId}"]`（正文 JSON + generation + 时间戳，不写附件 Blob）；保存成功按代次清除。加载文档时若恢复缓冲比 IndexedDB 正文更新，显示恢复提示条：恢复（作为 initialContent 并立即保存一次）或丢弃。读取时正文 JSON 经白名单校验，坏数据直接清除。
+每次 enqueue 把快照写入 `localStorage["pending-document-recovery:{pageId}"]`（正文 JSON + generation + 时间戳，不写附件二进制）；保存成功按代次清除。加载文档时若恢复缓冲比 IndexedDB 正文更新，显示恢复提示条：恢复（作为 initialContent 并立即保存一次）或丢弃。读取时正文 JSON 经白名单校验，坏数据直接清除。
 
 ## 保存状态机
 

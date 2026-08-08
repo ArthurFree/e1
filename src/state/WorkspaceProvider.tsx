@@ -32,6 +32,10 @@ import type { Page, PageKind, Workspace } from "../domain/types";
 import { parseRoute } from "../domain/route";
 import type { WorkspaceSessionData } from "../application/services/WorkspaceSessionService";
 import { trackTiming } from "../application/devDiagnostics";
+import {
+  VaultImportService,
+  type VaultImportReport,
+} from "../application/vault/VaultImportService";
 import { useAppServices } from "./AppServicesProvider";
 import {
   WorkspaceCommandContext,
@@ -513,6 +517,51 @@ export function WorkspaceProvider({
     [loadSession, navBridge, workspaceCommands],
   );
 
+  // 导入 Portable Vault（R005 阶段 7B）：编排下沉到 application 层服务，
+  // 这里只负责导入后的状态生命周期——知识库列表镜像刷新（新知识库由
+  // 导入服务直接落库，不经 createWorkspace，故镜像整体重取）+ 切换到
+  // 新知识库首页（与 createWorkspace 同一套 loadSession/navBridge 通道）。
+  const importVault = useCallback(
+    async (data: Uint8Array): Promise<VaultImportReport> => {
+      const service = new VaultImportService({
+        workspaceQuery: workspaceQueries,
+        workspaceCommands,
+        pageCommands,
+        documentCommands,
+        tagCommands,
+        assetCommands: services.assets.commands,
+      });
+      const report = await service.importVault(data);
+      setWorkspaces(await workspaceQueries.listWorkspaces());
+      // 原子加载新知识库会话；被更新的请求取代时中止导航。
+      const sessionData = await loadSession(report.workspaceId);
+      if (!sessionData) return report;
+      navBridge.commands?.showWorkspaceHome(report.workspaceId);
+      void workspaceCommands
+        .setLastOpened(report.workspaceId, Date.now())
+        .then(() => {
+          setWorkspaces((prev) =>
+            prev.map((w) =>
+              w.id === report.workspaceId
+                ? { ...w, lastOpenedAt: Date.now() }
+                : w,
+            ),
+          );
+        });
+      return report;
+    },
+    [
+      workspaceQueries,
+      workspaceCommands,
+      pageCommands,
+      documentCommands,
+      tagCommands,
+      services,
+      loadSession,
+      navBridge,
+    ],
+  );
+
   const switchWorkspace = useCallback(
     async (id: string) => {
       // 原子切换：会话数据同批次提交，过期请求在此被丢弃、中止导航。
@@ -582,6 +631,7 @@ export function WorkspaceProvider({
       retryLoad,
       switchWorkspace,
       createWorkspace,
+      importVault,
       toggleWorkspaceFavorite,
       createDocumentIn,
       createPage,
@@ -603,6 +653,7 @@ export function WorkspaceProvider({
       retryLoad,
       switchWorkspace,
       createWorkspace,
+      importVault,
       toggleWorkspaceFavorite,
       createDocumentIn,
       createPage,

@@ -1,6 +1,6 @@
 /**
  * 附件统一校验（R004 阶段 6，§6.2）：单附件最大值、单文档附件总量、
- * 图片 MIME 白名单、文件名长度、Blob 实际大小复核。
+ * 图片 MIME 白名单、文件名长度、实际字节数复核。
  *
  * 校验位于 domain 层，编辑器附件块（attachment.ts）与图片插入
  * （localImage.ts）共用同一入口，不只依赖 <input accept>。
@@ -29,12 +29,13 @@ export const IMAGE_MIME_TYPES: ReadonlySet<string> = new Set([
   "image/svg+xml",
 ]);
 
-/** 附件校验入参；blob 为实际二进制（大小以 blob.size 为准，不信任声明值）。 */
+/** 附件校验入参；size 为实际字节数（以实际大小为准，不信任外部声明值）。 */
 export interface ValidateAttachmentInput {
   name: string;
   mimeType: string;
-  blob: Blob;
-  /** 所属文档已有附件总字节数（调用方经 listByPage 求和）。 */
+  /** 实际字节数（R005 阶段 5：由 Blob.size 复核改为调用方传入字节长度）。 */
+  size: number;
+  /** 所属文档已有附件总字节数（调用方经 listByDocument 求和）。 */
   existingTotalBytes: number;
   /** true 时按图片 MIME 白名单校验（图片插入路径）。 */
   requireImage?: boolean;
@@ -60,8 +61,8 @@ export function validateAttachment(input: ValidateAttachmentInput): void {
       `不支持的图片类型: ${input.mimeType || "未知"}，仅支持 PNG/JPEG/GIF/WebP/SVG`,
     );
   }
-  // Blob 实际大小复核：以 blob.size 为准，防止声明 size 与实际不符。
-  const actualBytes = input.blob.size;
+  // 实际大小复核：以传入的字节数为准（来源为 File.size / data.byteLength）。
+  const actualBytes = input.size;
   if (actualBytes > MAX_ATTACHMENT_BYTES) {
     throw new DomainError(
       "ATTACHMENT_TOO_LARGE",

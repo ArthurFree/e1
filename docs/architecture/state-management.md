@@ -7,7 +7,7 @@
 | Provider    | 文件                      | 拥有                                                                                                          | 公开 Context                                            |
 | ----------- | ------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
 | Preferences | `PreferencesProvider.tsx` | preferences、routePersistenceStatus、`PreferencesService` 实例（卸载时 `dispose()`：清防抖定时器 + 队列排空） | `PreferencesContext.tsx`                                |
-| Workspace   | `WorkspaceProvider.tsx`   | ready/error/retryLoad、workspaces、会话（pages/tags/pageTags/status）、页面/标签 CRUD、搜索索引构建           | `WorkspaceSessionContext.tsx`（细分 Data/Command 双片） |
+| Workspace   | `WorkspaceProvider.tsx`   | ready/error/retryLoad、workspaces、会话（pages/tags/pageTags/status）、页面/标签 CRUD、搜索索引准备           | `WorkspaceSessionContext.tsx`（细分 Data/Command 双片） |
 | Navigation  | `NavigationProvider.tsx`  | view、selectedPageId、titleFocusPageId、导航动作                                                              | `NavigationContext.tsx`（细分 State/Command 双片）      |
 | Overlay     | `OverlayContext.tsx`      | settings/search/trash/treeDrawer 开关（自包含 Provider）                                                      | 同左                                                    |
 
@@ -31,9 +31,9 @@ Workspace 与 Navigation 两个状态域各自的公开 Context 进一步拆为�
 
 ## 知识库会话原子加载（R003 阶段 2）
 
-- `workspaceId/pages/tags/pageTags` 由单个 `useReducer` 持有，切换知识库时经 `WorkspaceSessionService.load` 一次 `Promise.all` 拉齐（含正文，供搜索索引），`requestId` 递增丢弃过期响应，单次 dispatch 提交——UI 永远不会看到「新知识库 + 旧页面」。
+- `workspaceId/pages/tags/pageTags` 由单个 `useReducer` 持有，切换知识库时经 `WorkspaceSessionService.load` 一次 `Promise.all` 拉齐（R005 阶段 6 起会话数据不再携带正文），`requestId` 递增丢弃过期响应，单次 dispatch 提交——UI 永远不会看到「新知识库 + 旧页面」。
 - 会话未 ready 不进入文档视图；加载失败进 error 状态并有重试入口。
-- 会话加载成功即构建工作区级搜索索引（`SearchIndexService.build`）。
+- 会话加载成功即经 `SearchIndexPort.prepareWorkspace` 准备/重建工作区级搜索索引（R005 阶段 6；索引实现自行经仓储读取页面与正文快照，Web 实现为 `BrowserMemorySearchIndex`）。
 
 ## 渲染隔离
 

@@ -286,7 +286,9 @@ async function doSeed(db: IDBPDatabase): Promise<void> {
   ]) {
     await tx.objectStore(STORE_PAGES).put(page);
     if (page.kind === "document") {
-      const content: DocumentContent = {
+      // 持久化 DTO（R005 阶段 3）：内部存 number 版本，读边界由仓储转换为
+      // 领域令牌 "idb:N"，这里直接写库故用 number。
+      const content: Omit<DocumentContent, "version"> & { version: number } = {
         pageId: page.id,
         workspaceId: page.workspaceId,
         contentJson,

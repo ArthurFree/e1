@@ -14,7 +14,11 @@ import type {
   CreateDocumentWithContentInput,
   ReplaceDocumentContentInput,
 } from "../../domain/repositories";
-import type { DocumentContent, Page } from "../../domain/types";
+import type {
+  ContentVersionToken,
+  DocumentContent,
+  Page,
+} from "../../domain/types";
 import type { DocumentCommitService } from "../services/DocumentCommitService";
 import type { SyncChannelService } from "../services/SyncChannelService";
 
@@ -53,8 +57,8 @@ export class DocumentCommandService {
     pageId: string,
     contentJson: unknown,
     textSnapshot: string,
-    expectedVersion: number,
-  ): Promise<{ savedAt: number; version: number }> {
+    expectedVersion: ContentVersionToken,
+  ): Promise<{ savedAt: number; version: ContentVersionToken }> {
     return this.deps.documentCommit.commit(
       pageId,
       contentJson,

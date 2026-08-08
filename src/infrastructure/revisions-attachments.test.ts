@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { getDB, resetDB, STORE_ATTACHMENTS, STORE_REVISIONS } from "./db";
 import { sleep } from "../test/fixtures";
 import {
-  attachmentRepository,
+  assetStore,
   contentRepository,
   pageRepository,
   revisionRepository,
@@ -193,62 +193,63 @@ describe("版本仓储", () => {
 describe("附件仓储", () => {
   it("附件写入后可读取与列出", async () => {
     const doc = await seedDoc();
-    const blob = new Blob(["hello"], { type: "text/plain" });
-    const attachment = await attachmentRepository.add({
+    // R005 阶段 5：字节以 Uint8Array 落库，fake-indexeddb 可完整往返。
+    const attachment = await assetStore.add({
       pageId: doc.id,
       name: "说明.txt",
       mimeType: "text/plain",
       size: 5,
-      blob,
+      data: new Uint8Array([104, 101, 108, 108, 111]),
     });
 
-    const stored = await attachmentRepository.get(attachment.id);
+    const stored = await assetStore.getMetadata(attachment.id);
     expect(stored?.name).toBe("说明.txt");
     expect(stored?.mimeType).toBe("text/plain");
     expect(stored?.size).toBe(5);
-    // 注：fake-indexeddb + jsdom 无法结构化克隆 Blob 内容（克隆为空对象），
-    // Blob 内容往返只在真实浏览器验证；此处验证元数据与记录可读。
+    // 字节级往返（getBinary）。
+    const binary = await assetStore.getBinary(attachment.id);
+    expect([...(binary?.data ?? [])]).toEqual([104, 101, 108, 108, 111]);
 
-    const list = await attachmentRepository.listByPage(doc.id);
+    const list = await assetStore.listByDocument(doc.id);
     expect(list.map((a) => a.id)).toEqual([attachment.id]);
   });
 
   it("remove 删除附件，removeOrphans 只清理未被引用的附件", async () => {
     const doc = await seedDoc();
     const make = (name: string) =>
-      attachmentRepository.add({
+      assetStore.add({
         pageId: doc.id,
         name,
         mimeType: "text/plain",
         size: 1,
-        blob: new Blob(["x"]),
+        data: new Uint8Array([120]),
       });
     const keep = await make("保留.txt");
     const orphanA = await make("孤儿A.txt");
     const orphanB = await make("孤儿B.txt");
 
-    const removed = await attachmentRepository.removeOrphans(doc.id, [keep.id]);
+    const removed = await assetStore.removeOrphans(doc.id, [keep.id]);
     expect(removed).toBe(2);
-    expect(
-      (await attachmentRepository.listByPage(doc.id)).map((a) => a.id),
-    ).toEqual([keep.id]);
+    expect((await assetStore.listByDocument(doc.id)).map((a) => a.id)).toEqual([
+      keep.id,
+    ]);
     // 再次执行无副作用。
-    expect(await attachmentRepository.removeOrphans(doc.id, [keep.id])).toBe(0);
+    expect(await assetStore.removeOrphans(doc.id, [keep.id])).toBe(0);
 
-    await attachmentRepository.remove(keep.id);
-    expect(await attachmentRepository.get(keep.id)).toBeUndefined();
+    await assetStore.remove(keep.id);
+    expect(await assetStore.getMetadata(keep.id)).toBeUndefined();
     expect(orphanA.id).not.toBe(orphanB.id);
   });
 
   it("removeOrphans 时间边界：快照之后新建的附件不清理（R004 INV-03）", async () => {
     const doc = await seedDoc();
     const make = (name: string) =>
-      attachmentRepository.add({
+      assetStore.add({
         pageId: doc.id,
         name,
         mimeType: "text/plain",
         size: 1,
-        blob: new Blob(["x"]),
+        data: new Uint8Array([120]),
       });
     // capturedAt 之前已存在的孤儿：允许清理。
     const oldOrphan = await make("旧孤儿.txt");
@@ -258,49 +259,49 @@ describe("附件仓储", () => {
     // capturedAt 之后新建的附件：即使未被引用也不得删除。
     const newAttachment = await make("新附件.txt");
 
-    const removed = await attachmentRepository.removeOrphans(doc.id, [], {
+    const removed = await assetStore.removeOrphans(doc.id, [], {
       createdBeforeOrAt: capturedAt,
     });
     expect(removed).toBe(1);
-    expect(
-      (await attachmentRepository.listByPage(doc.id)).map((a) => a.id),
-    ).toEqual([newAttachment.id]);
-    expect(await attachmentRepository.get(oldOrphan.id)).toBeUndefined();
+    expect((await assetStore.listByDocument(doc.id)).map((a) => a.id)).toEqual([
+      newAttachment.id,
+    ]);
+    expect(await assetStore.getMetadata(oldOrphan.id)).toBeUndefined();
     // 不传时间边界时保持原语义：清理全部未引用附件。
-    expect(await attachmentRepository.removeOrphans(doc.id, [])).toBe(1);
-    expect((await attachmentRepository.listByPage(doc.id)).length).toBe(0);
+    expect(await assetStore.removeOrphans(doc.id, [])).toBe(1);
+    expect((await assetStore.listByDocument(doc.id)).length).toBe(0);
   });
 
   it("损坏的附件记录被跳过", async () => {
     const doc = await seedDoc();
     const db = await getDB();
     await db.put(STORE_ATTACHMENTS, { id: "bad", pageId: doc.id, name: 123 });
-    expect(await attachmentRepository.listByPage(doc.id)).toEqual([]);
-    expect(await attachmentRepository.get("bad")).toBeUndefined();
+    expect(await assetStore.listByDocument(doc.id)).toEqual([]);
+    expect(await assetStore.getMetadata("bad")).toBeUndefined();
   });
 });
 
 describe("永久删除级联", () => {
   it("purge 级联删除版本与附件", async () => {
     const doc = await seedDoc();
-    await contentRepository.save(doc.id, { type: "doc" }, "正文", 1);
+    await contentRepository.save(doc.id, { type: "doc" }, "正文", "idb:1");
     await revisionRepository.add(doc.id, { type: "doc" }, "正文", "interval");
-    await attachmentRepository.add({
+    await assetStore.add({
       pageId: doc.id,
       name: "附件.txt",
       mimeType: "text/plain",
       size: 1,
-      blob: new Blob(["x"]),
+      data: new Uint8Array([120]),
     });
 
     await pageRepository.remove(doc.id);
     // 回收站内保留，恢复可用。
     expect(await revisionRepository.listByPage(doc.id)).toHaveLength(1);
-    expect(await attachmentRepository.listByPage(doc.id)).toHaveLength(1);
+    expect(await assetStore.listByDocument(doc.id)).toHaveLength(1);
 
     await pageRepository.purge(doc.id);
     expect(await revisionRepository.listByPage(doc.id)).toEqual([]);
-    expect(await attachmentRepository.listByPage(doc.id)).toEqual([]);
+    expect(await assetStore.listByDocument(doc.id)).toEqual([]);
     expect(await contentRepository.get(doc.id)).toBeUndefined();
   });
 });

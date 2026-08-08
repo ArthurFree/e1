@@ -146,7 +146,7 @@ describe("workspaceDocStats", () => {
         workspaceId: "ws1",
         contentJson: null,
         textSnapshot: "一二三四五",
-        version: 1,
+        version: "t:1",
         updatedAt: 0,
       },
       {
@@ -154,7 +154,7 @@ describe("workspaceDocStats", () => {
         workspaceId: "ws1",
         contentJson: null,
         textSnapshot: "abc",
-        version: 1,
+        version: "t:1",
         updatedAt: 0,
       },
       {
@@ -162,7 +162,7 @@ describe("workspaceDocStats", () => {
         workspaceId: "ws1",
         contentJson: null,
         textSnapshot: "已删除",
-        version: 1,
+        version: "t:1",
         updatedAt: 0,
       },
     ];

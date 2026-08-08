@@ -1,30 +1,30 @@
 /**
- * 本地图片节点（R004 阶段 6，§6.1）：图片二进制存 IndexedDB attachments
- * store，文档 JSON 只保存 attachmentId/alt/width，不再内联 Base64——
+ * 本地图片节点（R004 阶段 6，§6.1）：图片二进制存附件资源存储，
+ * 文档 JSON 只保存 attachmentId/alt/width，不再内联 Base64——
  * 避免 Base64 随自动版本快照被重复存储导致 IndexedDB 膨胀。
  *
- * 渲染时经附件仓储（editor.storage 通道，与附件块同一注入方式）取 Blob
- * 创建 Object URL，节点销毁时 revoke；加载失败/附件缺失显示占位。
+ * 渲染经 AssetAccessService.resolveUrl（Web：Object URL）即用即毁，
+ * 节点销毁时 releaseUrl；加载失败/资源缺失显示占位。
  * 粘贴、拖拽与 `/` 命令三条插入路径统一走
- * File → domain/attachments 校验 → AttachmentRepository.add → 插入本节点。
+ * File → AssetCommandService.importAsset（含 domain/attachments 校验）→
+ * 插入本节点（R005 阶段 5：编辑器不再触碰 alert/input file/Object URL）。
  *
  * 旧 Base64 图片（image 节点 data: URI）继续由 Image 扩展兼容渲染，
  * 编辑器不再产生新的 Base64（Image 的 allowBase64 已关闭，见 extensions.ts）。
  *
- * Markdown 导出与附件块一致：不序列化（renderMarkdown 缺省时输出空），
- * 避免导出 `![](attachment:id)` 后重新导入产生无法渲染的 image 节点。
+ * Markdown 导出与附件块一致：经 R005 阶段 4B 的 portable 序列化输出
+ * assets/ 相对路径（plain 模式降级为可见占位文本）。
  */
 import { Node } from "@tiptap/core";
 import type { Editor } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
-import { validateAttachment } from "../domain/attachments";
 import { isDomainError, isQuotaExceededError } from "../domain/errors";
-import { getAttachmentRepository } from "./attachment";
+import { getAssetServices, type AttachmentFileData } from "./attachment";
 
 /** 粘贴/拖拽图片文件的 ProseMirror 插件 key（测试经它取插件断言行为）。 */
 export const localImageFilesPluginKey = new PluginKey("localImageFiles");
 
-/** 本地图片节点的属性：仅元数据，Blob 本体不进入文档 JSON。 */
+/** 本地图片节点的属性：仅元数据，二进制本体不进入文档 JSON。 */
 export interface LocalImageAttrs {
   attachmentId: string;
   alt?: string | null;
@@ -45,50 +45,34 @@ function imageFiles(files: FileList | null | undefined): File[] {
 }
 
 /**
- * 校验并写入附件记录后插入本地图片节点；失败时 alert 提示且不产生副作用。
+ * 校验并写入附件记录后插入本地图片节点；失败时提示且不产生副作用。
  * @returns 是否成功插入。
  */
-export async function insertLocalImageFile(
+export async function insertLocalImageData(
   editor: Editor,
   pageId: string,
-  file: File,
+  file: AttachmentFileData,
   options?: { pos?: number },
 ): Promise<boolean> {
-  const repository = getAttachmentRepository(editor);
+  const { commands, notify } = getAssetServices(editor);
+  let record;
   try {
-    // 单文档附件总量校验需要既有总量（R004 §6.2）。
-    const existing = await repository.listByPage(pageId);
-    const existingTotalBytes = existing.reduce((sum, a) => sum + a.size, 0);
-    validateAttachment({
+    record = await commands.importAsset({
+      pageId,
       name: file.name,
-      mimeType: file.type,
-      blob: file,
-      existingTotalBytes,
+      mimeType: file.mimeType,
+      size: file.size,
+      data: file.data,
       requireImage: true,
     });
   } catch (err) {
-    window.alert(
+    // 校验失败（DomainError）/存储空间不足/普通写入失败分开提示（R004 §6.3）。
+    notify.notify(
       isDomainError(err)
         ? err.message
-        : `图片「${file.name}」校验失败，未插入。`,
-    );
-    return false;
-  }
-  let record;
-  try {
-    record = await repository.add({
-      pageId,
-      name: file.name,
-      mimeType: file.type,
-      size: file.size,
-      blob: file,
-    });
-  } catch (err) {
-    // 存储空间不足与普通写入失败分开提示（R004 §6.3）。
-    window.alert(
-      isQuotaExceededError(err)
-        ? "本地存储空间不足，请清理回收站或删除不需要的数据后重试。"
-        : `图片「${file.name}」保存失败，未插入。`,
+        : isQuotaExceededError(err)
+          ? "本地存储空间不足，请清理回收站或删除不需要的数据后重试。"
+          : `图片「${file.name}」保存失败，未插入。`,
     );
     return false;
   }
@@ -103,21 +87,35 @@ export async function insertLocalImageFile(
   return chain.run();
 }
 
-/** 打开文件选择器插入本地图片（`/图片` 命令入口）。 */
+/** File → 字节读出后走统一插入路径（粘贴/拖拽与测试入口保留 File 形参）。 */
+export async function insertLocalImageFile(
+  editor: Editor,
+  pageId: string,
+  file: File,
+  options?: { pos?: number },
+): Promise<boolean> {
+  const data = new Uint8Array(await file.arrayBuffer());
+  return insertLocalImageData(
+    editor,
+    pageId,
+    { name: file.name, mimeType: file.type, size: file.size, data },
+    options,
+  );
+}
+
+/** 打开文件选择器插入本地图片（`/图片` 命令入口；选文件经 AssetPicker）。 */
 export function pickAndInsertLocalImage(editor: Editor, pageId: string) {
-  const input = document.createElement("input");
-  input.type = "file";
-  input.accept = "image/png,image/jpeg,image/gif,image/webp,image/svg+xml";
-  input.onchange = () => {
-    const file = input.files?.[0];
-    if (file) void insertLocalImageFile(editor, pageId, file);
-  };
-  input.click();
+  const { picker } = getAssetServices(editor);
+  void picker
+    .pick({ accept: "image/png,image/jpeg,image/gif,image/webp,image/svg+xml" })
+    .then((picked) => {
+      if (picked) void insertLocalImageData(editor, pageId, picked);
+    });
 }
 
 /**
  * 本地图片块：文档节点只保存 attachmentId/alt/width；
- * Blob 存 attachments store，渲染走临时 Object URL 并及时释放。
+ * 渲染经 access.resolveUrl 取临时 URL，destroy 时 releaseUrl 释放。
  */
 export const LocalImage = Node.create({
   name: "localImage",
@@ -149,8 +147,8 @@ export const LocalImage = Node.create({
   },
 
   renderHTML({ node }) {
-    // 静态序列化（编辑器内复制粘贴/HTML 导出）不含 src：Blob URL 只能异步
-    // 创建；以 data-local-image + data-attachment-id 保证粘贴回编辑器可还原。
+    // 静态序列化（编辑器内复制粘贴/HTML 导出）不含 src：可渲染 URL 只能异步
+    // 解析；以 data-local-image + data-attachment-id 保证粘贴回编辑器可还原。
     return [
       "img",
       {
@@ -178,11 +176,11 @@ export const LocalImage = Node.create({
 
       dom.append(placeholder);
 
-      let objectUrl: string | null = null;
+      let resolvedUrl: string | null = null;
       const releaseUrl = () => {
-        if (objectUrl) {
-          URL.revokeObjectURL(objectUrl);
-          objectUrl = null;
+        if (resolvedUrl) {
+          getAssetServices(editor).access.releaseUrl(resolvedUrl);
+          resolvedUrl = null;
         }
       };
 
@@ -196,26 +194,23 @@ export const LocalImage = Node.create({
 
       const load = async (attachmentId: string) => {
         releaseUrl();
-        // 仓储未装配或读取失败都按「图片不可用」降级，不产生未捕获异常。
-        const record = await (async () => {
+        // 服务未装配或解析失败都按「图片不可用」降级，不产生未捕获异常。
+        const url = await (async () => {
           try {
-            return await getAttachmentRepository(editor).get(attachmentId);
+            return await getAssetServices(editor).access.resolveUrl(
+              attachmentId,
+            );
           } catch {
-            return undefined;
+            return null;
           }
         })();
-        if (
-          !record ||
-          !(record.blob instanceof Blob) ||
-          record.blob.size === 0 ||
-          typeof URL.createObjectURL !== "function"
-        ) {
-          // Blob 缺失或损坏：显示占位，节点可手动删除（与附件块同语义）。
+        if (!url) {
+          // 资源缺失或为空：显示占位，节点可手动删除（与附件块同语义）。
           showMissing();
           return;
         }
-        objectUrl = URL.createObjectURL(record.blob);
-        img.src = objectUrl;
+        resolvedUrl = url;
+        img.src = url;
         placeholder.remove();
         if (!img.isConnected) dom.append(img);
         dom.classList.remove("local-image--missing");
@@ -242,7 +237,7 @@ export const LocalImage = Node.create({
           return true;
         },
         destroy() {
-          // 节点销毁时释放 Object URL，避免 Blob 句柄泄漏。
+          // 节点销毁时释放临时 URL，避免句柄泄漏（即用即毁）。
           releaseUrl();
         },
       };

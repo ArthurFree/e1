@@ -23,7 +23,7 @@ import {
   wouldCreateCycle,
 } from "../../domain/pageTree";
 import type {
-  AttachmentRepository,
+  AssetStore,
   ContentRepository,
   CreatePageInput,
   DocumentWriteRepository,
@@ -35,6 +35,7 @@ import type {
 } from "../../domain/repositories";
 import type {
   Attachment,
+  ContentVersionToken,
   DocumentContent,
   DocumentRevision,
   Page,
@@ -44,10 +45,41 @@ import type {
   TrashRecord,
   Workspace,
 } from "../../domain/types";
-import { DEFAULT_PREFERENCES } from "../../domain/types";
+import {
+  DEFAULT_PREFERENCES,
+  INITIAL_CONTENT_VERSION_TOKEN,
+} from "../../domain/types";
 import { createId } from "../id";
 
 const MAX_PAGE_TITLE_LENGTH = 200;
+
+/**
+ * 正文版本令牌（R005 阶段 3）：内存实现内部同样自增 number，读写边界
+ * 映射为 "mem:N" 令牌；INITIAL_CONTENT_VERSION_TOKEN（空串）映射为内部
+ * 初始版本 0；非 "mem:N" 编码的令牌一律视为冲突（DOCUMENT_CONFLICT）。
+ * 契约（src/test/contentSaveContract.ts）不假设令牌可解析为数字。
+ */
+export type StoredMemoryContent = Omit<DocumentContent, "version"> & {
+  version?: number;
+};
+
+/** 内部 number → 领域令牌（"mem:N"）。 */
+function versionToToken(version: number): ContentVersionToken {
+  return `mem:${version}`;
+}
+
+/** 领域令牌 → 内部 number；空令牌为初始版本 0，非本实现编码返回 null（视为冲突）。 */
+function tokenToVersion(token: ContentVersionToken): number | null {
+  if (token === INITIAL_CONTENT_VERSION_TOKEN) return 0;
+  if (!token.startsWith("mem:")) return null;
+  const n = Number(token.slice(4));
+  return Number.isInteger(n) && n >= 0 ? n : null;
+}
+
+/** 读边界归一化：内部 number → 令牌；存量无 version 记录视为初始版本 0。 */
+function toDomainContent(record: StoredMemoryContent): DocumentContent {
+  return { ...record, version: versionToToken(record.version ?? 0) };
+}
 
 function validateCreatePageInput(input: CreatePageInput): void {
   if (input.kind !== "document" && input.kind !== "group") {
@@ -65,13 +97,16 @@ function validateCreatePageInput(input: CreatePageInput): void {
   }
 }
 
+/** 内存附件记录：元数据 + 字节（与 IndexedDB 实现的 StoredAttachmentRecord 对应）。 */
+export type StoredMemoryAttachment = Attachment & { data: Uint8Array };
+
 /** 内存数据库：一次 createInMemoryRepositories 调用的全部仓储共享同一份数据。 */
 export interface MemoryStore {
   workspaces: Map<string, Workspace>;
   pages: Map<string, Page>;
-  contents: Map<string, DocumentContent>;
+  contents: Map<string, StoredMemoryContent>;
   revisions: Map<string, DocumentRevision>;
-  attachments: Map<string, Attachment>;
+  attachments: Map<string, StoredMemoryAttachment>;
   tags: Map<string, Tag>;
   pageTags: Map<string, PageTag>;
   trash: Map<string, TrashRecord>;
@@ -98,7 +133,7 @@ export interface MemoryRepositories {
   content: ContentRepository;
   documentWrite: DocumentWriteRepository;
   revision: RevisionRepository;
-  attachment: AttachmentRepository;
+  assetStore: AssetStore;
   tag: TagRepository;
   preferences: PreferencesRepository;
 }
@@ -354,12 +389,13 @@ export function createInMemoryRepositories(
   const content: ContentRepository = {
     async get(pageId) {
       const record = store.contents.get(pageId);
-      return record ? { ...record, version: record.version ?? 0 } : undefined;
+      return record ? toDomainContent(record) : undefined;
     },
     async save(pageId, contentJson, textSnapshot, expectedVersion) {
       // 与 IndexedDB 实现同约束：页面不存在时显式失败（R004 阶段 5）；
-      // 乐观锁（R004 阶段 7）：version 不匹配抛 DOCUMENT_CONFLICT，
-      // 存量无 version 记录视为 0。
+      // 乐观锁（R004 阶段 7；R005 阶段 3 起为不透明令牌）：版本不匹配抛
+      // DOCUMENT_CONFLICT，存量无 version 记录视为初始版本 0；
+      // 非 "mem:N" 编码的令牌（expected === null）同样视为冲突。
       const target = store.pages.get(pageId);
       if (!target) {
         throw new DomainError(
@@ -368,33 +404,32 @@ export function createInMemoryRepositories(
         );
       }
       const currentVersion = store.contents.get(pageId)?.version ?? 0;
-      if (currentVersion !== expectedVersion) {
+      const expected = tokenToVersion(expectedVersion);
+      if (expected === null || currentVersion !== expected) {
         throw new DomainError(
           "DOCUMENT_CONFLICT",
-          `文档已在其他地方被修改（当前版本 ${currentVersion}，期望 ${expectedVersion}）`,
+          `文档已在其他地方被修改（当前版本 ${versionToToken(currentVersion)}，期望 ${expectedVersion || "（空令牌）"}）`,
         );
       }
       const updatedAt = Date.now();
+      const nextVersion = currentVersion + 1;
       store.contents.set(pageId, {
         pageId,
         workspaceId: target.workspaceId,
         contentJson,
         textSnapshot,
-        version: currentVersion + 1,
+        version: nextVersion,
         updatedAt,
       });
-      return { version: currentVersion + 1, updatedAt };
+      return { version: versionToToken(nextVersion), updatedAt };
     },
     async listAll() {
-      return [...store.contents.values()].map((c) => ({
-        ...c,
-        version: c.version ?? 0,
-      }));
+      return [...store.contents.values()].map(toDomainContent);
     },
     async listByWorkspace(workspaceId) {
       return [...store.contents.values()]
         .filter((c) => c.workspaceId === workspaceId)
-        .map((c) => ({ ...c, version: c.version ?? 0 }));
+        .map(toDomainContent);
     },
   };
 
@@ -429,6 +464,19 @@ export function createInMemoryRepositories(
         (p) => p.workspaceId === input.workspaceId,
       );
       const now = Date.now();
+      // 与 IndexedDB 实现一致：迁移路径可保留原时间戳，非法值回退 now。
+      const createdAt =
+        typeof input.createdAt === "number" &&
+        Number.isFinite(input.createdAt) &&
+        input.createdAt > 0
+          ? input.createdAt
+          : now;
+      const updatedAt =
+        typeof input.updatedAt === "number" &&
+        Number.isFinite(input.updatedAt) &&
+        input.updatedAt > 0
+          ? input.updatedAt
+          : createdAt;
       const created: Page = {
         id: createId(),
         workspaceId: input.workspaceId,
@@ -440,8 +488,8 @@ export function createInMemoryRepositories(
         favoriteAt: null,
         lastOpenedAt: null,
         deletedAt: null,
-        createdAt: now,
-        updatedAt: now,
+        createdAt,
+        updatedAt,
       };
       store.pages.set(created.id, created);
       store.contents.set(created.id, {
@@ -466,7 +514,7 @@ export function createInMemoryRepositories(
       const target = getRequiredPage(input.pageId);
       // 与 IndexedDB 实现一致：外部覆盖路径不做冲突检查，version 照常递增。
       const currentVersion = store.contents.get(input.pageId)?.version ?? 0;
-      const record: DocumentContent = {
+      const record: StoredMemoryContent = {
         pageId: input.pageId,
         workspaceId: target.workspaceId,
         contentJson: parsed.value,
@@ -475,7 +523,8 @@ export function createInMemoryRepositories(
         updatedAt: Date.now(),
       };
       store.contents.set(input.pageId, record);
-      return record;
+      // 写边界转换：内部 number → 领域令牌（R005 阶段 3）。
+      return toDomainContent(record);
     },
   };
 
@@ -524,25 +573,43 @@ export function createInMemoryRepositories(
     },
   };
 
-  const attachment: AttachmentRepository = {
-    async get(id) {
-      return store.attachments.get(id);
+  /** 内存附件记录 → 领域元数据（剥离字节字段）。 */
+  const attachmentMetadata = (record: StoredMemoryAttachment): Attachment => ({
+    id: record.id,
+    pageId: record.pageId,
+    name: record.name,
+    mimeType: record.mimeType,
+    size: record.size,
+    createdAt: record.createdAt,
+  });
+
+  const assetStore: AssetStore = {
+    async getMetadata(id) {
+      const record = store.attachments.get(id);
+      return record ? attachmentMetadata(record) : undefined;
     },
-    async listByPage(pageId) {
-      return [...store.attachments.values()].filter((a) => a.pageId === pageId);
+    async getBinary(id) {
+      const record = store.attachments.get(id);
+      if (!record) return undefined;
+      return { attachment: attachmentMetadata(record), data: record.data };
+    },
+    async listByDocument(pageId) {
+      return [...store.attachments.values()]
+        .filter((a) => a.pageId === pageId)
+        .map(attachmentMetadata);
     },
     async add(input) {
-      const record: Attachment = {
+      const record: StoredMemoryAttachment = {
         id: createId(),
         pageId: input.pageId,
         name: input.name,
         mimeType: input.mimeType,
         size: input.size,
-        blob: input.blob,
+        data: input.data,
         createdAt: Date.now(),
       };
       store.attachments.set(record.id, record);
-      return record;
+      return attachmentMetadata(record);
     },
     async remove(id) {
       store.attachments.delete(id);
@@ -642,7 +709,7 @@ export function createInMemoryRepositories(
     content,
     documentWrite,
     revision,
-    attachment,
+    assetStore,
     tag,
     preferences,
   };

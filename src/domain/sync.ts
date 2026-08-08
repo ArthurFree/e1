@@ -4,6 +4,7 @@
  * 接收方（镜像刷新、正文重载、冲突提示）共享，传输见
  * application/services/SyncChannelService。
  */
+import type { ContentVersionToken } from "./types";
 
 /** 跨标签页同步事件。 */
 export type AppSyncEvent =
@@ -11,7 +12,7 @@ export type AppSyncEvent =
   | { type: "workspace-changed"; workspaceId: string }
   /** 页面级变更：页面 CRUD（新建/重命名/删除/移动/恢复/清空回收站等）。 */
   | { type: "page-changed"; workspaceId: string; pageId: string }
-  /** 正文落盘：version 为写入后的新版本号（乐观锁，R004 §7.3）。 */
-  | { type: "content-saved"; pageId: string; version: number }
+  /** 正文落盘：version 为写入后的新版本令牌（不透明 ContentVersionToken，R005 阶段 3）。 */
+  | { type: "content-saved"; pageId: string; version: ContentVersionToken }
   /** 偏好变更：主题 / 侧栏宽度 / AI 配置（不含路由 lastRoute）。 */
   | { type: "preferences-changed" };

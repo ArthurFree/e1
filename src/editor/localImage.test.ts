@@ -13,7 +13,8 @@ import { Slice } from "@tiptap/pm/model";
 import { buildDocumentExtensions } from "./extensions";
 import { collectAttachmentIds, MAX_ATTACHMENT_BYTES } from "./attachment";
 import { insertLocalImageFile, localImageFilesPluginKey } from "./localImage";
-import { attachmentRepository } from "../infrastructure/repositories";
+import { assetStore } from "../infrastructure/repositories";
+import { createTestAssetServices } from "../test/assetTestServices";
 import { resetDB } from "../infrastructure/db";
 
 function createEditor(content?: unknown) {
@@ -25,7 +26,7 @@ function createEditor(content?: unknown) {
     content: { type: "doc", content: [] },
   });
   const storage = editor.storage as unknown as Record<string, unknown>;
-  storage.attachmentRepository = attachmentRepository;
+  storage.assetServices = createTestAssetServices();
   storage.attachmentPageId = "page-1";
   if (content) editor.commands.setContent(content as never);
   return editor;
@@ -53,7 +54,7 @@ describe("本地图片插入", () => {
     expect(node).toBeDefined();
     expect(node?.attrs?.alt).toBe("插图.png");
     // 节点只引用附件 ID；整份正文 JSON 不出现 data: Base64。
-    const [record] = await attachmentRepository.listByPage("page-1");
+    const [record] = await assetStore.listByDocument("page-1");
     expect(record).toBeDefined();
     expect(record.mimeType).toBe("image/png");
     expect(node?.attrs?.attachmentId).toBe(record.id);
@@ -69,7 +70,7 @@ describe("本地图片插入", () => {
     const ok = await insertLocalImageFile(editor, "page-1", tiff);
     expect(ok).toBe(false);
     expect(alert).toHaveBeenCalledOnce();
-    expect(await attachmentRepository.listByPage("page-1")).toEqual([]);
+    expect(await assetStore.listByDocument("page-1")).toEqual([]);
     expect(
       editor.getJSON().content?.some((n) => n.type === "localImage"),
     ).toBeFalsy();
@@ -85,7 +86,7 @@ describe("本地图片插入", () => {
     const ok = await insertLocalImageFile(editor, "page-1", big);
     expect(ok).toBe(false);
     expect(alert).toHaveBeenCalledOnce();
-    expect(await attachmentRepository.listByPage("page-1")).toEqual([]);
+    expect(await assetStore.listByDocument("page-1")).toEqual([]);
     editor.destroy();
   });
 
@@ -93,7 +94,7 @@ describe("本地图片插入", () => {
     const editor = createEditor();
     const alert = vi.spyOn(window, "alert").mockImplementation(() => undefined);
     const addSpy = vi
-      .spyOn(attachmentRepository, "add")
+      .spyOn(assetStore, "add")
       .mockRejectedValue(new DOMException("quota", "QuotaExceededError"));
 
     const ok = await insertLocalImageFile(editor, "page-1", pngFile());
@@ -127,7 +128,7 @@ describe("本地图片插入", () => {
       ).toBe(true);
     });
     expect(JSON.stringify(editor.getJSON())).not.toContain("data:image");
-    expect(await attachmentRepository.listByPage("page-1")).toHaveLength(1);
+    expect(await assetStore.listByDocument("page-1")).toHaveLength(1);
     editor.destroy();
   });
 
@@ -167,19 +168,15 @@ describe("本地图片节点视图", () => {
   });
 
   it("经 Object URL 渲染，编辑器销毁时 revoke", async () => {
-    const file = pngFile("照片.png");
-    const record = await attachmentRepository.add({
+    // R005 阶段 5：字节以 Uint8Array 落库，fake-indexeddb 可完整往返，
+    // 不再需要 R005 之前的 Blob mock 回退。
+    const record = await assetStore.add({
       pageId: "page-1",
       name: "照片.png",
       mimeType: "image/png",
       size: 4,
-      blob: file,
+      data: new Uint8Array(4),
     });
-    // fake-indexeddb 的 structuredClone 不保留 Blob，mock get 返回真实 Blob
-    // （浏览器 IndexedDB 原生支持 Blob 存储，生产无此问题）。
-    const getSpy = vi
-      .spyOn(attachmentRepository, "get")
-      .mockResolvedValue({ ...record, blob: file });
     const editor = createEditor({
       type: "doc",
       content: [
@@ -201,7 +198,6 @@ describe("本地图片节点视图", () => {
 
     editor.destroy();
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:mock-url");
-    getSpy.mockRestore();
   });
 
   it("附件缺失时显示占位", async () => {
@@ -246,7 +242,7 @@ describe("本地图片与孤儿清理", () => {
   it("collectAttachmentIds 收集 localImage 引用；删除节点后 removeOrphans 清理 Blob", async () => {
     const editor = createEditor();
     await insertLocalImageFile(editor, "page-1", pngFile());
-    const [record] = await attachmentRepository.listByPage("page-1");
+    const [record] = await assetStore.listByDocument("page-1");
 
     // 节点存在时引用被收集，不会被误清。
     expect(collectAttachmentIds(editor.getJSON())).toContain(record.id);
@@ -254,13 +250,13 @@ describe("本地图片与孤儿清理", () => {
     // 删除图片节点：引用消失，孤儿清理（与附件块同一机制）删除 Blob。
     editor.commands.clearContent();
     expect(collectAttachmentIds(editor.getJSON())).not.toContain(record.id);
-    const removed = await attachmentRepository.removeOrphans(
+    const removed = await assetStore.removeOrphans(
       "page-1",
       collectAttachmentIds(editor.getJSON()),
       { createdBeforeOrAt: Date.now() },
     );
     expect(removed).toBe(1);
-    expect(await attachmentRepository.get(record.id)).toBeUndefined();
+    expect(await assetStore.getMetadata(record.id)).toBeUndefined();
     editor.destroy();
   });
 });

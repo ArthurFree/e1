@@ -19,7 +19,7 @@ import {
   workspaceRepository as idbWorkspace,
 } from "../../infrastructure/repositories";
 import { createInMemoryAppServices } from "../../infrastructure/memory/createInMemoryAppServices";
-import { SearchIndexService } from "../services/SearchIndexService";
+import { BrowserMemorySearchIndex } from "../../platform/web/search/BrowserMemorySearchIndex";
 import { WorkspaceSessionService } from "../services/WorkspaceSessionService";
 import { WorkspaceQueryService } from "./WorkspaceQueryService";
 import { SearchQueryService } from "./SearchQueryService";
@@ -36,7 +36,7 @@ interface QueryTestContext {
     workspace: WorkspaceQueryService;
     search: SearchQueryService;
   };
-  searchIndex: SearchIndexService;
+  searchIndex: BrowserMemorySearchIndex;
   repos: {
     workspace: WorkspaceRepository;
     page: PageRepository;
@@ -48,11 +48,13 @@ interface QueryTestContext {
 /** IndexedDB 装配（fake-indexeddb）。 */
 async function makeBrowserContext(): Promise<QueryTestContext> {
   await resetDB();
-  const searchIndex = new SearchIndexService();
+  const searchIndex = new BrowserMemorySearchIndex({
+    pages: idbPage,
+    content: idbContent,
+  });
   const session = new WorkspaceSessionService({
     pages: idbPage,
     tags: idbTag,
-    content: idbContent,
   });
   return {
     queries: {
@@ -102,8 +104,15 @@ async function seedKeywordDocument(ctx: QueryTestContext) {
     kind: "document",
     title: "普通标题",
   });
-  // 页面创建时已写入 version 1 的空正文：首次保存 expectedVersion 为 1。
-  await ctx.repos.content.save(page.id, DOC_WITH_KEYWORD, "正文关键词甲", 1);
+  // 页面创建时已写入首版空正文：以其版本令牌为首次保存的 expectedVersion
+  // （R005 阶段 3：令牌不透明，从仓储读出后原样传递，不断言具体编码）。
+  const initialToken = (await ctx.repos.content.get(page.id))!.version;
+  await ctx.repos.content.save(
+    page.id,
+    DOC_WITH_KEYWORD,
+    "正文关键词甲",
+    initialToken,
+  );
   return { ws, page };
 }
 
@@ -112,14 +121,16 @@ function describeQueryServices(
   makeContext: () => QueryTestContext | Promise<QueryTestContext>,
 ): void {
   describe(`查询服务（${name}）`, () => {
-    it("loadSession 返回会话数据并构建搜索索引", async () => {
+    it("loadSession 返回会话数据（不含正文）并准备搜索索引", async () => {
       const ctx = await makeContext();
       const { ws, page } = await seedKeywordDocument(ctx);
       const data = await ctx.queries.workspace.loadSession(ws.id);
       expect(data.workspaceId).toBe(ws.id);
       expect(data.pages.map((p) => p.id)).toContain(page.id);
+      // R005 阶段 6：会话数据不再携带全部正文，索引自行取数。
+      expect(data).not.toHaveProperty("contents");
       expect(ctx.searchIndex.has(ws.id)).toBe(true);
-      const hits = ctx.searchIndex.query(ws.id, "关键词");
+      const hits = await ctx.searchIndex.query(ws.id, "关键词");
       expect(hits.map((h) => h.pageId)).toContain(page.id);
     });
 
@@ -131,7 +142,7 @@ function describeQueryServices(
       await ctx.repos.page.rename(page.id, "改名后标题");
       const pages = await ctx.queries.workspace.loadPages(ws.id);
       expect(pages.find((p) => p.id === page.id)?.title).toBe("改名后标题");
-      const hits = ctx.searchIndex.query(ws.id, "改名后标题");
+      const hits = await ctx.searchIndex.query(ws.id, "改名后标题");
       expect(hits.map((h) => h.pageId)).toContain(page.id);
     });
 

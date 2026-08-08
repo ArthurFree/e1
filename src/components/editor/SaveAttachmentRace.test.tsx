@@ -12,7 +12,7 @@ import { useApp } from "../../state/AppState";
 import { TestApp } from "../../test/TestApp";
 import { resetDB } from "../../infrastructure/db";
 import {
-  attachmentRepository,
+  assetStore,
   contentRepository,
   pageRepository,
   workspaceRepository,
@@ -35,7 +35,7 @@ function Harness() {
     <DocumentEditor
       pageId={host.pageId}
       initialContent={{ type: "doc", content: [{ type: "paragraph" }] }}
-      initialVersion={1}
+      initialVersion="idb:1"
       onEditorReady={(editor) => {
         host.editor = editor;
       }}
@@ -102,7 +102,7 @@ describe("DocumentEditor 附件清理竞态", () => {
       pageId,
       new File(["x"], "b.txt", { type: "text/plain" }),
     );
-    expect((await attachmentRepository.listByPage(pageId)).length).toBe(1);
+    expect((await assetStore.listByDocument(pageId)).length).toBe(1);
     await sleep(1500);
 
     // 乱序完成：B 先、A 后（串行实现中 B 在 A 完成后才发起，编排同样适用）。
@@ -117,7 +117,7 @@ describe("DocumentEditor 附件清理竞态", () => {
     // 全部保存收尾后，被最新快照引用的附件记录必须仍然存在。
     await waitFor(
       async () => {
-        expect((await attachmentRepository.listByPage(pageId)).length).toBe(1);
+        expect((await assetStore.listByDocument(pageId)).length).toBe(1);
       },
       { timeout: 4000 },
     );

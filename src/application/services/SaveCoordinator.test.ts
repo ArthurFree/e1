@@ -6,10 +6,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DomainError, isDomainError } from "../../domain/errors";
-import type {
-  AttachmentRepository,
-  RevisionRepository,
-} from "../../domain/repositories";
+import type { RevisionRepository } from "../../domain/repositories";
 import type { DocumentRevision } from "../../domain/types";
 import { createDeferred, sleep, type Deferred } from "../../test/fixtures";
 import type { DocumentContentCommitter } from "./DocumentCommitService";
@@ -34,7 +31,8 @@ function makeStubs() {
       const gate = createDeferred<void>();
       saveGates.push(gate);
       await gate.promise;
-      return { savedAt: Date.now(), version: expectedVersion + 1 };
+      // R005 阶段 3：版本为不透明令牌，stub 只保证每次返回不同的新令牌。
+      return { savedAt: Date.now(), version: `${expectedVersion}+` };
     },
   };
   const revisions: RevisionRepository = {
@@ -47,18 +45,9 @@ function makeStubs() {
     },
     async pruneInterval() {},
   };
-  const attachments: AttachmentRepository = {
-    async get() {
-      return undefined;
-    },
-    async listByPage() {
-      return [];
-    },
-    async add() {
-      throw new Error("未使用");
-    },
-    async remove() {},
-    async removeOrphans(_pageId, referencedIds) {
+  // R005 阶段 5：协调器只需要孤儿清理能力（Pick<AssetStore, "removeOrphans">）。
+  const assets = {
+    async removeOrphans(_pageId: string, referencedIds: string[]) {
       orphanCalls.push(referencedIds);
       return 0;
     },
@@ -74,7 +63,7 @@ function makeStubs() {
   return {
     committer,
     revisions,
-    attachments,
+    assets,
     recovery,
     saves,
     saveGates,
@@ -98,7 +87,7 @@ describe("DocumentSaveCoordinator", () => {
     coordinator = new DocumentSaveCoordinator("page-1", {
       committer: stubs.committer,
       revisions: stubs.revisions,
-      attachments: stubs.attachments,
+      assets: stubs.assets,
       recovery: stubs.recovery,
       onStateChange: (s) => states.push(s),
     });
@@ -292,7 +281,8 @@ describe("DocumentSaveCoordinator 保存后半程竞态（R004）", () => {
         const gate = createDeferred<void>();
         saveGates.push(gate);
         await gate.promise;
-        return { savedAt: Date.now(), version: expectedVersion + 1 };
+        // 不透明令牌：每次返回不同的新令牌（R005 阶段 3）。
+        return { savedAt: Date.now(), version: `${expectedVersion}+` };
       },
     };
     const revisions: RevisionRepository = {
@@ -306,20 +296,10 @@ describe("DocumentSaveCoordinator 保存后半程竞态（R004）", () => {
       },
       async pruneInterval() {},
     };
-    const attachments: AttachmentRepository = {
-      async get() {
-        return undefined;
-      },
-      async listByPage() {
-        return [];
-      },
-      async add() {
-        throw new Error("未使用");
-      },
-      async remove() {},
+    const assets = {
       async removeOrphans(
-        _pageId,
-        referencedIds,
+        _pageId: string,
+        referencedIds: string[],
         options?: { createdBeforeOrAt?: number },
       ) {
         orphanCalls.push({ referencedIds, options });
@@ -332,7 +312,7 @@ describe("DocumentSaveCoordinator 保存后半程竞态（R004）", () => {
     const deps: PostCommitStubs["deps"] = {
       committer,
       revisions,
-      attachments,
+      assets,
       recovery: {
         write(record) {
           recoveryWrites.push(record);
@@ -535,7 +515,7 @@ describe("DocumentSaveCoordinator 保存后半程竞态（R004）", () => {
  */
 describe("DocumentSaveCoordinator 乐观并发冲突", () => {
   function makeConflictStubs(options?: { conflictTimes?: number }) {
-    const commits: { expectedVersion: number; text: string }[] = [];
+    const commits: { expectedVersion: string; text: string }[] = [];
     let conflictLeft = options?.conflictTimes ?? Number.POSITIVE_INFINITY;
     const committer: DocumentContentCommitter = {
       async commit(_pageId, _json, text, expectedVersion) {
@@ -544,7 +524,8 @@ describe("DocumentSaveCoordinator 乐观并发冲突", () => {
           conflictLeft -= 1;
           throw new DomainError("DOCUMENT_CONFLICT", "文档已在其他地方被修改");
         }
-        return { savedAt: Date.now(), version: expectedVersion + 1 };
+        // 不透明令牌：每次返回不同的新令牌（R005 阶段 3）。
+        return { savedAt: Date.now(), version: `${expectedVersion}+` };
       },
     };
     const states: SaveCoordinatorState[] = [];
@@ -561,24 +542,15 @@ describe("DocumentSaveCoordinator 乐观并发冲突", () => {
           },
           async pruneInterval() {},
         },
-        attachments: {
-          async get() {
-            return undefined;
-          },
-          async listByPage() {
-            return [];
-          },
-          async add() {
-            throw new Error("未使用");
-          },
-          async remove() {},
+        assets: {
           async removeOrphans() {
             return 0;
           },
         },
         onStateChange: (s) => states.push(s),
       },
-      { initialVersion: 3 },
+      // 不透明令牌（R005 阶段 3）：协调器不解析，原样作为首次 expectedVersion。
+      { initialVersion: "t:3" },
     );
     return { commits, states, coordinator };
   }
@@ -588,9 +560,9 @@ describe("DocumentSaveCoordinator 乐观并发冲突", () => {
     coordinator.noteEdit();
     const save = coordinator.enqueue({ contentJson: DOC, textSnapshot: "新" });
     await save;
-    expect(commits).toEqual([{ expectedVersion: 3, text: "新" }]);
-    // 成功后回填新版本。
-    expect(coordinator.getLoadedVersion()).toBe(4);
+    expect(commits).toEqual([{ expectedVersion: "t:3", text: "新" }]);
+    // 成功后回填提交方返回的新令牌。
+    expect(coordinator.getLoadedVersion()).toBe("t:3+");
   });
 
   it("DOCUMENT_CONFLICT 进入 errorKind conflict，不自动重试", async () => {
@@ -618,12 +590,12 @@ describe("DocumentSaveCoordinator 乐观并发冲突", () => {
       coordinator.enqueue({ contentJson: DOC, textSnapshot: "本地内容" }),
     ).rejects.toSatisfy((e) => isDomainError(e, "DOCUMENT_CONFLICT"));
 
-    // 模拟冲突 UI「强制覆盖」：读到磁盘最新 version 为 8，以之为 expectedVersion 重试。
-    coordinator.setLoadedVersion(8);
+    // 模拟冲突 UI「强制覆盖」：读到磁盘最新令牌为 "t:8"，以之为 expectedVersion 重试。
+    coordinator.setLoadedVersion("t:8");
     const result = await coordinator.retryLatest();
-    expect(commits[1]).toEqual({ expectedVersion: 8, text: "本地内容" });
+    expect(commits[1]).toEqual({ expectedVersion: "t:8", text: "本地内容" });
     expect(result.savedAt).toBeGreaterThan(0);
-    expect(coordinator.getLoadedVersion()).toBe(9);
+    expect(coordinator.getLoadedVersion()).toBe("t:8+");
     // saved 在维护段之后发布：等队列排空再断言最终状态。
     await coordinator.flush();
     expect(states[states.length - 1].status).toBe("saved");

@@ -10,6 +10,21 @@
 /** 页面类型：document 为可编辑文档，group 为仅作树节点的分组（无正文）。 */
 export type PageKind = "document" | "group";
 
+/**
+ * 正文乐观并发版本令牌（R005 阶段 3）：平台无关的不透明字符串，
+ * 应用层一律原样传递，不得解析、比较大小或做算术。
+ * 编码由各持久化实现自定（Web IndexedDB 为 "idb:N"，内存实现为 "mem:N"，
+ * 未来 Desktop 可为 "sha256:..." 等）；见 docs/requirements/r005.md §八。
+ */
+export type ContentVersionToken = string;
+
+/**
+ * 初始版本令牌（R005 阶段 3）：空串表示「应无既有正文版本」——
+ * 新文档尚无正文记录、或存量记录从未写过版本时的乐观锁起点。
+ * 各仓储实现把它映射到自己的内部初始版本（如 IndexedDB 的 number 0）。
+ */
+export const INITIAL_CONTENT_VERSION_TOKEN: ContentVersionToken = "";
+
 /** 知识库（R001）：页面树的根对象，一个工作区内可有多个。 */
 export interface Workspace {
   id: string;
@@ -58,10 +73,11 @@ export interface DocumentContent {
   /** 纯文本快照，仅用于搜索与 Markdown 导出，不参与编辑。 */
   textSnapshot: string;
   /**
-   * 乐观并发版本号（R004 阶段 7）：每次落盘 +1，保存时校验 expectedVersion。
-   * 存量记录无此字段，读路径归一化为 0（首次保存落 1），无需 schema 升级。
+   * 乐观并发版本令牌（R005 阶段 3）：不透明 ContentVersionToken，
+   * 每次落盘由实现生成新令牌，保存时校验 expectedVersion。
+   * 应用层不得解析；Web IndexedDB 内部仍存 number，读写边界转换为 "idb:N"。
    */
-  version: number;
+  version: ContentVersionToken;
   updatedAt: number;
 }
 
@@ -81,15 +97,26 @@ export interface DocumentRevision {
   reason: RevisionReason;
 }
 
-/** 附件：二进制内容直接以 Blob 存 IndexedDB，经 contentJson 中的附件节点引用。 */
+/**
+ * 附件元数据（R005 阶段 5）：领域实体只含元数据，不再携带 Blob。
+ * 二进制以平台无关的 Uint8Array 经 BinaryAttachment 与 AssetStore port
+ * 传递（见 repositories.ts）；Blob 只存在于 Web 适配边界（platform/web
+ * 由字节重建 Blob 以创建 Object URL / 触发下载）。字段命名保持 pageId
+ * （对应规格 AssetMetadata.documentId），避免无谓的存储迁移。
+ */
 export interface Attachment {
   id: string;
   pageId: string;
   name: string;
   mimeType: string;
   size: number;
-  blob: Blob;
   createdAt: number;
+}
+
+/** 附件元数据 + 二进制字节（对应规格 BinaryAsset）。 */
+export interface BinaryAttachment {
+  attachment: Attachment;
+  data: Uint8Array;
 }
 
 /** 工作区内可复用的标签定义。 */

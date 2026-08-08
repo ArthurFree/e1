@@ -11,6 +11,7 @@
  * 供既有测试与尚未细分的调用方过渡使用；生产组件按需取其一或两者。
  */
 import { createContext, useContext } from "react";
+import type { VaultImportReport } from "../application/vault/VaultImportService";
 import type {
   Page,
   PageKind,
@@ -55,6 +56,12 @@ export interface WorkspaceCommandContextValue {
     name: string,
     extra?: { icon?: string | null; description?: string },
   ): Promise<void>;
+  /**
+   * 导入 Portable Vault（.e1.zip）为新建知识库并切换过去（R005 阶段 7B）：
+   * 导入编排由 application/vault/VaultImportService 承担，本命令负责
+   * 导入后的状态镜像刷新与导航（与 createWorkspace 同一套既有通道）。
+   */
+  importVault(data: Uint8Array): Promise<VaultImportReport>;
   /** 切换知识库收藏状态。 */
   toggleWorkspaceFavorite(workspaceId: string): Promise<void>;
   /** 在指定知识库（可选分组下）新建文档并打开。 */

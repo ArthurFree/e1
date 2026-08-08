@@ -24,7 +24,7 @@ Tiptap onUpdate → noteEdit()（generation+1）→ 800ms 防抖 enqueue
 | `src/components/VersionPanel.tsx`    | `revision.add` + `content.save` | `DocumentEditorController.restore`（协调器串行化，INV-06） |
 | `src/components/MainArea.tsx`        | `content.save`（空白副本）      | `documentCommit.replaceContent`                            |
 
-注：损坏正文的「尝试恢复」与「应用恢复缓冲」本就走协调器（`DocumentEditor` 的 restoreRequestId effect）。附件写入经 `editor.storage.attachmentRepository` 通道（`src/editor/attachment.ts`），为 R003 认可的注入方式。
+注：损坏正文的「尝试恢复」与「应用恢复缓冲」本就走协调器（`DocumentEditor` 的 restoreRequestId effect）。附件写入经 `editor.storage.assetServices` 通道的 `AssetCommandService.importAsset`（R005 阶段 5，原 `attachmentRepository` 通道），为认可的注入方式。
 
 ## 二、保存状态机
 

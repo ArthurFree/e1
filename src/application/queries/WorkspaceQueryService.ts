@@ -3,8 +3,8 @@
  * WorkspaceProvider 下沉；服务只返回数据并维护搜索索引，
  * requestId 过期保护与 dispatch 仍留在状态层。
  *
- * - loadSession：原子会话加载（WorkspaceSessionService）+ 搜索索引全量构建
- *   （原 Provider loadSession 中的索引构建迁入）；
+ * - loadSession：原子会话加载（WorkspaceSessionService，R005 阶段 6 起
+ *   不再读取正文）+ 搜索索引独立准备（prepareWorkspace 自行取数）；
  * - loadPages：页面镜像刷新 + 搜索索引 syncPages 增量同步；
  * - loadTags：标签与页面-标签关联并行加载；
  * - findPage：跨知识库单页查找（收藏视图等页面不在当前镜像时的回退查询）；
@@ -19,7 +19,8 @@ import type {
   WorkspaceRepository,
 } from "../../domain/repositories";
 import type { Page, PageTag, Tag, Workspace } from "../../domain/types";
-import type { SearchIndexService } from "../services/SearchIndexService";
+import { increment } from "../devDiagnostics";
+import type { SearchIndexPort } from "../services/SearchIndexPort";
 import type {
   WorkspaceSessionData,
   WorkspaceSessionService,
@@ -32,7 +33,7 @@ export class WorkspaceQueryService {
       page: PageRepository;
       tag: TagRepository;
       session: WorkspaceSessionService;
-      searchIndex: SearchIndexService;
+      searchIndex: SearchIndexPort;
     },
   ) {}
 
@@ -41,19 +42,27 @@ export class WorkspaceQueryService {
     return this.deps.workspace.list();
   }
 
-  /** 原子加载知识库会话数据并（重）构建工作区搜索索引。 */
+  /** 原子加载知识库会话数据并独立准备工作区搜索索引。 */
   async loadSession(workspaceId: string): Promise<WorkspaceSessionData> {
     const data = await this.deps.session.load(workspaceId);
-    // 搜索索引随会话加载构建（R003 阶段 7；R005 批次 1 从 Provider 迁入）。
-    this.deps.searchIndex.build(workspaceId, data.pages, data.contents);
+    // 搜索索引独立准备（R005 阶段 6）：索引实现自行读取正文快照，
+    // 会话数据不再携带全部正文。保持同步等待——Web 内存实现同步完成
+    // 不会失败；未来异步实现（SQLite 等）可改为后台准备，失败时
+    // 降级为「索引未准备」，搜索自动回退全量扫描（SearchQueryService）。
+    await this.deps.searchIndex.prepareWorkspace(workspaceId);
     return data;
   }
 
   /** 刷新工作区页面镜像并同步搜索索引元数据。 */
   async loadPages(workspaceId: string): Promise<Page[]> {
     const pages = await this.deps.page.listByWorkspace(workspaceId);
-    // 页面写操作后同步搜索索引元数据（R003 阶段 7）。
-    this.deps.searchIndex.syncPages(workspaceId, pages);
+    // 页面写操作后同步搜索索引元数据（R003 阶段 7）；索引同步失败
+    // 仅记录诊断——派生数据不影响页面镜像主流程（R005 阶段 6）。
+    try {
+      await this.deps.searchIndex.syncPages(workspaceId, pages);
+    } catch {
+      increment("search-index", "sync-failed");
+    }
     return pages;
   }
 

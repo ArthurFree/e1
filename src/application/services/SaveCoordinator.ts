@@ -18,11 +18,12 @@
  *
  * 仓储经构造函数注入（domain port），本模块不依赖 IndexedDB 具体实现。
  */
-import type {
-  AttachmentRepository,
-  RevisionRepository,
-} from "../../domain/repositories";
+import type { AssetStore, RevisionRepository } from "../../domain/repositories";
 import { isDomainError, isQuotaExceededError } from "../../domain/errors";
+import {
+  INITIAL_CONTENT_VERSION_TOKEN,
+  type ContentVersionToken,
+} from "../../domain/types";
 import {
   INTERVAL_REVISION_KEEP,
   INTERVAL_REVISION_MAX_BYTES,
@@ -76,7 +77,11 @@ export interface SaveCoordinatorDeps {
   /** 正文提交通道（R004 阶段 2）：落盘 + 搜索索引同步由提交服务单点保证。 */
   committer: DocumentContentCommitter;
   revisions: RevisionRepository;
-  attachments: AttachmentRepository;
+  /**
+   * 孤儿附件清理（R005 阶段 5 起收窄为 AssetStore 的 removeOrphans；
+   * 装配根注入实现，维护任务只跟随当前代次快照）。
+   */
+  assets: Pick<AssetStore, "removeOrphans">;
   /** 可选恢复缓冲；每次入队写、保存成功清。 */
   recovery?: RecoveryStore;
   /**
@@ -111,11 +116,12 @@ export class DocumentSaveCoordinator {
   private idleWaiters: (() => void)[] = [];
   private lastIntervalAt: number | null = null;
   /**
-   * 已落盘正文版本号（R004 阶段 7 乐观锁）：初始为编辑器加载时的
-   * content.version（经构造参数传入），每次提交成功后回填新版本；
-   * 强制覆盖时由调用方读磁盘最新版本后经 setLoadedVersion 更新。
+   * 已落盘正文版本令牌（R004 阶段 7 乐观锁；R005 阶段 3 起为不透明
+   * ContentVersionToken）：初始为编辑器加载时的 content.version（经构造
+   * 参数传入），每次提交成功后回填新令牌；强制覆盖时由调用方读磁盘最新
+   * 版本后经 setLoadedVersion 更新。协调器不解析令牌，只原样传递。
    */
-  private knownVersion: number;
+  private knownVersion: ContentVersionToken;
   private state: SaveCoordinatorState = {
     status: "saved",
     savedAt: null,
@@ -127,9 +133,12 @@ export class DocumentSaveCoordinator {
   constructor(
     private readonly pageId: string,
     private readonly deps: SaveCoordinatorDeps,
-    options?: { initialVersion?: number },
+    options?: { initialVersion?: ContentVersionToken },
   ) {
-    this.knownVersion = options?.initialVersion ?? 0;
+    // 缺省为 INITIAL_CONTENT_VERSION_TOKEN（空串）：尚无正文记录的新文档，
+    // 与仓储「首次保存」路径的初始版本语义对齐（R005 阶段 3）。
+    this.knownVersion =
+      options?.initialVersion ?? INITIAL_CONTENT_VERSION_TOKEN;
     this.initPromise = deps.revisions
       .listByPage(pageId)
       .then((list) => {
@@ -146,17 +155,17 @@ export class DocumentSaveCoordinator {
     return this.state;
   }
 
-  /** 当前已落盘版本号（乐观锁 expectedVersion 来源）。 */
-  getLoadedVersion(): number {
+  /** 当前已落盘版本令牌（乐观锁 expectedVersion 来源；不透明，原样传递）。 */
+  getLoadedVersion(): ContentVersionToken {
     return this.knownVersion;
   }
 
   /**
-   * 更新已落盘版本号：编辑器加载/重载正文时以 content.version 初始化；
+   * 更新已落盘版本令牌：编辑器加载/重载正文时以 content.version 初始化；
    * 冲突后「强制覆盖」先读磁盘最新版本再调本方法，随后 retryLatest
    * 即可以正确的 expectedVersion 重试当前快照（R004 阶段 7）。
    */
-  setLoadedVersion(version: number): void {
+  setLoadedVersion(version: ContentVersionToken): void {
     this.knownVersion = version;
   }
 
@@ -312,8 +321,9 @@ export class DocumentSaveCoordinator {
   /** 正文提交：唯一的致命步骤——失败即 error 态并保留快照供重试。 */
   private async commitContent(snapshot: SaveSnapshot): Promise<number> {
     const t0 = performance.now();
-    // 乐观锁（R004 阶段 7）：以已落盘版本为 expectedVersion；
-    // 磁盘版本被其他标签页推进时抛 DOCUMENT_CONFLICT（errorKind: conflict）。
+    // 乐观锁（R004 阶段 7）：以已落盘版本令牌为 expectedVersion（不透明，
+    // 原样传递，R005 阶段 3）；磁盘版本被其他标签页推进时抛
+    // DOCUMENT_CONFLICT（errorKind: conflict）。
     const { savedAt, version } = await this.deps.committer.commit(
       snapshot.pageId,
       snapshot.contentJson,
@@ -363,7 +373,7 @@ export class DocumentSaveCoordinator {
     if (!this.isCurrent(snapshot)) return;
     try {
       // 附件清理只删快照产生之前已存在的孤儿，防止误删窗口内新建附件（INV-03）。
-      await this.deps.attachments.removeOrphans(
+      await this.deps.assets.removeOrphans(
         snapshot.pageId,
         collectAttachmentIds(snapshot.contentJson),
         { createdBeforeOrAt: snapshot.capturedAt },

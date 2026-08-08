@@ -1,17 +1,17 @@
 /**
  * 附件块扩展（对应 R001 §7.6 附件块）。
- * 文档节点只保存附件元数据（ID/名称/类型/大小），二进制 Blob 存 IndexedDB
- * attachments store；下载走本地 Blob URL。
- * 另有插入、校验、引用收集等工具函数供命令注册表与保存流程使用。
+ * 文档节点只保存附件元数据（ID/名称/类型/大小），二进制存附件资源存储；
+ * 下载经 AssetAccessService（Web：临时 Blob URL + a[download]，即用即毁）。
+ * 另有插入、引用收集等工具函数供命令注册表与保存流程使用。
  *
- * 仓储注入（R003 阶段 5）：本模块不 import infrastructure；附件仓储由
- * 编辑器宿主（DocumentEditor）写入 `editor.storage.attachmentRepository`，
- * 经 getAttachmentRepository 读取。
+ * 服务注入（R005 阶段 5）：本模块不 import infrastructure，也不再触碰
+ * domain 仓储 port 与浏览器 API（alert/input file/Object URL/a[download]
+ * 已全部移出）；资源服务组由编辑器宿主（DocumentEditor）写入
+ * `editor.storage.assetServices`，经 getAssetServices 读取。
  */
 import { Node } from "@tiptap/core";
 import type { Editor } from "@tiptap/core";
-import type { AttachmentRepository } from "../domain/repositories";
-import { validateAttachment } from "../domain/attachments";
+import type { AssetServices } from "../application/assets/assetServices";
 import { isDomainError, isQuotaExceededError } from "../domain/errors";
 import { paperclipSvgString } from "../components/ui/icons";
 
@@ -19,14 +19,14 @@ import { paperclipSvgString } from "../components/ui/icons";
 // 此处 re-export 保持既有引用（测试等）不破坏。
 export { MAX_ATTACHMENT_BYTES } from "../domain/attachments";
 
-/** 从 editor.storage 读取附件仓储（由编辑器宿主装配时注入）。 */
-export function getAttachmentRepository(editor: Editor): AttachmentRepository {
-  const repository = (editor.storage as unknown as Record<string, unknown>)
-    .attachmentRepository as AttachmentRepository | undefined;
-  if (!repository) {
-    throw new Error("附件仓储未装配：editor.storage.attachmentRepository 缺失");
+/** 从 editor.storage 读取资源服务组（由编辑器宿主装配时注入）。 */
+export function getAssetServices(editor: Editor): AssetServices {
+  const services = (editor.storage as unknown as Record<string, unknown>)
+    .assetServices as AssetServices | undefined;
+  if (!services) {
+    throw new Error("资源服务未装配：editor.storage.assetServices 缺失");
   }
-  return repository;
+  return services;
 }
 
 /** 字节数的人性化展示（B/KB/MB，一位小数），用于附件块元信息。 */
@@ -36,7 +36,7 @@ export function formatBytes(size: number): string {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** 附件节点的属性：仅元数据，Blob 本体不进入文档 JSON。 */
+/** 附件节点的属性：仅元数据，二进制本体不进入文档 JSON。 */
 export interface AttachmentAttrs {
   attachmentId: string;
   name: string;
@@ -44,49 +44,45 @@ export interface AttachmentAttrs {
   size: number;
 }
 
+/** 已读出字节的待插入文件（File 与 PickedAsset 的统一形状）。 */
+export interface AttachmentFileData {
+  name: string;
+  mimeType: string;
+  size: number;
+  data: Uint8Array;
+}
+
 /**
- * 校验并写入附件记录后插入附件节点；校验/写入失败立即提示且不写 IndexedDB。
- * 校验规则（大小/总量/文件名/Blob 复核）统一在 domain/attachments（R004 阶段 6）。
- * @returns 是否成功插入；失败时已通过 alert 提示用户，文档与存储均无副作用。
+ * 校验并写入附件记录后插入附件节点；校验/写入失败立即提示且不写存储。
+ * 校验规则（大小/总量/文件名）统一在 domain/attachments，经
+ * AssetCommandService.importAsset 执行（R005 阶段 5）。
+ * @returns 是否成功插入；失败时已通过 NotificationService 提示用户，
+ *   文档与存储均无副作用。
  */
-export async function insertAttachmentFile(
+export async function insertAttachmentData(
   editor: Editor,
   pageId: string,
-  file: File,
+  file: AttachmentFileData,
 ): Promise<boolean> {
-  const repository = getAttachmentRepository(editor);
-  try {
-    const existing = await repository.listByPage(pageId);
-    const existingTotalBytes = existing.reduce((sum, a) => sum + a.size, 0);
-    validateAttachment({
-      name: file.name,
-      mimeType: file.type || "application/octet-stream",
-      blob: file,
-      existingTotalBytes,
-    });
-  } catch (err) {
-    window.alert(
-      isDomainError(err)
-        ? `${err.message}，未保存。`
-        : `附件「${file.name}」校验失败，未保存。`,
-    );
-    return false;
-  }
+  const { commands, notify } = getAssetServices(editor);
   let record;
   try {
-    record = await repository.add({
+    record = await commands.importAsset({
       pageId,
       name: file.name,
-      mimeType: file.type || "application/octet-stream",
+      mimeType: file.mimeType || "application/octet-stream",
       size: file.size,
-      blob: file,
+      data: file.data,
     });
   } catch (err) {
-    // 存储空间不足与普通写入失败分开提示（R004 §6.3），不产生孤儿节点。
-    window.alert(
-      isQuotaExceededError(err)
-        ? "本地存储空间不足，请清理回收站或删除不需要的数据后重试。"
-        : `附件「${file.name}」保存失败，请重试。`,
+    // 校验失败（DomainError）/存储空间不足/普通写入失败分开提示（R004 §6.3），
+    // 不产生孤儿节点。
+    notify.notify(
+      isDomainError(err)
+        ? `${err.message}，未保存。`
+        : isQuotaExceededError(err)
+          ? "本地存储空间不足，请清理回收站或删除不需要的数据后重试。"
+          : `附件「${file.name}」保存失败，请重试。`,
     );
     return false;
   }
@@ -106,15 +102,27 @@ export async function insertAttachmentFile(
   return true;
 }
 
-/** 打开文件选择器插入附件。 */
+/** File → 字节读出后走统一插入路径（粘贴/拖拽与测试入口保留 File 形参）。 */
+export async function insertAttachmentFile(
+  editor: Editor,
+  pageId: string,
+  file: File,
+): Promise<boolean> {
+  const data = new Uint8Array(await file.arrayBuffer());
+  return insertAttachmentData(editor, pageId, {
+    name: file.name,
+    mimeType: file.type,
+    size: file.size,
+    data,
+  });
+}
+
+/** 打开文件选择器插入附件（选文件经 AssetPicker，编辑器不触碰 input DOM）。 */
 export function pickAndInsertAttachment(editor: Editor, pageId: string) {
-  const input = document.createElement("input");
-  input.type = "file";
-  input.onchange = () => {
-    const file = input.files?.[0];
-    if (file) void insertAttachmentFile(editor, pageId, file);
-  };
-  input.click();
+  const { picker } = getAssetServices(editor);
+  void picker.pick().then((picked) => {
+    if (picked) void insertAttachmentData(editor, pageId, picked);
+  });
 }
 
 /** 从文档 JSON 中收集被引用的附件 ID（孤儿清理用）。 */
@@ -127,7 +135,7 @@ export function collectAttachmentIds(doc: unknown): string[] {
       attrs?: Record<string, unknown>;
       content?: unknown[];
     };
-    // 附件块与本地图片（R004 阶段 6）都只以 attachmentId 引用 Blob。
+    // 附件块与本地图片（R004 阶段 6）都只以 attachmentId 引用二进制。
     if (
       (record.type === "attachment" || record.type === "localImage") &&
       typeof record.attrs?.attachmentId === "string"
@@ -142,7 +150,7 @@ export function collectAttachmentIds(doc: unknown): string[] {
 
 /**
  * 附件块：文档节点只保存附件 ID、名称、类型与大小；
- * Blob 存 attachments store，下载走本地 Blob URL 并及时释放。
+ * 下载经 AssetAccessService.download（Web：临时 Object URL + a[download]）。
  */
 export const Attachment = Node.create({
   name: "attachment",
@@ -210,24 +218,13 @@ export const Attachment = Node.create({
       download.addEventListener("click", () => {
         void (async () => {
           status.textContent = "";
-          const record = await getAttachmentRepository(editor)
-            .get(node.attrs.attachmentId as string)
-            .catch(() => undefined);
-          if (
-            !record ||
-            !(record.blob instanceof Blob) ||
-            record.blob.size === 0
-          ) {
-            // Blob 缺失或损坏：提示“附件不可用”，节点可手动移除。
+          const ok = await getAssetServices(editor)
+            .access.download(node.attrs.attachmentId as string)
+            .catch(() => false);
+          if (!ok) {
+            // 资源缺失或为空：提示“附件不可用”，节点可手动移除。
             status.textContent = "附件不可用";
-            return;
           }
-          const url = URL.createObjectURL(record.blob);
-          const anchor = document.createElement("a");
-          anchor.href = url;
-          anchor.download = record.name;
-          anchor.click();
-          URL.revokeObjectURL(url);
         })();
       });
 

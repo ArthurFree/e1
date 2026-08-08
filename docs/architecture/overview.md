@@ -6,7 +6,7 @@
 
 - React 19 + Vite + TypeScript：单页 Web 应用。
 - Tiptap 3：富文本编辑内核，只使用开源扩展，不依赖 Tiptap Pro。
-- IndexedDB（idb）：本地数据与二进制资源持久化，DB 当前版本 v3。
+- IndexedDB（idb）：本地数据与二进制资源持久化，DB 当前版本 v4。
 - CSS variables + Cascade Layers：语义设计令牌与组件样式（R002）。
 - Vitest + Testing Library：单元与组件测试；Playwright：端到端与截图回归。
 
@@ -28,19 +28,19 @@ Infrastructure（src/infrastructure/：IndexedDB、AI HTTP、内存仓储、浏�
 
 ## 数据模型
 
-| 实体               | 必要字段                                                                                                                                  | 说明                                           |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| `Workspace`        | `id`, `name`, `icon`, `description`, `homePageId`, `favoriteAt`, `lastOpenedAt`, `createdAt`, `updatedAt`                                 | 知识库根对象                                   |
-| `Page`             | `id`, `workspaceId`, `parentId`, `kind`, `title`, `icon`, `position`, `favoriteAt`, `lastOpenedAt`, `deletedAt`, `createdAt`, `updatedAt` | `kind` 为 document 或 group；`deletedAt` 软删  |
-| `DocumentContent`  | `pageId`, `contentJson`, `textSnapshot`, `updatedAt`                                                                                      | Tiptap JSON（唯一编辑真相）与搜索文本快照      |
-| `DocumentRevision` | `id`, `pageId`, `contentJson`, `textSnapshot`, `createdAt`, `reason`                                                                      | 本地版本（interval / before-restore / manual） |
-| `Attachment`       | `id`, `pageId`, `name`, `mimeType`, `size`, `blob`, `createdAt`                                                                           | 附件 Blob，文档节点只存 ID                     |
-| `Tag`              | `id`, `workspaceId`, `name`, `color`                                                                                                      | 工作区标签定义                                 |
-| `PageTag`          | `pageId`, `tagId`                                                                                                                         | 页面与标签的关联（复合主键）                   |
-| `Preferences`      | `id`, `theme`, `sidebarWidth`, `aiConfig`, `lastRoute`                                                                                    | 浏览器本地偏好（单例记录）                     |
-| `TrashRecord`      | `pageId`, `deletedAt`, `originalParentId`                                                                                                 | 恢复原始位置用                                 |
+| 实体               | 必要字段                                                                                                                                  | 说明                                                                                                        |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `Workspace`        | `id`, `name`, `icon`, `description`, `homePageId`, `favoriteAt`, `lastOpenedAt`, `createdAt`, `updatedAt`                                 | 知识库根对象                                                                                                |
+| `Page`             | `id`, `workspaceId`, `parentId`, `kind`, `title`, `icon`, `position`, `favoriteAt`, `lastOpenedAt`, `deletedAt`, `createdAt`, `updatedAt` | `kind` 为 document 或 group；`deletedAt` 软删                                                               |
+| `DocumentContent`  | `pageId`, `workspaceId`, `contentJson`, `textSnapshot`, `updatedAt`, `version`                                                            | Tiptap JSON（唯一编辑真相）与搜索文本快照；version 为不透明 `ContentVersionToken` 乐观锁（R005 阶段 3）     |
+| `DocumentRevision` | `id`, `pageId`, `contentJson`, `textSnapshot`, `createdAt`, `reason`                                                                      | 本地版本（interval / before-restore / manual）                                                              |
+| `Attachment`       | `id`, `pageId`, `name`, `mimeType`, `size`, `createdAt`                                                                                   | 附件元数据（R005 阶段 5）；二进制经 `AssetStore` 以 `Uint8Array`（`BinaryAttachment`）读写，文档节点只存 ID |
+| `Tag`              | `id`, `workspaceId`, `name`, `color`                                                                                                      | 工作区标签定义                                                                                              |
+| `PageTag`          | `pageId`, `tagId`                                                                                                                         | 页面与标签的关联（复合主键）                                                                                |
+| `Preferences`      | `id`, `theme`, `sidebarWidth`, `aiConfig`, `lastRoute`                                                                                    | 浏览器本地偏好（单例记录）                                                                                  |
+| `TrashRecord`      | `pageId`, `deletedAt`, `originalParentId`                                                                                                 | 恢复原始位置用                                                                                              |
 
-索引（DB v3）：pages（`workspaceId`、`parentId`、`deletedAt`、`updatedAt`、复合 `workspaceId_parentId` / `workspaceId_updatedAt`）、contents（`updatedAt`、`textSnapshot`）、tags（`workspaceId`）、pageTags（`pageId`、`tagId`）、revisions（`pageId`、`pageId_createdAt`）、attachments（`pageId`）、trash（`deletedAt`）。详见 [persistence.md](./persistence.md)。
+索引（DB v4）：pages（`workspaceId`、`parentId`、`deletedAt`、`updatedAt`、复合 `workspaceId_parentId` / `workspaceId_updatedAt`）、contents（`updatedAt`、`textSnapshot`、`workspaceId`、复合 `workspaceId_updatedAt`）、tags（`workspaceId`）、pageTags（`pageId`、`tagId`、`workspaceId`）、revisions（`pageId`、`pageId_createdAt`）、attachments（`pageId`）、trash（`deletedAt`）。详见 [persistence.md](./persistence.md)。
 
 ## 编辑器组合
 

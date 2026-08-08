@@ -13,7 +13,8 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
-import type { Page } from "../../domain/types";
+import type { ContentVersionToken, Page } from "../../domain/types";
+import { INITIAL_CONTENT_VERSION_TOKEN } from "../../domain/types";
 import { useAppServices } from "../../state/AppServicesProvider";
 import { useWorkspaceData } from "../../state/WorkspaceSessionContext";
 import { useDebouncedCallback } from "../../hooks/useDebouncedCallback";
@@ -37,8 +38,11 @@ interface DocumentEditorProps {
   pageId: string;
   /** 文档内容 JSON（Tiptap doc），来自仓储；为兼容历史数据保持 unknown。 */
   initialContent: unknown;
-  /** 加载正文的磁盘版本号（R004 阶段 7 乐观锁起点）；新文档无记录时为 0。 */
-  initialVersion: number;
+  /**
+   * 加载正文的磁盘版本令牌（R004 阶段 7 乐观锁起点；R005 阶段 3 起为
+   * 不透明 ContentVersionToken，组件不解析、只透传）。
+   */
+  initialVersion: ContentVersionToken;
   /** 编辑器实例就绪/销毁回调（null 表示已销毁），供父级持有并转发命令。 */
   onEditorReady(editor: Editor | null): void;
   /** 保存状态变化通知（顶栏展示）。 */
@@ -152,7 +156,9 @@ export function DocumentEditor({
         void services.queries.document
           .getContent(pid)
           .then((latest) => {
-            coordinator.setLoadedVersion(latest?.version ?? 0);
+            coordinator.setLoadedVersion(
+              latest?.version ?? INITIAL_CONTENT_VERSION_TOKEN,
+            );
             return coordinator.retryLatest();
           })
           .catch(() => {
@@ -216,10 +222,11 @@ export function DocumentEditor({
     editorRef.current = editor;
     if (editor) {
       const storage = editor.storage as unknown as Record<string, unknown>;
-      // 供附件类命令读取当前文档 ID（附件记录归属页面）与附件仓储
-      // （R003 阶段 5：扩展经 storage 通道取仓储，不 import infrastructure）。
+      // 供附件类命令读取当前文档 ID（附件记录归属页面）与资源服务组
+      // （R005 阶段 5：扩展经 storage 通道取 AssetServices，不 import
+      // infrastructure，也不直接访问浏览器 API）。
       storage.attachmentPageId = pageId;
-      storage.attachmentRepository = services.attachment;
+      storage.assetServices = services.assets;
     }
     onEditorReady(editor);
     return () => {

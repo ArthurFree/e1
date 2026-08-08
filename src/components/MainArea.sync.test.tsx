@@ -60,7 +60,7 @@ interface Fixture {
   pageB: Page;
 }
 
-/** 预置知识库 + 两个文档（正文 version 2）+ 指向文档甲的路由。 */
+/** 预置知识库 + 两个文档（正文版本令牌 "mem:2"）+ 指向文档甲的路由。 */
 async function seedWorkspace(services: InMemoryAppServices) {
   const ws = await services.workspace.create("知识库");
   const pageA = await services.page.create({
@@ -75,9 +75,19 @@ async function seedWorkspace(services: InMemoryAppServices) {
     kind: "document",
     title: "文档乙",
   });
-  // 初始正文：version 1 → 2。
-  await services.content.save(pageA.id, docWith("初始内容甲"), "初始内容甲", 1);
-  await services.content.save(pageB.id, docWith("初始内容乙"), "初始内容乙", 1);
+  // 初始正文：内存实现令牌 "mem:1" → "mem:2"（R005 阶段 3）。
+  await services.content.save(
+    pageA.id,
+    docWith("初始内容甲"),
+    "初始内容甲",
+    "mem:1",
+  );
+  await services.content.save(
+    pageB.id,
+    docWith("初始内容乙"),
+    "初始内容乙",
+    "mem:1",
+  );
   // 启动后直接进入文档甲的编辑视图。
   await services.preferences.update({
     lastRoute: serializeRoute({
@@ -142,10 +152,10 @@ async function setupConflict(localText: string, remoteText: string) {
   await waitFor(() => expect(screen.getByText("保存中…")).toBeInTheDocument(), {
     timeout: 5000,
   });
-  // 另一标签页此时保存了同一文档（version 2 → 3）并广播。
-  await realSave(pageA.id, docWith(remoteText), remoteText, 2);
+  // 另一标签页此时保存了同一文档（令牌 "mem:2" → "mem:3"）并广播。
+  await realSave(pageA.id, docWith(remoteText), remoteText, "mem:2");
   await act(async () => {
-    emitRemote({ type: "content-saved", pageId: pageA.id, version: 3 });
+    emitRemote({ type: "content-saved", pageId: pageA.id, version: "mem:3" });
   });
   // dirty 分支：出现冲突提示条。
   await waitFor(() =>
@@ -175,21 +185,21 @@ describe("MainArea 跨标签页同步", () => {
 
   it("非当前文档的 content-saved：增量刷新搜索索引", async () => {
     const { services, emitRemote, workspaceId, pageB } = await renderApp();
-    // 另一标签页保存了文档乙（version 2 → 3）。
+    // 另一标签页保存了文档乙（令牌 "mem:2" → "mem:3"）。
     await services.content.save(
       pageB.id,
       docWith("远端乙新词"),
       "远端乙新词",
-      2,
+      "mem:2",
     );
     await act(async () => {
-      emitRemote({ type: "content-saved", pageId: pageB.id, version: 3 });
+      emitRemote({ type: "content-saved", pageId: pageB.id, version: "mem:3" });
     });
-    await waitFor(() =>
+    await waitFor(async () =>
       expect(
-        services.searchIndex
-          .query(workspaceId, "远端乙新词")
-          .map((h) => h.pageId),
+        (await services.searchIndex.query(workspaceId, "远端乙新词")).map(
+          (h) => h.pageId,
+        ),
       ).toContain(pageB.id),
     );
     // 当前文档不受影响。
@@ -202,10 +212,10 @@ describe("MainArea 跨标签页同步", () => {
       pageA.id,
       docWith("远端甲内容"),
       "远端甲内容",
-      2,
+      "mem:2",
     );
     await act(async () => {
-      emitRemote({ type: "content-saved", pageId: pageA.id, version: 3 });
+      emitRemote({ type: "content-saved", pageId: pageA.id, version: "mem:3" });
     });
     await waitFor(() => expect(editorText()).toContain("远端甲内容"), {
       timeout: 5000,
@@ -242,8 +252,8 @@ describe("MainArea 跨标签页同步", () => {
         ),
       { timeout: 5000 },
     );
-    // 远端 version 3 → 覆盖后 version 4：单调递增，无静默回退。
-    expect((await services.content.get(pageA.id))?.version).toBe(4);
+    // 远端令牌 "mem:3" → 覆盖后 "mem:4"：单调推进，无静默回退。
+    expect((await services.content.get(pageA.id))?.version).toBe("mem:4");
   });
 
   it("冲突面板①：重新载入磁盘版本，丢弃本地未保存修改", async () => {

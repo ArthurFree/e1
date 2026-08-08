@@ -17,7 +17,7 @@ import { useApp } from "../../state/AppState";
 import { TestApp } from "../../test/TestApp";
 import { resetDB } from "../../infrastructure/db";
 import {
-  attachmentRepository,
+  assetStore,
   contentRepository,
   pageRepository,
   revisionRepository,
@@ -42,7 +42,7 @@ function Harness() {
     <DocumentEditor
       pageId={host.pageId}
       initialContent={{ type: "doc", content: [{ type: "paragraph" }] }}
-      initialVersion={1}
+      initialVersion="idb:1"
       onEditorReady={(editor) => {
         host.editor = editor;
       }}
@@ -125,7 +125,7 @@ describe("DocumentEditor 保存后半程竞态（R004）", () => {
       pageId,
       new File(["x"], "b.txt", { type: "text/plain" }),
     );
-    expect((await attachmentRepository.listByPage(pageId)).length).toBe(1);
+    expect((await assetStore.listByDocument(pageId)).length).toBe(1);
     await sleep(1500);
 
     // 放行 A 的后处理：A 已过期，其附件清理不得执行/不得误删。
@@ -138,7 +138,7 @@ describe("DocumentEditor 保存后半程竞态（R004）", () => {
     // 全部保存收尾后，新插入的附件记录必须仍然存在。
     await waitFor(
       async () => {
-        expect((await attachmentRepository.listByPage(pageId)).length).toBe(1);
+        expect((await assetStore.listByDocument(pageId)).length).toBe(1);
       },
       { timeout: 4000 },
     );

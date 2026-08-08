@@ -39,7 +39,7 @@
 
 ## 搜索
 
-工作区级内存索引（`SearchIndexService`）：会话加载时一次构建（页面 + 正文快照），页面写操作 `syncPages`/`upsertPage` 同步、正文保存经 `DocumentCommitService.commit` 增量更新；查询语义与 `domain/search.ts` 的 `searchPages` 完全等价（测试强制）。索引未构建时回退全量扫描路径。
+搜索索引抽象为 `SearchIndexPort`（`src/application/services/SearchIndexPort.ts`，R005 阶段 6），Web 实现为工作区级内存索引 `BrowserMemorySearchIndex`（`src/platform/web/search/`，Desktop 未来可换 SQLite 实现）。会话加载不再携带正文：`prepareWorkspace(workspaceId)` 由索引实现自行经仓储读取页面与正文快照（`page.listByWorkspace` + `content.listByWorkspace`），幂等、重复调用等价于 `rebuild`。页面写操作 `syncPages`/`upsertDocument` 同步元数据、正文保存经 `DocumentCommitService.commit` 的 `updateText` 增量更新；查询语义与 `domain/search.ts` 的 `searchPages` 完全等价（测试强制）。索引未准备时查询返回空，由调用方回退全量扫描路径。索引是派生数据，同步失败不反向影响保存主流程。
 
 ## 恢复缓冲与损坏诊断（localStorage）
 

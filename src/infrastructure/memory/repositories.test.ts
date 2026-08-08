@@ -149,7 +149,12 @@ describe("内存仓储", () => {
       kind: "document",
       title: "子文档",
     });
-    await repos.content.save(child.id, { type: "doc", content: [] }, "正文", 1);
+    await repos.content.save(
+      child.id,
+      { type: "doc", content: [] },
+      "正文",
+      "mem:1",
+    );
     const tag = await repos.tag.create(wsId, "标签", "#000");
     await repos.tag.setPageTags(child.id, [tag.id]);
     await repos.revision.add(child.id, { type: "doc" }, "正文", "manual");
@@ -271,10 +276,15 @@ describe("内存仓储：工作区维度（R004 阶段 5）", () => {
       kind: "document",
       title: "文档",
     });
-    await repos.content.save(page.id, { type: "doc", content: [] }, "正文", 1);
+    await repos.content.save(
+      page.id,
+      { type: "doc", content: [] },
+      "正文",
+      "mem:1",
+    );
     expect((await repos.content.get(page.id))?.workspaceId).toBe(wsId);
     await expectDomainError(
-      repos.content.save("missing", { type: "doc" }, "x", 0),
+      repos.content.save("missing", { type: "doc" }, "x", "mem:0"),
       "PAGE_NOT_FOUND",
     );
   });
@@ -292,8 +302,8 @@ describe("内存仓储：工作区维度（R004 阶段 5）", () => {
       kind: "document",
       title: "乙",
     });
-    await repos.content.save(p1.id, { type: "doc" }, "甲正文", 1);
-    await repos.content.save(p2.id, { type: "doc" }, "乙正文", 1);
+    await repos.content.save(p1.id, { type: "doc" }, "甲正文", "mem:1");
+    await repos.content.save(p2.id, { type: "doc" }, "乙正文", "mem:1");
     expect(
       (await repos.content.listByWorkspace(wsId)).map((c) => c.pageId),
     ).toEqual([p1.id]);

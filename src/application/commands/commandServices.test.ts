@@ -21,8 +21,8 @@ import {
   workspaceRepository as idbWorkspace,
 } from "../../infrastructure/repositories";
 import { createInMemoryAppServices } from "../../infrastructure/memory/createInMemoryAppServices";
+import { BrowserMemorySearchIndex } from "../../platform/web/search/BrowserMemorySearchIndex";
 import { DocumentCommitService } from "../services/DocumentCommitService";
-import { SearchIndexService } from "../services/SearchIndexService";
 import {
   SyncChannelService,
   type BroadcastChannelLike,
@@ -63,7 +63,7 @@ interface CommandTestContext {
     document: DocumentCommandService;
   };
   queries: { workspace: WorkspaceQueryService };
-  searchIndex: SearchIndexService;
+  searchIndex: BrowserMemorySearchIndex;
   repos: {
     workspace: WorkspaceRepository;
     page: PageRepository;
@@ -75,13 +75,15 @@ interface CommandTestContext {
 /** IndexedDB 装配（fake-indexeddb）：与 browserServices 同结构，手动建实例以便注入 mock 频道。 */
 async function makeBrowserContext(): Promise<CommandTestContext> {
   await resetDB();
-  const searchIndex = new SearchIndexService();
+  const searchIndex = new BrowserMemorySearchIndex({
+    pages: idbPage,
+    content: idbContent,
+  });
   const { channel, posted } = makeMockChannel();
   const syncChannel = new SyncChannelService(channel, "tab-test");
   const session = new WorkspaceSessionService({
     pages: idbPage,
     tags: idbTag,
-    content: idbContent,
   });
   const documentCommit = new DocumentCommitService({
     content: idbContent,
@@ -218,7 +220,7 @@ function describeCommandServices(
       );
       expect(stored?.title).toBe("新标题");
       // 索引立即反映新标题。
-      const hits = ctx.searchIndex.query(ws.id, "新标题");
+      const hits = await ctx.searchIndex.query(ws.id, "新标题");
       expect(hits.map((h) => h.pageId)).toContain(page.id);
       expect(eventsOf(ctx.posted)).toContainEqual({
         type: "page-changed",
@@ -245,7 +247,7 @@ function describeCommandServices(
       );
       expect(stored?.title).toBe("改名绕过索引");
       // 索引仍是旧标题，且无广播。
-      expect(ctx.searchIndex.query(ws.id, "改名绕过索引")).toEqual([]);
+      expect(await ctx.searchIndex.query(ws.id, "改名绕过索引")).toEqual([]);
       expect(eventsOf(ctx.posted)).toEqual([]);
     });
 

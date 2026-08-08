@@ -8,7 +8,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { collectSubtreeIds } from "../domain/pageTree";
 import type { Page } from "../domain/types";
-import { SearchIndexService } from "../application/services/SearchIndexService";
+import { BrowserMemorySearchIndex } from "../platform/web/search/BrowserMemorySearchIndex";
 import { WorkspaceSessionService } from "../application/services/WorkspaceSessionService";
 import { getDB, resetDB, STORE_CONTENTS, STORE_PAGES, STORE_TRASH } from "./db";
 import {
@@ -61,20 +61,25 @@ beforeEach(async () => {
 describe("性能基准", () => {
   it("小型（100 页面）：会话加载与搜索", async () => {
     await seedTier(100);
+    // R005 阶段 6：会话加载不再读取正文；正文读取移入索引准备
+    // （prepareWorkspace 自行取数），计时口径为「会话 + 索引准备」，
+    // 覆盖打开知识库的总成本，阈值不动。
     const session = new WorkspaceSessionService({
       pages: pageRepository,
       tags: tagRepository,
+    });
+    const index = new BrowserMemorySearchIndex({
+      pages: pageRepository,
       content: contentRepository,
     });
     const t0 = performance.now();
     const data = await session.load(WS);
+    await index.prepareWorkspace(WS);
     expect(data.pages).toHaveLength(100);
     expect(performance.now() - t0).toBeLessThan(300);
 
-    const index = new SearchIndexService();
-    index.build(WS, data.pages, data.contents);
     const t1 = performance.now();
-    expect(index.query(WS, "搜索关键词").length).toBeGreaterThan(0);
+    expect((await index.query(WS, "搜索关键词")).length).toBeGreaterThan(0);
     expect(performance.now() - t1).toBeLessThan(100);
   }, 30000);
 
@@ -83,18 +88,21 @@ describe("性能基准", () => {
     const session = new WorkspaceSessionService({
       pages: pageRepository,
       tags: tagRepository,
+    });
+    const index = new BrowserMemorySearchIndex({
+      pages: pageRepository,
       content: contentRepository,
     });
     const t0 = performance.now();
     const data = await session.load(WS);
+    // 索引准备（含 1,500 篇正文快照读取）计入打开知识库总成本（口径见上）。
+    await index.prepareWorkspace(WS);
     expect(data.pages).toHaveLength(2000);
-    expect(data.contents).toHaveLength(1500);
+    expect(data).not.toHaveProperty("contents");
     expect(performance.now() - t0).toBeLessThan(300);
 
-    const index = new SearchIndexService();
-    index.build(WS, data.pages, data.contents);
     const t1 = performance.now();
-    expect(index.query(WS, "搜索关键词").length).toBeGreaterThan(0);
+    expect((await index.query(WS, "搜索关键词")).length).toBeGreaterThan(0);
     expect(performance.now() - t1).toBeLessThan(100);
   }, 60000);
 
@@ -183,17 +191,19 @@ describe("性能基准", () => {
     const session = new WorkspaceSessionService({
       pages: pageRepository,
       tags: tagRepository,
-      content: contentRepository,
     });
     const listAllSpy = vi.spyOn(contentRepository, "listAll");
+    // R005 阶段 6：会话加载不再触碰正文仓储（含工作区索引直取）。
+    const listByWorkspaceSpy = vi.spyOn(contentRepository, "listByWorkspace");
     const t0 = performance.now();
     const data = await session.load("ws-m7");
     const elapsed = performance.now() - t0;
 
     expect(data.pages).toHaveLength(500);
-    expect(data.contents).toHaveLength(375);
-    // 验收：会话加载不再调用 content.listAll()。
+    expect(data).not.toHaveProperty("contents");
+    // 验收：会话加载不调用任何正文仓储读路径。
     expect(listAllSpy).not.toHaveBeenCalled();
+    expect(listByWorkspaceSpy).not.toHaveBeenCalled();
     // 阈值对齐中型单库基准（2000 页面 < 300ms），目标库仅 500 页面，余量充足。
     expect(elapsed).toBeLessThan(300);
   }, 120000);

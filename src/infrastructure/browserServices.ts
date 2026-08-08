@@ -10,7 +10,6 @@ import { increment } from "../application/devDiagnostics";
 import { DocumentCommitService } from "../application/services/DocumentCommitService";
 import { DocumentSaveCoordinator } from "../application/services/SaveCoordinator";
 import { WorkspaceSessionService } from "../application/services/WorkspaceSessionService";
-import { SearchIndexService } from "../application/services/SearchIndexService";
 import { PreferencesService } from "../application/services/PreferencesService";
 import { SyncChannelService } from "../application/services/SyncChannelService";
 import { StorageConnectionEventBus } from "../application/services/StorageConnectionEventBus";
@@ -29,8 +28,14 @@ import { createOpenAICompatibleProvider } from "./aiProvider";
 import { createId } from "./id";
 import { setStorageConnectionCallbacks } from "./db";
 import { webCapabilities } from "../platform/web/webCapabilities";
+import { WebAssetAccessService } from "../platform/web/webAssetAccess";
+import { WebAssetPicker } from "../platform/web/webAssetPicker";
+import { WebNotificationService } from "../platform/web/webNotification";
+import { BrowserMemorySearchIndex } from "../platform/web/search/BrowserMemorySearchIndex";
+import { AssetCommandService } from "../application/assets/AssetCommandService";
+import type { AssetServices } from "../application/assets/assetServices";
 import {
-  attachmentRepository,
+  assetStore,
   contentRepository,
   documentWriteRepository,
   pageRepository,
@@ -48,9 +53,12 @@ export function createBrowserAppServices(): AppServices {
   const session = new WorkspaceSessionService({
     pages: pageRepository,
     tags: tagRepository,
+  });
+  // 搜索索引（R005 阶段 6）：Web 内存实现，自行经仓储读取页面与正文快照。
+  const searchIndex = new BrowserMemorySearchIndex({
+    pages: pageRepository,
     content: contentRepository,
   });
-  const searchIndex = new SearchIndexService();
   // 跨标签页同步频道（R004 §7.2）：无 BroadcastChannel 环境降级 no-op。
   const syncChannel = SyncChannelService.browser(createId());
   // 存储连接事件（R004 §7.1）：db.ts 回调 → 事件总线 → UI 提示条。
@@ -107,9 +115,16 @@ export function createBrowserAppServices(): AppServices {
       content: contentRepository,
     }),
   };
+  // 资源服务组（R005 阶段 5）：写编排平台无关（AssetCommandService），
+  // URL/下载/文件选择/反馈为 Web 适配器（Blob 只在 platform/web 边界重建）。
+  const assets: AssetServices = {
+    commands: new AssetCommandService({ store: assetStore }),
+    access: new WebAssetAccessService(assetStore),
+    picker: new WebAssetPicker(),
+    notify: new WebNotificationService(),
+  };
   instance = {
-    // TODO(R005-13/14)：阶段 5 Asset 抽象后移除公开附件仓储。
-    attachment: attachmentRepository,
+    assets,
     // 运行时能力矩阵（R005 阶段 2）：写死在容器内部而非 spread 合并，
     // 保持模块级单例的引用相等（TestApp/消费者依赖同一实例身份）。
     capabilities: webCapabilities,
@@ -125,7 +140,7 @@ export function createBrowserAppServices(): AppServices {
         {
           committer: documentCommit,
           revisions: revisionRepository,
-          attachments: attachmentRepository,
+          assets: assetStore,
           recovery: { write: writeRecovery, clear: clearRecovery },
           // 维护失败不影响正文保存状态，只记录开发诊断（R004 阶段 1）。
           onMaintenanceError: (stage) =>

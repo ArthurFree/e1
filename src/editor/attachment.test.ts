@@ -7,8 +7,9 @@ import {
   formatBytes,
   insertAttachmentFile,
 } from "./attachment";
-import { attachmentRepository } from "../infrastructure/repositories";
+import { assetStore } from "../infrastructure/repositories";
 import { resetDB } from "../infrastructure/db";
+import { createTestAssetServices } from "../test/assetTestServices";
 
 function createEditor(content?: unknown) {
   const editor = new Editor({
@@ -16,8 +17,8 @@ function createEditor(content?: unknown) {
     extensions: buildDocumentExtensions(),
     content: content as never,
   });
-  (editor.storage as unknown as Record<string, unknown>).attachmentRepository =
-    attachmentRepository;
+  (editor.storage as unknown as Record<string, unknown>).assetServices =
+    createTestAssetServices();
   return editor;
 }
 
@@ -62,7 +63,7 @@ describe("附件插入", () => {
     const ok = await insertAttachmentFile(editor, "page-1", big);
     expect(ok).toBe(false);
     expect(alert).toHaveBeenCalledOnce();
-    expect(await attachmentRepository.listByPage("page-1")).toEqual([]);
+    expect(await assetStore.listByDocument("page-1")).toEqual([]);
     expect(editor.getText()).not.toContain("big.zip");
     editor.destroy();
     alert.mockRestore();
@@ -72,7 +73,7 @@ describe("附件插入", () => {
     const editor = createEditor();
     const alert = vi.spyOn(window, "alert").mockImplementation(() => undefined);
     const addSpy = vi
-      .spyOn(attachmentRepository, "add")
+      .spyOn(assetStore, "add")
       .mockRejectedValue(new DOMException("quota", "QuotaExceededError"));
 
     const ok = await insertAttachmentFile(
@@ -97,7 +98,7 @@ describe("附件插入", () => {
     const ok = await insertAttachmentFile(editor, "page-1", file);
     expect(ok).toBe(true);
 
-    const records = await attachmentRepository.listByPage("page-1");
+    const records = await assetStore.listByDocument("page-1");
     expect(records).toHaveLength(1);
     expect(records[0].name).toBe("说明.txt");
 
@@ -179,7 +180,7 @@ describe("附件节点视图", () => {
     const file = new File(["x"], "a.txt", { type: "text/plain" });
     const editor2 = createEditor();
     await insertAttachmentFile(editor2, "page-1", file);
-    const [record] = await attachmentRepository.listByPage("page-1");
+    const [record] = await assetStore.listByDocument("page-1");
 
     const remove = editor2.view.dom.querySelector<HTMLButtonElement>(
       "[aria-label^='移除附件']",
@@ -189,7 +190,7 @@ describe("附件节点视图", () => {
       editor2.getJSON().content?.some((n) => n.type === "attachment"),
     ).toBe(false);
     // 附件记录仍在，等待保存后的孤儿清理。
-    expect(await attachmentRepository.get(record.id)).toBeDefined();
+    expect(await assetStore.getMetadata(record.id)).toBeDefined();
     editor2.destroy();
   });
 });

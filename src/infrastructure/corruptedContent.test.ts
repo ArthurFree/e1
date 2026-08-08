@@ -39,7 +39,7 @@ describe("损坏正文", () => {
       title: "文档",
     });
     const bad = { type: "doc", content: [{ type: "evilNode" }] };
-    await contentRepository.save(page.id, bad, "坏内容", 1);
+    await contentRepository.save(page.id, bad, "坏内容", "idb:1");
     const stored = await contentRepository.get(page.id);
     expect(stored).toBeDefined();
     const parsed = parseDocumentContent(stored!.contentJson);

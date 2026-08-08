@@ -7,6 +7,8 @@
 
 import type {
   Attachment,
+  BinaryAttachment,
+  ContentVersionToken,
   DocumentContent,
   DocumentRevision,
   Page,
@@ -78,17 +80,20 @@ export interface ContentRepository {
   /** 按 pageId 取正文；不存在时返回 undefined。 */
   get(pageId: string): Promise<DocumentContent | undefined>;
   /**
-   * 覆盖式保存（upsert）+ 乐观并发控制（R004 阶段 7）：
-   * 事务内读取当前 version（存量无 version 记录视为 0），不等于
-   * expectedVersion 时抛 DomainError("DOCUMENT_CONFLICT")，否则 version+1 写入。
+   * 覆盖式保存（upsert）+ 乐观并发控制（R004 阶段 7；R005 阶段 3 起版本
+   * 改为不透明 ContentVersionToken）：
+   * 事务内读取当前版本令牌（存量无版本记录视为 INITIAL_CONTENT_VERSION_TOKEN
+   * 对应的初始版本），不等于 expectedVersion 时抛 DomainError("DOCUMENT_CONFLICT")，
+   * 否则由实现生成新令牌写入。令牌不透明、编码由实现自定，调用方原样传递即可；
+   * 非本实现编码的令牌一律视为冲突。
    * contentJson 为唯一编辑真相，textSnapshot 同步更新。
    */
   save(
     pageId: string,
     contentJson: unknown,
     textSnapshot: string,
-    expectedVersion: number,
-  ): Promise<{ version: number; updatedAt: number }>;
+    expectedVersion: ContentVersionToken,
+  ): Promise<{ version: ContentVersionToken; updatedAt: number }>;
   /** 全部文档正文（全局搜索、跨库统计用）。 */
   listAll(): Promise<DocumentContent[]>;
   /** 工作区全部文档正文（会话加载用，R004 阶段 5：索引直取，不全表扫描）。 */
@@ -103,6 +108,13 @@ export interface CreateDocumentWithContentInput {
   icon?: string | null;
   contentJson: unknown;
   textSnapshot: string;
+  /**
+   * 可选：页面创建/更新时间（毫秒时间戳）。仅 Portable Vault 导入等
+   * 迁移路径传入（保留 Frontmatter created/updated，R005 阶段 7B）；
+   * 缺省取当前时间。实现方只接受有限正数，非法值回退当前时间。
+   */
+  createdAt?: number;
+  updatedAt?: number;
 }
 
 /** 覆盖正文入参。 */
@@ -141,20 +153,30 @@ export interface RevisionRepository {
   pruneInterval(pageId: string, keep: number, maxBytes?: number): Promise<void>;
 }
 
-/** 创建附件入参。 */
+/**
+ * 导入附件入参（R005 阶段 5）：二进制为平台无关的 Uint8Array，不再含 Blob；
+ * size 为权威字节数（与 data.byteLength 一致，调用方从 File.size 等来源取得）。
+ */
 export interface CreateAttachmentInput {
   pageId: string;
   name: string;
   mimeType: string;
   size: number;
-  blob: Blob;
+  data: Uint8Array;
 }
 
-/** 附件仓储：二进制直接存 IndexedDB。 */
-export interface AttachmentRepository {
-  /** 按 id 取附件；不存在时返回 undefined。 */
-  get(id: string): Promise<Attachment | undefined>;
-  listByPage(pageId: string): Promise<Attachment[]>;
+/**
+ * 附件资源存储 port（R005 阶段 5，原 AttachmentRepository 演进）：
+ * 元数据与二进制分离读取，port 上不出现 Blob；Web 实现把字节存 IndexedDB
+ * （记录形状由实现自定），未来 Desktop 实现可映射到 vault assets/ 文件。
+ */
+export interface AssetStore {
+  /** 按 id 取附件元数据；不存在或记录损坏时返回 undefined。 */
+  getMetadata(id: string): Promise<Attachment | undefined>;
+  /** 按 id 取元数据 + 二进制；记录缺失或二进制不可读时返回 undefined。 */
+  getBinary(id: string): Promise<BinaryAttachment | undefined>;
+  /** 文档全部附件元数据。 */
+  listByDocument(pageId: string): Promise<Attachment[]>;
   add(input: CreateAttachmentInput): Promise<Attachment>;
   remove(id: string): Promise<void>;
   /**

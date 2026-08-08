@@ -326,12 +326,12 @@ describe("正文与标签关联的工作区维度（R004 阶段 5）", () => {
 
   it("save 从页面回写 workspaceId，textSnapshot/updatedAt 语义不变", async () => {
     const { ws1, p1 } = await seedTwoWorkspaces();
-    // 页面创建时已写入 version 1 的空正文：首次保存 expectedVersion 为 1。
+    // 页面创建时已写入首版空正文（"idb:1"）：首次保存以之为 expectedVersion。
     await contentRepository.save(
       p1.id,
       { type: "doc", content: [] },
       "新正文",
-      1,
+      "idb:1",
     );
     const stored = await contentRepository.get(p1.id);
     expect(stored?.workspaceId).toBe(ws1.id);
@@ -341,7 +341,7 @@ describe("正文与标签关联的工作区维度（R004 阶段 5）", () => {
 
   it("save 页面不存在时抛 PAGE_NOT_FOUND", async () => {
     await expect(
-      contentRepository.save("missing-page", { type: "doc" }, "x", 0),
+      contentRepository.save("missing-page", { type: "doc" }, "x", "idb:0"),
     ).rejects.toSatisfy(
       (e) => e instanceof Error && "code" in e && e.code === "PAGE_NOT_FOUND",
     );
@@ -349,8 +349,18 @@ describe("正文与标签关联的工作区维度（R004 阶段 5）", () => {
 
   it("listByWorkspace 只返回目标库正文", async () => {
     const { ws1, ws2, p1, p2 } = await seedTwoWorkspaces();
-    await contentRepository.save(p1.id, { type: "doc", content: [] }, "甲", 1);
-    await contentRepository.save(p2.id, { type: "doc", content: [] }, "乙", 1);
+    await contentRepository.save(
+      p1.id,
+      { type: "doc", content: [] },
+      "甲",
+      "idb:1",
+    );
+    await contentRepository.save(
+      p2.id,
+      { type: "doc", content: [] },
+      "乙",
+      "idb:1",
+    );
 
     const ws1Contents = await contentRepository.listByWorkspace(ws1.id);
     expect(ws1Contents.map((c) => c.pageId)).toEqual([p1.id]);

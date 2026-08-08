@@ -12,7 +12,7 @@ const SNIPPET_RADIUS = 30;
 /**
  * 以命中位置为中心截取上下文片段，两端超出时用省略号标示。
  * query 必须为已转小写的形式；未命中返回空串（调用方以空串表示「仅标题命中」）。
- * 导出供 SearchIndexService（R003 阶段 7）与 searchPages 共用，保证 snippet 一致。
+ * 导出供搜索索引实现（SearchIndexPort，R005 阶段 6）与 searchPages 共用，保证 snippet 一致。
  */
 export function makeSnippet(text: string, query: string): string {
   const lower = text.toLowerCase();

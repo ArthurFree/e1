@@ -25,7 +25,7 @@ function makeContent(pageId: string, textSnapshot: string): DocumentContent {
     workspaceId: "ws1",
     contentJson: null,
     textSnapshot,
-    version: 1,
+    version: "t:1",
     updatedAt: 0,
   };
 }

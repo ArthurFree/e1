@@ -10,6 +10,9 @@
  * - rename 仅在 updatedPage 非空时同步搜索索引并广播（对应 Provider 的
  *   current 查找逻辑：页面不在当前会话镜像中时跳过）。
  *
+ * R005 阶段 6：搜索索引依赖收窄为 SearchIndexPort；索引同步失败
+ * 仅记录诊断，不影响页面写主流程（派生数据，下次会话加载可重建）。
+ *
  * 仓储经构造函数注入（domain port），不依赖 IndexedDB 具体实现。
  */
 import type {
@@ -17,14 +20,15 @@ import type {
   PageRepository,
 } from "../../domain/repositories";
 import type { Page } from "../../domain/types";
-import type { SearchIndexService } from "../services/SearchIndexService";
+import { increment } from "../devDiagnostics";
+import type { SearchIndexPort } from "../services/SearchIndexPort";
 import type { SyncChannelService } from "../services/SyncChannelService";
 
 export class PageCommandService {
   constructor(
     private readonly deps: {
       page: PageRepository;
-      searchIndex: SearchIndexService;
+      searchIndex: SearchIndexPort;
       /** 跨标签页同步频道（R004 §7.2）；可选，缺省不广播。 */
       syncChannel?: SyncChannelService;
     },
@@ -56,7 +60,19 @@ export class PageCommandService {
   ): Promise<void> {
     await this.deps.page.rename(id, title);
     if (updatedPage) {
-      this.deps.searchIndex.upsertPage(updatedPage);
+      // 纯元数据更新：textSnapshot 缺省，索引保留已索引正文（R005 阶段 6）。
+      try {
+        await this.deps.searchIndex.upsertDocument({
+          workspaceId: updatedPage.workspaceId,
+          pageId: updatedPage.id,
+          title: updatedPage.title,
+          kind: updatedPage.kind,
+          updatedAt: updatedPage.updatedAt,
+          deletedAt: updatedPage.deletedAt,
+        });
+      } catch {
+        increment("search-index", "sync-failed");
+      }
       this.postPageChanged(updatedPage.workspaceId, id);
     }
   }

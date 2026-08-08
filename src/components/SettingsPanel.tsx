@@ -10,6 +10,10 @@ import { useEffect, useState } from "react";
 import { usePreferences } from "../state/PreferencesContext";
 import { useOverlay } from "../state/OverlayContext";
 import { useNavigationState } from "../state/NavigationContext";
+import {
+  useWorkspaceCommands,
+  useWorkspaceData,
+} from "../state/WorkspaceSessionContext";
 import { useAppServices } from "../state/AppServicesProvider";
 import { validateAIConfig } from "../domain/ai";
 import { revisionContentBytes } from "../domain/revisions";
@@ -18,6 +22,7 @@ import {
   estimateStorage,
   type StorageEstimateInfo,
 } from "../application/services/StorageQuotaService";
+import { VaultExportService } from "../application/vault/VaultExportService";
 import { formatBytes } from "../editor/attachment";
 import { Dialog } from "./ui/Dialog";
 
@@ -36,6 +41,8 @@ export function SettingsPanel() {
   const { preferences, setAIConfig } = usePreferences();
   const { closeSettings } = useOverlay();
   const { selectedPageId } = useNavigationState();
+  const { workspace } = useWorkspaceData();
+  const { importVault } = useWorkspaceCommands();
   const services = useAppServices();
   const current = preferences.aiConfig;
 
@@ -51,6 +58,12 @@ export function SettingsPanel() {
   const [revisionUsage, setRevisionUsage] = useState<RevisionUsage | null>(
     null,
   );
+  // Portable Vault 导出（R005 阶段 7A）：进行中禁用按钮，结果一行提示。
+  const [exporting, setExporting] = useState(false);
+  const [exportResult, setExportResult] = useState<string | null>(null);
+  // Portable Vault 导入（R005 阶段 7B）：同上，一行摘要 + console 明细。
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<string | null>(null);
 
   // 本地存储估算（R004 §6.3）：仅在面板打开时读取一次。
   useEffect(() => {
@@ -116,6 +129,89 @@ export function SettingsPanel() {
     setApiKey("");
     setError(null);
     setSaved(false);
+  };
+
+  // 导出当前知识库为 Portable Vault（.e1.zip，R005 阶段 7A）。
+  // 服务只返回 zip 字节；下载沿用现有 createObjectURL + a[download] 方式。
+  const exportVault = async () => {
+    if (!workspace || exporting) return;
+    setExporting(true);
+    setExportResult(null);
+    try {
+      const service = new VaultExportService({
+        workspaceQuery: services.queries.workspace,
+        documentQuery: services.queries.document,
+        assetAccess: services.assets.access,
+      });
+      const result = await service.exportWorkspace(workspace.id);
+      const blob = new Blob([result.data.buffer as ArrayBuffer], {
+        type: "application/zip",
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = result.fileName;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      const { noteCount, assetCount, skippedTrashCount } = result.summary;
+      setExportResult(
+        `已导出 ${noteCount} 篇文档、${assetCount} 个附件` +
+          (skippedTrashCount > 0
+            ? `（回收站 ${skippedTrashCount} 页未导出）`
+            : "") +
+          "。",
+      );
+      // 与单文档导出一致：有损明细先经 console.warn 暴露。
+      if (result.summary.lossy) {
+        console.warn("本次导出含有损转换：", result.summary.unsupported);
+      }
+    } catch (err) {
+      services.assets.notify.notify(
+        `导出知识库失败：${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // 导入 Portable Vault（.e1.zip，R005 阶段 7B）：文件选择走资源选择器
+  // 通道（accept 限定 zip），导入编排在 WorkspaceProvider 的 importVault
+  // 命令内（含知识库列表镜像刷新与切换），失败经 notify 通道反馈。
+  const importVaultFile = async () => {
+    if (importing) return;
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const picked = await services.assets.picker.pick({
+        accept: ".zip,application/zip",
+      });
+      if (!picked) return; // 用户取消选择
+      const report = await importVault(picked.data);
+      setImportResult(
+        `已导入到「${report.workspaceName}」：${report.importedCount} 篇文档` +
+          (report.skipped.length > 0
+            ? `、跳过 ${report.skipped.length} 篇`
+            : "") +
+          (report.missingAssets.length > 0
+            ? `、${report.missingAssets.length} 个附件缺失`
+            : "") +
+          (report.unresolvedLinks.length > 0
+            ? `、${report.unresolvedLinks.length} 个链接未解析`
+            : "") +
+          (report.lossy ? "（含有损转换）" : "") +
+          "。",
+      );
+      // 与导出一致：报告明细（skipped/unsupported 等）先经 console 暴露。
+      if (report.lossy || report.skipped.length > 0) {
+        console.warn("本次导入的报告明细：", report);
+      }
+    } catch (err) {
+      services.assets.notify.notify(
+        `导入知识库失败：${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      setImporting(false);
+    }
   };
 
   return (
@@ -225,6 +321,31 @@ export function SettingsPanel() {
             当前文档版本历史：{revisionUsage.count} 条，约{" "}
             {formatBytes(revisionUsage.bytes)}
           </p>
+        )}
+        {/* Portable Vault 导出/导入（R005 阶段 7A/7B）：知识库级备份通道。 */}
+        <div className="settings-panel__actions">
+          <button
+            type="button"
+            className="settings-panel__primary"
+            disabled={!workspace || exporting}
+            onClick={() => void exportVault()}
+          >
+            {exporting ? "正在导出…" : "导出知识库（.e1.zip）"}
+          </button>
+          <button
+            type="button"
+            className="settings-panel__secondary"
+            disabled={importing}
+            onClick={() => void importVaultFile()}
+          >
+            {importing ? "正在导入…" : "导入知识库（.e1.zip）"}
+          </button>
+        </div>
+        {exportResult && (
+          <p className="settings-panel__storage">{exportResult}</p>
+        )}
+        {importResult && (
+          <p className="settings-panel__storage">{importResult}</p>
         )}
       </div>
     </Dialog>

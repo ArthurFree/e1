@@ -10,7 +10,6 @@ import { increment } from "../../application/devDiagnostics";
 import { DocumentCommitService } from "../../application/services/DocumentCommitService";
 import { DocumentSaveCoordinator } from "../../application/services/SaveCoordinator";
 import { WorkspaceSessionService } from "../../application/services/WorkspaceSessionService";
-import { SearchIndexService } from "../../application/services/SearchIndexService";
 import { PreferencesService } from "../../application/services/PreferencesService";
 import {
   SyncChannelService,
@@ -29,7 +28,14 @@ import {
   createMemoryStore,
   type MemoryStore,
 } from "./repositories";
+import {
+  InMemoryAssetAccessService,
+  StubAssetPicker,
+  StubNotificationService,
+} from "./assetServices";
+import { AssetCommandService } from "../../application/assets/AssetCommandService";
 import { webCapabilities } from "../../platform/web/webCapabilities";
+import { BrowserMemorySearchIndex } from "../../platform/web/search/BrowserMemorySearchIndex";
 
 export interface InMemoryAppServicesOptions {
   /** 预置数据；缺省为全新空库。 */
@@ -52,7 +58,7 @@ export type InMemoryAppServices = AppServices &
   ReturnType<typeof createInMemoryRepositories> & {
     documentCommit: DocumentCommitService;
     session: WorkspaceSessionService;
-    searchIndex: SearchIndexService;
+    searchIndex: BrowserMemorySearchIndex;
   };
 
 /** 创建内存容器；返回 store 便于测试直接断言底层数据。 */
@@ -67,9 +73,12 @@ export function createInMemoryAppServices(
   const session = new WorkspaceSessionService({
     pages: repos.page,
     tags: repos.tag,
+  });
+  // 搜索索引（R005 阶段 6）：与生产同为 Web 内存实现，仓储换内存版。
+  const searchIndex = new BrowserMemorySearchIndex({
+    pages: repos.page,
     content: repos.content,
   });
-  const searchIndex = new SearchIndexService();
   // 跨标签页同步频道（R004 §7.2）：默认 no-op；测试经 options 注入 mock。
   const syncChannel = new SyncChannelService(
     options.syncChannel ?? null,
@@ -117,6 +126,13 @@ export function createInMemoryAppServices(
     preferencesService,
     syncChannel,
     storageEvents: new StorageConnectionEventBus(),
+    // 资源服务组（R005 阶段 5）：与生产容器同形状，访问/选择/反馈为内存桩。
+    assets: {
+      commands: new AssetCommandService({ store: repos.assetStore }),
+      access: new InMemoryAssetAccessService(repos.assetStore),
+      picker: new StubAssetPicker(),
+      notify: new StubNotificationService(),
+    },
     // 运行时能力矩阵（R005 阶段 2）：测试环境即 Web 语义，复用同一常量。
     capabilities: webCapabilities,
     // 命令/查询服务（R005 批次 1）：与生产容器同装配。
@@ -159,7 +175,7 @@ export function createInMemoryAppServices(
         {
           committer: documentCommit,
           revisions: repos.revision,
-          attachments: repos.attachment,
+          assets: repos.assetStore,
           recovery: {
             write,
             clear: (pid, savedGeneration) => {

@@ -111,12 +111,12 @@ describe("架构分层约束", () => {
    * 仓储/服务字段——属性访问（services.xxx）与 useAppServices() 解构
    * 两种形态都拦截，编排一律经 services.commands / services.queries /
    * services.preferencesService。
-   * attachment 为例外（保留在 AppServices 上）：经 editor.storage 通道
-   * 供 Tiptap 附件扩展读取，阶段 5 Asset 抽象后移除（TODO(R005-13/14)）。
+   * R005 阶段 5：attachment 字段同步移除（原 editor.storage 通道例外），
+   * 附件能力一律经 services.assets（AssetServices 组）。
    */
   it("components/state 不得访问 AppServices 已移除的原始仓储字段（R005 批次 2）", () => {
     const REMOVED =
-      "workspace|page|content|revision|tag|preferences|documentWrite|documentCommit|session|searchIndex";
+      "workspace|page|content|revision|attachment|tag|preferences|documentWrite|documentCommit|session|searchIndex";
     const propertyAccess = new RegExp(`services\\.(${REMOVED})\\b`);
     const destructuring = new RegExp(
       `\\{[^}]*\\b(?:${REMOVED})\\b[^}]*\\}\\s*=\\s*useAppServices\\(\\)`,
@@ -136,14 +136,14 @@ describe("架构分层约束", () => {
   });
 
   /**
-   * R004 INV-07 基线：components 不得直接调用正文/版本/附件/页面写仓储。
+   * R004 INV-07 基线：components 不得直接调用正文/版本/页面写仓储。
    * 阶段 0 以白名单快照记录现存 8 处直写点（见
    * docs/architecture/document-write-path.md），新增违规立即失败；
-   * 阶段 3 迁移时同步收缩白名单，现已清零。
+   * 阶段 3 迁移时同步收缩白名单，现已清零；R005 阶段 5 起附件写编排
+   * 经 services.assets.commands（AssetCommandService），直写条目移除。
    */
   it("components 直写仓储仅限白名单快照（R004 阶段 3 清零）", () => {
-    const pattern =
-      /services\.(content\.save|revision\.add|attachment\.(?:add|remove|removeOrphans)|page\.create)/;
+    const pattern = /services\.(content\.save|revision\.add|page\.create)/;
     const violations: string[] = [];
     for (const [path, content] of entries) {
       if (!path.startsWith("../components/")) continue;
@@ -155,6 +155,32 @@ describe("架构分层约束", () => {
       });
     }
     violations.sort();
+    expect(violations).toEqual([]);
+  });
+
+  /**
+   * R005 阶段 5：editor 不得 import domain/repositories——附件资源存储
+   * （AssetStore）只经 editor.storage.assetServices 注入的服务组访问，
+   * 编辑器扩展不直接依赖任何仓储 port（与 components/state 同约束）。
+   */
+  it("editor 不得 import domain/repositories（R005 阶段 5）", () => {
+    const violations = scan(["editor"], /domain\/repositories/);
+    expect(format(violations)).toBe("");
+    expect(violations).toEqual([]);
+  });
+
+  /**
+   * R005 阶段 6：application 不得 import 搜索索引具体实现——搜索只经
+   * SearchIndexPort（application/services/SearchIndexPort）注入，
+   * Web 内存实现（platform/web/search/BrowserMemorySearchIndex）与
+   * 未来 Desktop SQLite 实现可整体替换，业务层不感知。
+   */
+  it("application 不得 import 搜索索引具体实现（R005 阶段 6）", () => {
+    const violations = scan(
+      ["application"],
+      /platform\/web\/search|SearchIndexService/,
+    );
+    expect(format(violations)).toBe("");
     expect(violations).toEqual([]);
   });
 

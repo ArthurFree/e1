@@ -1,9 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useApp } from "../state/AppState";
 import { TestApp } from "../test/TestApp";
 import { resetDB } from "../infrastructure/db";
-import { preferencesRepository } from "../infrastructure/repositories";
+import {
+  preferencesRepository,
+  workspaceRepository,
+} from "../infrastructure/repositories";
+import { WebAssetPicker } from "../platform/web/webAssetPicker";
 import { SettingsPanel } from "./SettingsPanel";
 
 /** 等 AppProvider 初始加载完成后再渲染面板，避免加载覆盖测试中的保存。 */
@@ -99,6 +103,213 @@ describe("SettingsPanel", () => {
     fireEvent.click(screen.getByText("清除配置"));
     expect(await screen.findByText("AI 未配置")).toBeInTheDocument();
     expect((await preferencesRepository.get()).aiConfig).toBeNull();
+  });
+});
+
+describe("SettingsPanel 知识库导出（R005 阶段 7A）", () => {
+  let restoreUrl: (() => void) | null = null;
+  beforeEach(async () => {
+    cleanup();
+    await resetDB();
+  });
+  afterEach(() => {
+    restoreUrl?.();
+    restoreUrl = null;
+    vi.restoreAllMocks();
+  });
+
+  /** jsdom 无 URL.createObjectURL：打桩为可断言的固定返回值。 */
+  function stubObjectUrl() {
+    const created: string[] = [];
+    const api = URL as unknown as Record<string, unknown>;
+    const originalCreate = api.createObjectURL;
+    const originalRevoke = api.revokeObjectURL;
+    api.createObjectURL = (blob: Blob) => {
+      created.push(blob.type);
+      return `blob:mock-${created.length}`;
+    };
+    api.revokeObjectURL = () => {};
+    restoreUrl = () => {
+      api.createObjectURL = originalCreate;
+      api.revokeObjectURL = originalRevoke;
+    };
+    return created;
+  }
+
+  it("点击导出触发下载并展示摘要", async () => {
+    const createdTypes = stubObjectUrl();
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
+    render(
+      <TestApp>
+        <ReadySettingsPanel />
+      </TestApp>,
+    );
+
+    const button = await screen.findByRole("button", {
+      name: "导出知识库（.e1.zip）",
+    });
+    fireEvent.click(button);
+
+    // 结果提示：种子知识库含预置文档，篇数 ≥ 1。
+    expect(
+      await screen.findByText(/已导出 \d+ 篇文档、\d+ 个附件/),
+    ).toBeInTheDocument();
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    const anchor = clickSpy.mock.instances[0] as HTMLAnchorElement;
+    expect(anchor.download).toMatch(/\.e1\.zip$/);
+    expect(createdTypes).toEqual(["application/zip"]);
+    // 导出完成后按钮恢复可用。
+    expect(
+      screen.getByRole("button", { name: "导出知识库（.e1.zip）" }),
+    ).toBeEnabled();
+  });
+
+  it("导出失败时经 notify 通道反馈", async () => {
+    stubObjectUrl();
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
+    render(
+      <TestApp>
+        <ReadySettingsPanel />
+      </TestApp>,
+    );
+    // 让导出失败：知识库查询抛错（构造服务后立即调用，波及面仅限本测试）。
+    const { workspaceRepository } =
+      await import("../infrastructure/repositories");
+    const listSpy = vi
+      .spyOn(workspaceRepository, "list")
+      .mockRejectedValueOnce(new Error("磁盘炸了"));
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "导出知识库（.e1.zip）" }),
+    );
+    await vi.waitFor(() => {
+      expect(alertSpy).toHaveBeenCalledWith(
+        expect.stringContaining("导出知识库失败"),
+      );
+    });
+    listSpy.mockRestore();
+  });
+});
+
+describe("SettingsPanel 知识库导入（R005 阶段 7B）", () => {
+  beforeEach(async () => {
+    cleanup();
+    await resetDB();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** 手工构造一个最小合法 vault zip（一篇无 Frontmatter 文档）。 */
+  async function craftZip(title: string): Promise<Uint8Array> {
+    const { createZip } = await import("../application/services/zip");
+    const encoder = new TextEncoder();
+    return createZip([
+      {
+        name: "manifest.json",
+        data: encoder.encode(
+          JSON.stringify({ format: "e1-vault", formatVersion: 1 }),
+        ),
+      },
+      {
+        name: "vault.json",
+        data: encoder.encode(
+          JSON.stringify({
+            format: "e1-vault",
+            formatVersion: 1,
+            name: "导入的库",
+          }),
+        ),
+      },
+      {
+        name: "notes/a.md",
+        data: encoder.encode(`---\ntitle: ${title}\n---\n\n正文\n`),
+      },
+    ]);
+  }
+
+  /** 打桩文件选择器：返回指定 zip 字节（或 null 表示用户取消）。 */
+  function stubPicker(data: Uint8Array | null) {
+    return vi.spyOn(WebAssetPicker.prototype, "pick").mockResolvedValue(
+      data
+        ? {
+            name: "vault.e1.zip",
+            mimeType: "application/zip",
+            size: data.byteLength,
+            data,
+          }
+        : null,
+    );
+  }
+
+  it("选择文件 → 导入 → 展示摘要，新知识库落库并出现在列表镜像", async () => {
+    const pickSpy = stubPicker(await craftZip("导入文档"));
+    render(
+      <TestApp>
+        <ReadySettingsPanel />
+      </TestApp>,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "导入知识库（.e1.zip）" }),
+    );
+    expect(pickSpy).toHaveBeenCalledWith({
+      accept: ".zip,application/zip",
+    });
+
+    expect(
+      await screen.findByText(/已导入到「导入的库」：1 篇文档。/),
+    ).toBeInTheDocument();
+    // 新知识库已落库（导入不覆盖既有库：种子库仍在）。
+    const names = (await workspaceRepository.list()).map((ws) => ws.name);
+    expect(names).toContain("导入的库");
+    // 导入后按钮恢复可用。
+    expect(
+      screen.getByRole("button", { name: "导入知识库（.e1.zip）" }),
+    ).toBeEnabled();
+  });
+
+  it("导入失败（坏 zip）经 notify 通道反馈，不落数据", async () => {
+    stubPicker(new TextEncoder().encode("这不是 zip"));
+    const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
+    const beforeCount = (await workspaceRepository.list()).length;
+    render(
+      <TestApp>
+        <ReadySettingsPanel />
+      </TestApp>,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "导入知识库（.e1.zip）" }),
+    );
+    await vi.waitFor(() => {
+      expect(alertSpy).toHaveBeenCalledWith(
+        expect.stringContaining("导入知识库失败"),
+      );
+    });
+    expect(await workspaceRepository.list()).toHaveLength(beforeCount);
+  });
+
+  it("用户取消选择文件时不发起导入、无提示", async () => {
+    stubPicker(null);
+    render(
+      <TestApp>
+        <ReadySettingsPanel />
+      </TestApp>,
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "导入知识库（.e1.zip）" }),
+    );
+    // 等待按钮恢复可用（pick 已 resolve），确认无摘要出现。
+    await vi.waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "导入知识库（.e1.zip）" }),
+      ).toBeEnabled();
+    });
+    expect(screen.queryByText(/已导入到/)).toBeNull();
   });
 });
 

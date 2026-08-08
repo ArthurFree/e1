@@ -11,6 +11,10 @@
  * content-saved（R004 §7.2）：其他标签页据此刷新镜像或提示冲突；
  * 频道带来源 tabId，本标签页不会收到自己的回声。
  *
+ * R005 阶段 6：搜索索引依赖收窄为 SearchIndexPort（不再 import 具体
+ * 搜索类）；索引同步经 syncIndex 容错——派生索引失败仅记录诊断，
+ * 正文保存不因此进入未保存/error 态（保存语义以落盘为准）。
+ *
  * 仓储经构造函数注入（domain port），不依赖 IndexedDB 具体实现。
  */
 import type {
@@ -21,18 +25,22 @@ import type {
   RevisionRepository,
 } from "../../domain/repositories";
 import type { DocumentContent, Page } from "../../domain/types";
+import type { ContentVersionToken } from "../../domain/types";
 import { increment } from "../devDiagnostics";
-import type { SearchIndexService } from "./SearchIndexService";
+import type { SearchIndexPort } from "./SearchIndexPort";
 import type { SyncChannelService } from "./SyncChannelService";
 
-/** 保存协调器依赖的窄提交接口（R004 §2.3；R004 阶段 7 加 expectedVersion）。 */
+/**
+ * 保存协调器依赖的窄提交接口（R004 §2.3；R004 阶段 7 加 expectedVersion，
+ * R005 阶段 3 起为不透明 ContentVersionToken，原样透传给仓储）。
+ */
 export interface DocumentContentCommitter {
   commit(
     pageId: string,
     contentJson: unknown,
     textSnapshot: string,
-    expectedVersion: number,
-  ): Promise<{ savedAt: number; version: number }>;
+    expectedVersion: ContentVersionToken,
+  ): Promise<{ savedAt: number; version: ContentVersionToken }>;
 }
 
 export class DocumentCommitService implements DocumentContentCommitter {
@@ -41,26 +49,42 @@ export class DocumentCommitService implements DocumentContentCommitter {
       content: ContentRepository;
       documentWrite: DocumentWriteRepository;
       revisions: RevisionRepository;
-      searchIndex: SearchIndexService;
+      searchIndex: SearchIndexPort;
       /** 跨标签页同步频道（R004 §7.2）；可选，缺省不广播。 */
       syncChannel?: SyncChannelService;
     },
   ) {}
+
+  /**
+   * 索引同步容错（R005 阶段 6）：派生索引失败仅记录诊断、不抛出——
+   * 正文保存语义以落盘为准，不能因索引失败显示未保存/error。
+   * Web 内存实现同步完成不会失败；未来异步实现（SQLite 等）可在
+   * 此标记待重建，由下次 prepareWorkspace/rebuild 恢复。
+   */
+  private async syncIndex(action: () => Promise<void>): Promise<void> {
+    try {
+      await action();
+    } catch {
+      increment("search-index", "sync-failed");
+    }
+  }
 
   /** 正文提交：乐观锁落盘 + 搜索索引增量同步（INV-05 单点保证）。 */
   async commit(
     pageId: string,
     contentJson: unknown,
     textSnapshot: string,
-    expectedVersion: number,
-  ): Promise<{ savedAt: number; version: number }> {
+    expectedVersion: ContentVersionToken,
+  ): Promise<{ savedAt: number; version: ContentVersionToken }> {
     const { version, updatedAt } = await this.deps.content.save(
       pageId,
       contentJson,
       textSnapshot,
       expectedVersion,
     );
-    this.deps.searchIndex.updateText(pageId, textSnapshot, updatedAt);
+    await this.syncIndex(() =>
+      this.deps.searchIndex.updateText(pageId, textSnapshot, updatedAt),
+    );
     this.deps.syncChannel?.post({ type: "content-saved", pageId, version });
     return { savedAt: updatedAt, version };
   }
@@ -70,8 +94,17 @@ export class DocumentCommitService implements DocumentContentCommitter {
     input: CreateDocumentWithContentInput,
   ): Promise<Page> {
     const page = await this.deps.documentWrite.createWithContent(input);
-    this.deps.searchIndex.upsertPage(page);
-    this.deps.searchIndex.updateText(page.id, input.textSnapshot, Date.now());
+    await this.syncIndex(() =>
+      this.deps.searchIndex.upsertDocument({
+        workspaceId: page.workspaceId,
+        pageId: page.id,
+        title: page.title,
+        kind: page.kind,
+        textSnapshot: input.textSnapshot,
+        updatedAt: page.updatedAt,
+        deletedAt: page.deletedAt,
+      }),
+    );
     increment("document-commit", "create");
     return page;
   }
@@ -81,10 +114,12 @@ export class DocumentCommitService implements DocumentContentCommitter {
     input: ReplaceDocumentContentInput,
   ): Promise<DocumentContent> {
     const content = await this.deps.documentWrite.replaceContent(input);
-    this.deps.searchIndex.updateText(
-      input.pageId,
-      input.textSnapshot,
-      content.updatedAt,
+    await this.syncIndex(() =>
+      this.deps.searchIndex.updateText(
+        input.pageId,
+        input.textSnapshot,
+        content.updatedAt,
+      ),
     );
     this.deps.syncChannel?.post({
       type: "content-saved",

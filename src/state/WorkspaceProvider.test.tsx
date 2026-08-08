@@ -60,7 +60,7 @@ function sessionDataOf(
   workspaceId: string,
   pages: WorkspaceSessionData["pages"],
 ): WorkspaceSessionData {
-  return { workspaceId, pages, tags: [], pageTags: [], contents: [] };
+  return { workspaceId, pages, tags: [], pageTags: [] };
 }
 
 describe("WorkspaceProvider", () => {

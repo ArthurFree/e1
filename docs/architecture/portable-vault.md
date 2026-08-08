@@ -2,7 +2,10 @@
 
 Portable Vault 是 Web 与 Desktop 之间的数据迁移与备份通道：Web 端导出、Web 端重新导入、未来 Desktop 直接打开（DUAL-09）。本文取自 r005.md §十二并补全为定稿格式。
 
-**状态：v1 为设计定稿，实现在阶段 7。** 阶段 7 实现时如必须调整字段，先更新本文与 ADR，再改代码。
+**状态：v1 为设计定稿；阶段 7A（导出）与 7B（Web 导入）均已实现。** 导出见 `src/application/vault/VaultExportService.ts`；导入见 `src/application/vault/VaultImportService.ts`（zip 读取器 `src/application/services/zipReader.ts`，支持 STORED/Deflate + CRC 校验 + zip slip 防护）。导入侧两点实现取舍（与本文流程的顺序偏差不影响语义）：
+
+1. **写入两阶段**：Web 模型的附件记录必须挂在已存在的 pageId 下、页面 id 由仓储创建时生成，因此每个文档走「createWithContent 写入解析原文 → 导入该文档引用的附件 → replaceContent 写入引用重写后的正文」；两步各自原子，无资源/链接的文档只有一次原子写入。
+2. **链接还原**：整段文本仅为页面相对链接的还原为 mention 节点；混合格式或目标不在 vault 内的链接剥离 href 保留文本并计入导入报告（不写入死相对路径）。
 
 ## ZIP 布局
 
