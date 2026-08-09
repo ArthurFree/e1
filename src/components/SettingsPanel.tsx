@@ -2,7 +2,8 @@
  * @file 设置面板：AI 服务（OpenAI 兼容接口）的 endpoint / 模型 / API Key 配置，
  * 以及本地存储用量展示（R004 阶段 6，§6.3/§6.4）。
  * 保存前经 domain/ai.ts 的 validateAIConfig 校验；
- * API Key 只保存在本机 IndexedDB，不进入日志、同步或上报，
+ * R005 阶段 8 §8.2：endpoint/model 存偏好记录，API Key 经 SecretStore
+ * 存独立 secrets store，只保存在本机，不进入日志、同步或上报，
  * 未配置时应用不会发起任何外部请求（隐私约束）。
  */
 
@@ -15,13 +16,13 @@ import {
   useWorkspaceData,
 } from "../state/WorkspaceSessionContext";
 import { useAppServices } from "../state/AppServicesProvider";
-import { validateAIConfig } from "../domain/ai";
+import { getAISettings, validateAIConfig } from "../domain/ai";
+import { AI_API_KEY_SECRET } from "../application/services/SecretStore";
 import { revisionContentBytes } from "../domain/revisions";
 import {
   STORAGE_WARN_RATIO,
-  estimateStorage,
   type StorageEstimateInfo,
-} from "../application/services/StorageQuotaService";
+} from "../application/services/StorageHealthService";
 import { VaultExportService } from "../application/vault/VaultExportService";
 import { formatBytes } from "../editor/attachment";
 import { Dialog } from "./ui/Dialog";
@@ -44,11 +45,13 @@ export function SettingsPanel() {
   const { workspace } = useWorkspaceData();
   const { importVault } = useWorkspaceCommands();
   const services = useAppServices();
-  const current = preferences.aiConfig;
+  // 非机密 AI 设置来自偏好镜像（R005 阶段 8 §8.2）；apiKey 在 SecretStore。
+  const current = getAISettings(preferences);
 
   const [endpoint, setEndpoint] = useState(current?.endpoint ?? "");
   const [model, setModel] = useState(current?.model ?? "");
-  const [apiKey, setApiKey] = useState(current?.apiKey ?? "");
+  // API Key 输入框不回显明文（type=password 掩码）；初始值经 SecretStore 异步读入。
+  const [apiKey, setApiKey] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   // undefined = 读取中；null = 浏览器不支持 Storage API（降级展示）。
@@ -65,16 +68,28 @@ export function SettingsPanel() {
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<string | null>(null);
 
-  // 本地存储估算（R004 §6.3）：仅在面板打开时读取一次。
+  // 本地存储估算（R004 §6.3；R005 阶段 8 §8.4 起经 storageHealth port）：
+  // 仅在面板打开时读取一次。
   useEffect(() => {
     let cancelled = false;
-    void estimateStorage().then((info) => {
+    void services.storageHealth.estimate().then((info) => {
       if (!cancelled) setStorage(info);
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [services]);
+
+  // 已保存的 API Key 经 SecretStore 读入掩码输入框（保持既有「不回显明文」的交互）。
+  useEffect(() => {
+    let cancelled = false;
+    void services.secretStore.get(AI_API_KEY_SECRET).then((key) => {
+      if (!cancelled && key !== null) setApiKey(key);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [services]);
 
   // 当前文档版本占用估算（R004 §6.4）：manual/before-restore 不自动清理，
   // 在设置页展示占用让用户可见。

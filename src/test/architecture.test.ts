@@ -185,6 +185,57 @@ describe("架构分层约束", () => {
   });
 
   /**
+   * R005 阶段 8（§8.1/§8.3）：application 不得直接调用 localStorage /
+   * BroadcastChannel——恢复缓冲与变更广播分别经 RecoveryStore /
+   * ChangeChannel port 注入，Web 实现在 platform/web/。
+   * 例外：corruptedDiagnostics.ts 为开发诊断记录（非用户数据通道，
+   * 未来随诊断存储一并平台化），见该文件头注释。
+   */
+  it("application 不得直接使用 localStorage/BroadcastChannel（R005 阶段 8）", () => {
+    const pattern = /\b(localStorage|BroadcastChannel)\b/;
+    const violations: Violation[] = [];
+    for (const [path, content] of entries) {
+      if (!path.startsWith("../application/")) continue;
+      // 开发诊断例外（见规则注释）。
+      if (path === "../application/services/corruptedDiagnostics.ts") continue;
+      content.split("\n").forEach((text, index) => {
+        // 只统计代码行：注释中对 Web 实现的说明不计违规。
+        const trimmed = text.trim();
+        if (trimmed.startsWith("*") || trimmed.startsWith("//")) return;
+        if (pattern.test(text)) {
+          violations.push({ file: path, line: index + 1, text: trimmed });
+        }
+      });
+    }
+    expect(format(violations)).toBe("");
+    expect(violations).toEqual([]);
+  });
+
+  /**
+   * R005 阶段 8B（§8.4）：application 不得直接调用 StorageManager
+   * （navigator.storage）——存储用量估算与连接生命周期事件统一经
+   * StorageHealthService port 注入，Web 实现在 platform/web/
+   * webStorageHealth.ts（原 StorageQuotaService 模块已删除）。
+   */
+  it("application 不得直接使用 StorageManager（R005 阶段 8B）", () => {
+    const pattern = /\b(navigator\s*\.\s*storage|StorageManager)\b/;
+    const violations: Violation[] = [];
+    for (const [path, content] of entries) {
+      if (!path.startsWith("../application/")) continue;
+      content.split("\n").forEach((text, index) => {
+        // 只统计代码行：注释中对 Web 实现的说明不计违规。
+        const trimmed = text.trim();
+        if (trimmed.startsWith("*") || trimmed.startsWith("//")) return;
+        if (pattern.test(text)) {
+          violations.push({ file: path, line: index + 1, text: trimmed });
+        }
+      });
+    }
+    expect(format(violations)).toBe("");
+    expect(violations).toEqual([]);
+  });
+
+  /**
    * R005 阶段 2（Bootstrap 拆分）：仅 Web 装配根（main.web.tsx）与
    * platform/web 允许 import infrastructure/browserServices，防止
    * UI/状态层回流直接装配；测试基建（src/test/，glob 下为 ./ 前缀）

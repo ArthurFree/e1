@@ -279,29 +279,49 @@ describe("偏好设置", () => {
     expect(prefs.theme).toBe("light");
   });
 
-  it("aiConfig 保存后能读回", async () => {
-    const aiConfig = {
-      endpoint: "https://api.example.com/v1",
-      model: "test-model",
-      apiKey: "sk-test",
-    };
-    await preferencesRepository.update({ aiConfig });
+  it("AI 设置（endpoint/model）保存后能读回，apiKey 不进偏好记录（R005 阶段 8 §8.2）", async () => {
+    await preferencesRepository.update({
+      aiEndpoint: "https://api.example.com/v1",
+      aiModel: "test-model",
+    });
     const prefs = await preferencesRepository.get();
-    expect(prefs.aiConfig).toEqual(aiConfig);
+    expect(prefs.aiEndpoint).toBe("https://api.example.com/v1");
+    expect(prefs.aiModel).toBe("test-model");
+    expect("aiConfig" in prefs).toBe(false);
   });
 
-  it("损坏的 aiConfig 回退 null", async () => {
+  it("损坏或旧版 aiConfig 字段：回退/兜底拾取，apiKey 一律不进运行时模型", async () => {
     const db = await getDB();
     await db.put("preferences", {
       id: "preferences",
       aiConfig: { endpoint: 123 },
     });
     const prefs = await preferencesRepository.get();
-    expect(prefs.aiConfig).toBeNull();
+    expect(prefs.aiEndpoint).toBeNull();
+    expect(prefs.aiModel).toBeNull();
 
     await db.put("preferences", { id: "preferences", aiConfig: "broken" });
     const prefs2 = await preferencesRepository.get();
-    expect(prefs2.aiConfig).toBeNull();
+    expect(prefs2.aiEndpoint).toBeNull();
+    expect(prefs2.aiModel).toBeNull();
+
+    // 旧版合法记录（内存/fixture 路径的兜底；IndexedDB 存量由 DB v5 迁移处理）：
+    // endpoint/model 拾取，apiKey 剥离且不随 update 回写。
+    await db.put("preferences", {
+      id: "preferences",
+      aiConfig: {
+        endpoint: "https://legacy.example.com/v1",
+        model: "legacy-model",
+        apiKey: "sk-legacy",
+      },
+    });
+    const prefs3 = await preferencesRepository.get();
+    expect(prefs3.aiEndpoint).toBe("https://legacy.example.com/v1");
+    expect(prefs3.aiModel).toBe("legacy-model");
+    expect("aiConfig" in prefs3).toBe(false);
+    await preferencesRepository.update({ theme: "dark" });
+    const raw = await db.get("preferences", "preferences");
+    expect(raw && "aiConfig" in raw).toBe(false);
   });
 });
 

@@ -14,14 +14,14 @@ import {
   DocumentSaveCoordinator,
   type SaveCoordinatorState,
 } from "./SaveCoordinator";
-import type { DocumentRecoveryRecord } from "./documentRecovery";
+import type { RecoveryRecord } from "./RecoveryStore";
 
 function makeStubs() {
   const saves: { pageId: string; json: unknown; text: string }[] = [];
   const saveGates: Deferred<void>[] = [];
   const orphanCalls: string[][] = [];
   const revisionAdds: string[] = [];
-  const recoveryWrites: DocumentRecoveryRecord[] = [];
+  const recoveryWrites: RecoveryRecord[] = [];
   const recoveryClears: { pageId: string; savedGeneration: number }[] = [];
 
   const committer: DocumentContentCommitter = {
@@ -53,7 +53,7 @@ function makeStubs() {
     },
   };
   const recovery = {
-    write(record: DocumentRecoveryRecord) {
+    write(record: RecoveryRecord) {
       recoveryWrites.push(record);
     },
     clear(pageId: string, savedGeneration: number) {
@@ -260,7 +260,7 @@ describe("DocumentSaveCoordinator 保存后半程竞态（R004）", () => {
       referencedIds: string[];
       options?: { createdBeforeOrAt?: number };
     }[];
-    recoveryWrites: DocumentRecoveryRecord[];
+    recoveryWrites: RecoveryRecord[];
     recoveryClears: { pageId: string; savedGeneration: number }[];
     maintenanceErrors: { stage: string; error: unknown }[];
     failOrphans: { value: boolean };
@@ -271,7 +271,7 @@ describe("DocumentSaveCoordinator 保存后半程竞态（R004）", () => {
     const revisionGates: Deferred<DocumentRevision | null>[] = [];
     const orphanGates: Deferred<number>[] = [];
     const orphanCalls: PostCommitStubs["orphanCalls"] = [];
-    const recoveryWrites: DocumentRecoveryRecord[] = [];
+    const recoveryWrites: RecoveryRecord[] = [];
     const recoveryClears: { pageId: string; savedGeneration: number }[] = [];
     const maintenanceErrors: { stage: string; error: unknown }[] = [];
     const failOrphans = { value: false };

@@ -11,8 +11,10 @@ import { DocumentCommitService } from "../application/services/DocumentCommitSer
 import { DocumentSaveCoordinator } from "../application/services/SaveCoordinator";
 import { WorkspaceSessionService } from "../application/services/WorkspaceSessionService";
 import { PreferencesService } from "../application/services/PreferencesService";
-import { SyncChannelService } from "../application/services/SyncChannelService";
-import { StorageConnectionEventBus } from "../application/services/StorageConnectionEventBus";
+import { BroadcastChangeChannel } from "../platform/web/BroadcastChangeChannel";
+import { WebRecoveryStore } from "../platform/web/webRecoveryStore";
+import { WebStorageHealthService } from "../platform/web/webStorageHealth";
+import { AIConfigService } from "../application/services/AIConfigService";
 import { WorkspaceCommandService } from "../application/commands/WorkspaceCommandService";
 import { PageCommandService } from "../application/commands/PageCommandService";
 import { TagCommandService } from "../application/commands/TagCommandService";
@@ -20,13 +22,10 @@ import { DocumentCommandService } from "../application/commands/DocumentCommandS
 import { WorkspaceQueryService } from "../application/queries/WorkspaceQueryService";
 import { DocumentQueryService } from "../application/queries/DocumentQueryService";
 import { SearchQueryService } from "../application/queries/SearchQueryService";
-import {
-  clearRecovery,
-  writeRecovery,
-} from "../application/services/documentRecovery";
 import { createOpenAICompatibleProvider } from "./aiProvider";
 import { createId } from "./id";
 import { setStorageConnectionCallbacks } from "./db";
+import { secretStore } from "./secretStore";
 import { webCapabilities } from "../platform/web/webCapabilities";
 import { WebAssetAccessService } from "../platform/web/webAssetAccess";
 import { WebAssetPicker } from "../platform/web/webAssetPicker";
@@ -59,14 +58,18 @@ export function createBrowserAppServices(): AppServices {
     pages: pageRepository,
     content: contentRepository,
   });
-  // 跨标签页同步频道（R004 §7.2）：无 BroadcastChannel 环境降级 no-op。
-  const syncChannel = SyncChannelService.browser(createId());
-  // 存储连接事件（R004 §7.1）：db.ts 回调 → 事件总线 → UI 提示条。
-  const storageEvents = new StorageConnectionEventBus();
+  // 变更广播频道（R004 §7.2；R005 阶段 8 §8.3 ChangeChannel port 的 Web
+  // 实现）：无 BroadcastChannel 环境降级 no-op。
+  const syncChannel = BroadcastChangeChannel.browser(createId());
+  // 恢复缓冲（R005 阶段 8 §8.1 RecoveryStore port 的 Web 实现）：localStorage。
+  const recoveryStore = new WebRecoveryStore();
+  // 存储健康（R005 阶段 8 §8.4 StorageHealthService port 的 Web 实现）：
+  // db.ts 连接生命周期回调 → emitConnectionEvent → UI 提示条。
+  const storageHealth = new WebStorageHealthService();
   setStorageConnectionCallbacks({
-    onBlocked: () => storageEvents.emit("blocked"),
-    onVersionChange: () => storageEvents.emit("versionchange"),
-    onTerminated: () => storageEvents.emit("terminated"),
+    onBlocked: () => storageHealth.emitConnectionEvent("blocked"),
+    onVersionChange: () => storageHealth.emitConnectionEvent("versionchange"),
+    onTerminated: () => storageHealth.emitConnectionEvent("terminated"),
   });
   // 文档提交服务（R004 阶段 2）：正文落盘 + 搜索索引同步单点，
   // 保存协调器与外部文档写共用同一提交语义；落盘成功广播 content-saved。
@@ -82,7 +85,14 @@ export function createBrowserAppServices(): AppServices {
   const preferencesService = new PreferencesService({
     preferences: preferencesRepository,
     onError: (err) => console.error("偏好写入失败", err),
-    onPersisted: () => syncChannel.post({ type: "preferences-changed" }),
+    onPersisted: () => syncChannel.publish({ type: "preferences-changed" }),
+  });
+  // AI 配置组装服务（R005 阶段 8 §8.2）：endpoint/model 取偏好、
+  // apiKey 取 SecretStore（IndexedDB secrets store，DB v5 迁移自旧版
+  // 偏好记录中的 aiConfig.apiKey）。
+  const aiConfigService = new AIConfigService({
+    preferences: preferencesService,
+    secrets: secretStore,
   });
   // 命令/查询服务（R005 批次 1）：业务编排入口，注入既有仓储与服务实例。
   const commands = {
@@ -130,7 +140,10 @@ export function createBrowserAppServices(): AppServices {
     capabilities: webCapabilities,
     preferencesService,
     syncChannel,
-    storageEvents,
+    recoveryStore,
+    secretStore,
+    aiConfigService,
+    storageHealth,
     commands,
     queries,
     createAIProvider: createOpenAICompatibleProvider,
@@ -141,7 +154,7 @@ export function createBrowserAppServices(): AppServices {
           committer: documentCommit,
           revisions: revisionRepository,
           assets: assetStore,
-          recovery: { write: writeRecovery, clear: clearRecovery },
+          recovery: recoveryStore,
           // 维护失败不影响正文保存状态，只记录开发诊断（R004 阶段 1）。
           onMaintenanceError: (stage) =>
             increment("save-maintenance-error", stage),

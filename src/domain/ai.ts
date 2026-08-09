@@ -5,7 +5,7 @@
  * AI 输出须经用户确认后才写入文档（见 docs/architecture.md 安全要求）。
  */
 
-import type { AIConfig } from "./types";
+import type { AIConfig, ApplicationSettings } from "./types";
 
 /** 请求模式：自由问答 / 润色选区 / 改写选区 / 总结 / 整篇起草。 */
 export type AIMode = "ask" | "polish" | "rewrite" | "summarize" | "draft";
@@ -35,11 +35,28 @@ export class AIHttpError extends Error {
   }
 }
 
-/** 校验 AI 配置，返回具体中文错误消息；合法时返回 null。 */
-export function validateAIConfig(config: AIConfig): string | null {
+/**
+ * AI 非机密设置（R005 阶段 8 §8.2）：endpoint/model 存偏好记录，
+ * apiKey 拆入 SecretStore；请求组装（AIConfigService.get）时才合成完整 AIConfig。
+ */
+export interface AISettings {
+  endpoint: string;
+  model: string;
+}
+
+/** 从应用设置取 AI 非机密配置；任一项未配置返回 null。 */
+export function getAISettings(
+  settings: ApplicationSettings,
+): AISettings | null {
+  if (settings.aiEndpoint === null || settings.aiModel === null) return null;
+  return { endpoint: settings.aiEndpoint, model: settings.aiModel };
+}
+
+/** 校验 AI 非机密设置（endpoint/model），返回具体中文错误消息；合法时返回 null。 */
+export function validateAISettings(settings: AISettings): string | null {
   let url: URL;
   try {
-    url = new URL(config.endpoint);
+    url = new URL(settings.endpoint);
   } catch {
     return "Endpoint 必须是合法的 http(s) 地址";
   }
@@ -47,18 +64,29 @@ export function validateAIConfig(config: AIConfig): string | null {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     return "Endpoint 必须是合法的 http(s) 地址";
   }
-  if (config.model.trim() === "") {
+  if (settings.model.trim() === "") {
     return "模型名称不能为空";
   }
+  return null;
+}
+
+/** 校验 AI 配置，返回具体中文错误消息；合法时返回 null。 */
+export function validateAIConfig(config: AIConfig): string | null {
+  const settingsMessage = validateAISettings(config);
+  if (settingsMessage) return settingsMessage;
   if (config.apiKey.trim() === "") {
     return "API Key 不能为空";
   }
   return null;
 }
 
-/** 配置存在且通过校验即视为已配置。 */
-export function isAIConfigured(config: AIConfig | null): boolean {
-  return config !== null && validateAIConfig(config) === null;
+/**
+ * 设置存在且 endpoint/model 通过校验即视为已配置（UI 同步门槛）；
+ * apiKey 是否缺失在请求组装时（AIConfigService.get 返回 null）兜底，
+ * 未配置时不发起任何外部请求的约束不变。
+ */
+export function isAIConfigured(settings: AISettings | null): boolean {
+  return settings !== null && validateAISettings(settings) === null;
 }
 
 /** 把用户填写的 base endpoint 规范化为 chat/completions 完整地址。 */

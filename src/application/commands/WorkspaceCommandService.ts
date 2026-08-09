@@ -10,14 +10,14 @@
  */
 import type { WorkspaceRepository } from "../../domain/repositories";
 import type { Workspace } from "../../domain/types";
-import type { SyncChannelService } from "../services/SyncChannelService";
+import type { ChangeChannel } from "../services/ChangeChannel";
 
 export class WorkspaceCommandService {
   constructor(
     private readonly deps: {
       workspace: WorkspaceRepository;
-      /** 跨标签页同步频道（R004 §7.2）；可选，缺省不广播。 */
-      syncChannel?: SyncChannelService;
+      /** 变更广播频道（R004 §7.2；R005 阶段 8 §8.3 ChangeChannel port）；可选，缺省不广播。 */
+      syncChannel?: ChangeChannel;
     },
   ) {}
 
@@ -27,7 +27,7 @@ export class WorkspaceCommandService {
     extra?: { icon?: string | null; description?: string },
   ): Promise<Workspace> {
     const ws = await this.deps.workspace.create(name, extra);
-    this.deps.syncChannel?.post({
+    this.deps.syncChannel?.publish({
       type: "workspace-changed",
       workspaceId: ws.id,
     });

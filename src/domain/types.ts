@@ -138,8 +138,9 @@ export interface PageTag {
 export type ThemeName = "light" | "dark";
 
 /**
- * AI 服务配置（OpenAI 兼容接口）。
- * 只存 IndexedDB，不进入日志、分析或错误上报（见 docs/architecture.md 安全要求）。
+ * AI 服务配置（OpenAI 兼容接口）：请求组装用的完整形状。
+ * 只存本机（endpoint/model 在偏好记录，apiKey 在 SecretStore），
+ * 不进入日志、分析或错误上报（见 docs/architecture.md 安全要求）。
  */
 export interface AIConfig {
   endpoint: string;
@@ -147,12 +148,23 @@ export interface AIConfig {
   apiKey: string;
 }
 
-/** 浏览器本地偏好：单例记录，id 固定为 "preferences"。 */
-export interface Preferences {
-  id: "preferences";
+/**
+ * 应用设置（R005 阶段 8 §8.2 SettingsStore 的非机密偏好模型）：
+ * AI 配置拆分为非机密的 endpoint/model（本接口，随偏好记录持久化）
+ * 与机密 apiKey（SecretStore，见 application/services/SecretStore.ts）。
+ */
+export interface ApplicationSettings {
   theme: ThemeName;
   sidebarWidth: number;
-  aiConfig: AIConfig | null;
+  /** AI 服务地址；null 表示未配置。 */
+  aiEndpoint: string | null;
+  /** AI 模型名；null 表示未配置。 */
+  aiModel: string | null;
+}
+
+/** 浏览器本地偏好：单例记录，id 固定为 "preferences"。 */
+export interface Preferences extends ApplicationSettings {
+  id: "preferences";
   /** 上次路由（AppRoute 的 JSON 序列化）；null 表示首次安装，进入开始首页。 */
   lastRoute: string | null;
 }
@@ -180,6 +192,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   id: "preferences",
   theme: "light",
   sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
-  aiConfig: null,
+  aiEndpoint: null,
+  aiModel: null,
   lastRoute: null,
 };

@@ -12,10 +12,13 @@ import { DocumentSaveCoordinator } from "../../application/services/SaveCoordina
 import { WorkspaceSessionService } from "../../application/services/WorkspaceSessionService";
 import { PreferencesService } from "../../application/services/PreferencesService";
 import {
-  SyncChannelService,
+  BroadcastChangeChannel,
   type BroadcastChannelLike,
-} from "../../application/services/SyncChannelService";
-import { StorageConnectionEventBus } from "../../application/services/StorageConnectionEventBus";
+} from "../../platform/web/BroadcastChangeChannel";
+import { InMemoryRecoveryStore } from "./recoveryStore";
+import { InMemorySecretStore } from "./secretStore";
+import { InMemoryStorageHealthService } from "./storageHealth";
+import { AIConfigService } from "../../application/services/AIConfigService";
 import { WorkspaceCommandService } from "../../application/commands/WorkspaceCommandService";
 import { PageCommandService } from "../../application/commands/PageCommandService";
 import { TagCommandService } from "../../application/commands/TagCommandService";
@@ -43,7 +46,8 @@ export interface InMemoryAppServicesOptions {
   /** AI provider stub；缺省抛「未配置」错误。 */
   aiProvider?: AIProvider;
   /**
-   * 跨标签页同步频道的 mock 传输层（R004 §7.2）；缺省 null（no-op）。
+   * 变更广播频道的 mock 传输层（R004 §7.2；R005 阶段 8 §8.3 起为
+   * ChangeChannel port 的 Web 实现注入）；缺省 null（no-op）。
    * 测试注入 mock 后可验证发送/接收/回声抑制。
    */
   syncChannel?: BroadcastChannelLike | null;
@@ -79,8 +83,8 @@ export function createInMemoryAppServices(
     pages: repos.page,
     content: repos.content,
   });
-  // 跨标签页同步频道（R004 §7.2）：默认 no-op；测试经 options 注入 mock。
-  const syncChannel = new SyncChannelService(
+  // 变更广播频道（R004 §7.2）：默认 no-op；测试经 options 注入 mock。
+  const syncChannel = new BroadcastChangeChannel(
     options.syncChannel ?? null,
     `test-tab-${Math.random().toString(36).slice(2)}`,
   );
@@ -96,26 +100,17 @@ export function createInMemoryAppServices(
   const preferencesService = new PreferencesService({
     preferences: repos.preferences,
     onError: (err) => console.error("偏好写入失败", err),
-    onPersisted: () => syncChannel.post({ type: "preferences-changed" }),
+    onPersisted: () => syncChannel.publish({ type: "preferences-changed" }),
   });
-  // 内存恢复缓冲：与 localStorage 版同接口，数据随容器存活。
-  const recoveryData = new Map<
-    string,
-    {
-      pageId: string;
-      contentJson: unknown;
-      generation: number;
-      timestamp: number;
-    }
-  >();
-  const write = (record: {
-    pageId: string;
-    contentJson: unknown;
-    generation: number;
-    timestamp: number;
-  }) => {
-    recoveryData.set(record.pageId, record);
-  };
+  // 内存恢复缓冲（R005 阶段 8 §8.1）：RecoveryStore port 的内存实现，
+  // 与 Web localStorage 版同契约，数据随容器存活。
+  const recoveryStore = new InMemoryRecoveryStore();
+  // 机密存储与 AI 配置组装（R005 阶段 8 §8.2）：与生产容器同装配。
+  const secretStore = new InMemorySecretStore();
+  const aiConfigService = new AIConfigService({
+    preferences: preferencesService,
+    secrets: secretStore,
+  });
   const services: InMemoryAppServices = {
     // 底层仓储与服务实例：仅作测试过渡通道（见 InMemoryAppServices 注释），
     // AppServices 公开面不再包含这些字段（R005 批次 2）。
@@ -125,7 +120,11 @@ export function createInMemoryAppServices(
     searchIndex,
     preferencesService,
     syncChannel,
-    storageEvents: new StorageConnectionEventBus(),
+    recoveryStore,
+    secretStore,
+    aiConfigService,
+    // 存储健康（R005 阶段 8 §8.4）：estimate 降级 null，事件可手工注入。
+    storageHealth: new InMemoryStorageHealthService(),
     // 资源服务组（R005 阶段 5）：与生产容器同形状，访问/选择/反馈为内存桩。
     assets: {
       commands: new AssetCommandService({ store: repos.assetStore }),
@@ -176,15 +175,7 @@ export function createInMemoryAppServices(
           committer: documentCommit,
           revisions: repos.revision,
           assets: repos.assetStore,
-          recovery: {
-            write,
-            clear: (pid, savedGeneration) => {
-              const record = recoveryData.get(pid);
-              if (record && record.generation <= savedGeneration) {
-                recoveryData.delete(pid);
-              }
-            },
-          },
+          recovery: recoveryStore,
           // 维护失败只记录开发诊断（R004 阶段 1），与生产容器一致。
           onMaintenanceError: (stage) =>
             increment("save-maintenance-error", stage),

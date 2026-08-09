@@ -20,7 +20,7 @@ import type {
   Page,
 } from "../../domain/types";
 import type { DocumentCommitService } from "../services/DocumentCommitService";
-import type { SyncChannelService } from "../services/SyncChannelService";
+import type { ChangeChannel } from "../services/ChangeChannel";
 
 /** 版本恢复入参（与 DocumentCommitService.restoreRevision 同构）。 */
 export interface RestoreRevisionCommandInput {
@@ -34,8 +34,8 @@ export class DocumentCommandService {
   constructor(
     private readonly deps: {
       documentCommit: DocumentCommitService;
-      /** 跨标签页同步频道（R004 §7.2）；可选，缺省不广播。 */
-      syncChannel?: SyncChannelService;
+      /** 变更广播频道（R004 §7.2；R005 阶段 8 §8.3 ChangeChannel port）；可选，缺省不广播。 */
+      syncChannel?: ChangeChannel;
     },
   ) {}
 
@@ -44,7 +44,7 @@ export class DocumentCommandService {
     input: CreateDocumentWithContentInput,
   ): Promise<Page> {
     const page = await this.deps.documentCommit.createWithContent(input);
-    this.deps.syncChannel?.post({
+    this.deps.syncChannel?.publish({
       type: "page-changed",
       workspaceId: input.workspaceId,
       pageId: page.id,

@@ -141,10 +141,15 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 
   const setAIConfig = useCallback(
     async (config: AIConfig | null) => {
-      const next = await preferencesService.update({ aiConfig: config });
+      // R005 阶段 8 §8.2：apiKey 入 SecretStore、endpoint/model 入偏好，
+      // 编排由容器的 AIConfigService 承载（串行队列与广播语义不变）。
+      const next =
+        config === null
+          ? await services.aiConfigService.clear()
+          : await services.aiConfigService.save(config);
       setPreferences(next);
     },
-    [preferencesService],
+    [services],
   );
 
   const value = useMemo<PreferencesContextValue>(

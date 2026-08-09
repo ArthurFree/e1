@@ -22,21 +22,25 @@ import type {
 import type { Page } from "../../domain/types";
 import { increment } from "../devDiagnostics";
 import type { SearchIndexPort } from "../services/SearchIndexPort";
-import type { SyncChannelService } from "../services/SyncChannelService";
+import type { ChangeChannel } from "../services/ChangeChannel";
 
 export class PageCommandService {
   constructor(
     private readonly deps: {
       page: PageRepository;
       searchIndex: SearchIndexPort;
-      /** 跨标签页同步频道（R004 §7.2）；可选，缺省不广播。 */
-      syncChannel?: SyncChannelService;
+      /** 变更广播频道（R004 §7.2；R005 阶段 8 §8.3 ChangeChannel port）；可选，缺省不广播。 */
+      syncChannel?: ChangeChannel;
     },
   ) {}
 
   private postPageChanged(workspaceId: string | null, pageId: string): void {
     if (!workspaceId) return;
-    this.deps.syncChannel?.post({ type: "page-changed", workspaceId, pageId });
+    this.deps.syncChannel?.publish({
+      type: "page-changed",
+      workspaceId,
+      pageId,
+    });
   }
 
   /**
@@ -109,7 +113,7 @@ export class PageCommandService {
   /** 清空工作区回收站并广播 workspace-changed。 */
   async purgeTrashed(workspaceId: string): Promise<void> {
     await this.deps.page.purgeTrashed(workspaceId);
-    this.deps.syncChannel?.post({ type: "workspace-changed", workspaceId });
+    this.deps.syncChannel?.publish({ type: "workspace-changed", workspaceId });
   }
 
   /** 收藏/取消收藏（next 由调用方算出）；不广播（与现状一致）。 */

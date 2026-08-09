@@ -1151,27 +1151,42 @@ export const tagRepository: TagRepository = {
 /**
  * 偏好记录校验与默认值回退：旧版本或损坏数据不会污染运行时配置。
  * get 与 update 共用，保证两条路径的校验规则一致。
+ *
+ * 旧版 aiConfig 字段（R005 阶段 8 前，含明文 apiKey）：IndexedDB 库由
+ * v5 迁移把 apiKey 搬进 secrets store 并剥离该字段；此处只兜底拾取
+ * endpoint/model（防御内存/fixture 路径的旧形状），apiKey 一律不进入
+ * 运行时模型，且不再随下次 update 回写（结果对象不含 aiConfig 字段）。
  */
 function normalizePreferences(stored: unknown): Preferences {
   // 损坏或缺失时回退默认值。
   if (!stored || typeof stored !== "object") return DEFAULT_PREFERENCES;
-  const partial = stored as Partial<Preferences>;
-  // aiConfig 形状校验：三个字段均为字符串才保留，否则回退 null。
-  const ai = partial.aiConfig;
-  const aiConfig =
-    ai !== null &&
-    typeof ai === "object" &&
-    typeof ai.endpoint === "string" &&
-    typeof ai.model === "string" &&
-    typeof ai.apiKey === "string"
-      ? { endpoint: ai.endpoint, model: ai.model, apiKey: ai.apiKey }
+  const partial = stored as Partial<Preferences> & { aiConfig?: unknown };
+  const legacy =
+    partial.aiConfig !== null && typeof partial.aiConfig === "object"
+      ? (partial.aiConfig as { endpoint?: unknown; model?: unknown })
       : null;
+  const aiEndpoint =
+    typeof partial.aiEndpoint === "string"
+      ? partial.aiEndpoint
+      : typeof legacy?.endpoint === "string"
+        ? legacy.endpoint
+        : null;
+  const aiModel =
+    typeof partial.aiModel === "string"
+      ? partial.aiModel
+      : typeof legacy?.model === "string"
+        ? legacy.model
+        : null;
+  // 显式剔除旧版 aiConfig 字段：展开其余字段时不把 apiKey 带进运行时对象。
+  const rest = { ...partial };
+  delete rest.aiConfig;
   return {
     ...DEFAULT_PREFERENCES,
-    ...partial,
+    ...rest,
     id: "preferences",
     theme: partial.theme === "dark" ? "dark" : "light",
-    aiConfig,
+    aiEndpoint,
+    aiModel,
     lastRoute: typeof partial.lastRoute === "string" ? partial.lastRoute : null,
   };
 }
@@ -1179,7 +1194,8 @@ function normalizePreferences(stored: unknown): Preferences {
 /**
  * 偏好设置仓储。整库只有一条固定 id 为 "preferences" 的记录；
  * 读取时逐字段校验并回退默认值，保证旧版本或损坏数据不会污染运行时配置。
- * 注意 aiConfig 含 API Key，仅存于本地 IndexedDB，不进入日志与上报（见 AGENTS.md 安全约定）。
+ * 注意 AI apiKey 不在本记录中（R005 阶段 8 起存 secrets store），
+ * 仅存于本地 IndexedDB，不进入日志与上报（见 AGENTS.md 安全约定）。
  */
 export const preferencesRepository: PreferencesRepository = {
   async get() {

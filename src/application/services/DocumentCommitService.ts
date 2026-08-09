@@ -7,7 +7,7 @@
  * - createWithContent / replaceContent：非编辑器路径的原子文档写
  *   （INV-04），写入成功后同步搜索索引并记录开发诊断。
  *
- * commit / replaceContent 落盘成功后经 SyncChannelService 广播
+ * commit / replaceContent 落盘成功后经 ChangeChannel 广播
  * content-saved（R004 §7.2）：其他标签页据此刷新镜像或提示冲突；
  * 频道带来源 tabId，本标签页不会收到自己的回声。
  *
@@ -28,7 +28,7 @@ import type { DocumentContent, Page } from "../../domain/types";
 import type { ContentVersionToken } from "../../domain/types";
 import { increment } from "../devDiagnostics";
 import type { SearchIndexPort } from "./SearchIndexPort";
-import type { SyncChannelService } from "./SyncChannelService";
+import type { ChangeChannel } from "./ChangeChannel";
 
 /**
  * 保存协调器依赖的窄提交接口（R004 §2.3；R004 阶段 7 加 expectedVersion，
@@ -50,8 +50,8 @@ export class DocumentCommitService implements DocumentContentCommitter {
       documentWrite: DocumentWriteRepository;
       revisions: RevisionRepository;
       searchIndex: SearchIndexPort;
-      /** 跨标签页同步频道（R004 §7.2）；可选，缺省不广播。 */
-      syncChannel?: SyncChannelService;
+      /** 变更广播频道（R004 §7.2；R005 阶段 8 §8.3 ChangeChannel port）；可选，缺省不广播。 */
+      syncChannel?: ChangeChannel;
     },
   ) {}
 
@@ -85,7 +85,7 @@ export class DocumentCommitService implements DocumentContentCommitter {
     await this.syncIndex(() =>
       this.deps.searchIndex.updateText(pageId, textSnapshot, updatedAt),
     );
-    this.deps.syncChannel?.post({ type: "content-saved", pageId, version });
+    this.deps.syncChannel?.publish({ type: "content-saved", pageId, version });
     return { savedAt: updatedAt, version };
   }
 
@@ -121,7 +121,7 @@ export class DocumentCommitService implements DocumentContentCommitter {
         content.updatedAt,
       ),
     );
-    this.deps.syncChannel?.post({
+    this.deps.syncChannel?.publish({
       type: "content-saved",
       pageId: input.pageId,
       version: content.version,

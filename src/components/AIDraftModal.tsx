@@ -14,6 +14,7 @@ import { useWorkspaceCommands } from "../state/WorkspaceSessionContext";
 import { useNavigationCommands } from "../state/NavigationContext";
 import { usePreferences } from "../state/PreferencesContext";
 import { useOverlay } from "../state/OverlayContext";
+import { getAISettings } from "../domain/ai";
 import { Dialog } from "./ui/Dialog";
 import { TargetPicker } from "./TargetPicker";
 
@@ -45,8 +46,10 @@ export function AIDraftModal({ onClose }: AIDraftModalProps) {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
 
-  const config = preferences.aiConfig;
-  if (!config) {
+  // 未配置门槛只看非机密设置（R005 阶段 8 §8.2）；apiKey 在生成时经
+  // aiConfigService.get() 组装，缺失则按未配置处理（不发起请求）。
+  const settings = getAISettings(preferences);
+  if (!settings) {
     // 防御：未配置时不应到达此流程（开始页已拦截），回退到设置。
     return (
       <Dialog label="AI 帮你写" className="modal" onClose={onClose}>
@@ -75,6 +78,14 @@ export function AIDraftModal({ onClose }: AIDraftModalProps) {
     setStep("generating");
     setError("");
     try {
+      // 请求组装（R005 阶段 8 §8.2）：endpoint/model + SecretStore 的 apiKey；
+      // 任一缺失按未配置处理，不发起任何外部请求。
+      const config = await services.aiConfigService.get();
+      if (!config) {
+        setError("AI 配置不完整，请前往设置检查。");
+        setStep("error");
+        return;
+      }
       const provider = services.createAIProvider(config);
       const result = await provider.complete({
         prompt: topic.trim(),

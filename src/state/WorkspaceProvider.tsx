@@ -577,7 +577,7 @@ export function WorkspaceProvider({
         );
       });
       // 「我切换了知识库」的跨标签页通知属于会话层编排，留在状态层发送。
-      syncChannel.post({ type: "workspace-changed", workspaceId: id });
+      syncChannel.publish({ type: "workspace-changed", workspaceId: id });
     },
     [loadSession, navBridge, workspaceCommands, syncChannel],
   );

@@ -13,10 +13,7 @@ import {
 } from "./repositories";
 import { parseDocumentContent } from "../domain/validation/documentContent";
 import { isDomainError } from "../domain/errors";
-import {
-  readRecovery,
-  writeRecovery,
-} from "../application/services/documentRecovery";
+import { WebRecoveryStore } from "../platform/web/webRecoveryStore";
 import {
   clearCorruptedDiagnostic,
   readCorruptedDiagnostic,
@@ -49,23 +46,25 @@ describe("损坏正文", () => {
     }
   });
 
-  it("恢复缓冲中的损坏正文被拒绝并清除，合法内容不受影响", () => {
-    writeRecovery({
+  it("恢复缓冲中的损坏正文被拒绝并清除，合法内容不受影响", async () => {
+    // R005 阶段 8：恢复缓冲读写经 RecoveryStore port 的 Web 实现。
+    const recoveryStore = new WebRecoveryStore();
+    await recoveryStore.write({
       pageId: "p1",
       contentJson: { type: "doc", content: [{ type: "evilNode" }] },
       generation: 3,
       timestamp: Date.now(),
     });
-    expect(readRecovery("p1")).toBeNull();
+    expect(await recoveryStore.read("p1")).toBeNull();
     expect(localStorage.getItem("pending-document-recovery:p1")).toBeNull();
 
-    writeRecovery({
+    await recoveryStore.write({
       pageId: "p2",
       contentJson: { type: "doc", content: [{ type: "paragraph" }] },
       generation: 1,
       timestamp: Date.now(),
     });
-    expect(readRecovery("p2")).not.toBeNull();
+    expect(await recoveryStore.read("p2")).not.toBeNull();
   });
 
   it("诊断记录写入/读取/清除", () => {

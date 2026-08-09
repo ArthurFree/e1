@@ -15,6 +15,8 @@ import {
   preferencesRepository,
   workspaceRepository,
 } from "../infrastructure/repositories";
+import { secretStore } from "../infrastructure/secretStore";
+import { AI_API_KEY_SECRET } from "../application/services/SecretStore";
 import { AIDraftModal } from "./AIDraftModal";
 
 const AI_CONFIG = {
@@ -22,6 +24,15 @@ const AI_CONFIG = {
   model: "test-model",
   apiKey: "sk-test",
 };
+
+/** R005 阶段 8 §8.2：endpoint/model 入偏好，apiKey 入 SecretStore。 */
+async function configureAI() {
+  await preferencesRepository.update({
+    aiEndpoint: AI_CONFIG.endpoint,
+    aiModel: AI_CONFIG.model,
+  });
+  await secretStore.set(AI_API_KEY_SECRET, AI_CONFIG.apiKey);
+}
 
 function mockFetchDraft(markdown: string) {
   vi.stubGlobal(
@@ -53,7 +64,7 @@ describe("AIDraftModal", () => {
   beforeEach(async () => {
     cleanup();
     await resetDB();
-    await preferencesRepository.update({ aiConfig: AI_CONFIG });
+    await configureAI();
     mockFetchDraft("# Q3 复盘\n\n本季度完成了三项里程碑。");
   });
 

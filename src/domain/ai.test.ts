@@ -5,6 +5,7 @@ import {
   buildChatCompletionsUrl,
   buildChatRequestBody,
   buildPrompt,
+  getAISettings,
   isAIConfigured,
   mapAIError,
   validateAIConfig,
@@ -52,14 +53,46 @@ describe("validateAIConfig", () => {
   });
 });
 
-describe("isAIConfigured", () => {
-  it("null 或非法配置返回 false", () => {
+describe("isAIConfigured（R005 阶段 8 §8.2：只看非机密设置）", () => {
+  it("null 或非法设置返回 false", () => {
     expect(isAIConfigured(null)).toBe(false);
-    expect(isAIConfigured({ ...validConfig, apiKey: "" })).toBe(false);
+    expect(isAIConfigured({ endpoint: "not-a-url", model: "m" })).toBe(false);
+    expect(
+      isAIConfigured({ endpoint: "https://api.example.com/v1", model: " " }),
+    ).toBe(false);
   });
 
-  it("合法配置返回 true", () => {
-    expect(isAIConfigured(validConfig)).toBe(true);
+  it("合法设置返回 true（apiKey 在请求组装时校验）", () => {
+    expect(
+      isAIConfigured(
+        getAISettings({
+          theme: "light",
+          sidebarWidth: 224,
+          aiEndpoint: validConfig.endpoint,
+          aiModel: validConfig.model,
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("getAISettings：任一项为 null 返回 null", () => {
+    const base = {
+      theme: "light" as const,
+      sidebarWidth: 224,
+      aiEndpoint: null,
+      aiModel: null,
+    };
+    expect(getAISettings(base)).toBeNull();
+    expect(
+      getAISettings({ ...base, aiEndpoint: validConfig.endpoint }),
+    ).toBeNull();
+    expect(
+      getAISettings({
+        ...base,
+        aiEndpoint: validConfig.endpoint,
+        aiModel: validConfig.model,
+      }),
+    ).toEqual({ endpoint: validConfig.endpoint, model: validConfig.model });
   });
 });
 

@@ -1,7 +1,6 @@
 /**
- * 跨标签页同步频道（R004 阶段 7 §7.2）：同一浏览器的多个标签页之间
- * 广播工作区/页面/正文/偏好变更，接收方增量刷新本地镜像，
- * 避免「另一标签页改了数据，本标签页直到刷新才看到」。
+ * ChangeChannel 的 Web 实现（R005 阶段 8 §8.3）：同一浏览器的多个标签页
+ * 之间经 BroadcastChannel 广播应用变更事件（R004 阶段 7 §7.2 起的行为不变）。
  *
  * - 传输层为 BroadcastChannel（同源、同浏览器多标签页共享）；
  * - 每条消息带来源 tabId，接收方忽略自己发出的事件（回声抑制）——
@@ -9,12 +8,17 @@
  * - jsdom 或老浏览器无 BroadcastChannel 时构造为 no-op（功能降级，
  *   单标签页行为不受影响）；测试可注入 mock channel。
  *
- * 本服务只做传输：发送点（WorkspaceProvider 动作、DocumentCommitService、
- * PreferencesService）与接收处理（各 Provider / MainArea 订阅）在装配层接线。
+ * 本类自 application/services/SyncChannelService.ts 迁入并更名，
+ * post 统一更名为 publish（对齐 ChangeChannel port）；信封格式、事件
+ * 契约与多标签页行为保持不变。
  */
-import type { AppSyncEvent } from "../../domain/sync";
+import type {
+  ApplicationChangeEvent,
+  ChangeCallback,
+  ChangeChannel,
+} from "../../application/services/ChangeChannel";
 
-export type { AppSyncEvent } from "../../domain/sync";
+export type { ApplicationChangeEvent } from "../../application/services/ChangeChannel";
 
 /** 频道名：全应用固定，跨标签页一致。 */
 export const SYNC_CHANNEL_NAME = "notion-like-web-sync";
@@ -29,10 +33,12 @@ export interface BroadcastChannelLike {
 /** 线上消息信封：事件 + 来源标签页 ID。 */
 interface SyncEnvelope {
   source: string;
-  event: AppSyncEvent;
+  event: ApplicationChangeEvent;
 }
 
-function isAppSyncEvent(data: unknown): data is AppSyncEvent {
+function isApplicationChangeEvent(
+  data: unknown,
+): data is ApplicationChangeEvent {
   if (!data || typeof data !== "object") return false;
   const type = (data as { type?: unknown }).type;
   return (
@@ -43,11 +49,11 @@ function isAppSyncEvent(data: unknown): data is AppSyncEvent {
   );
 }
 
-export class SyncChannelService {
+export class BroadcastChangeChannel implements ChangeChannel {
   /** 本标签页 ID：回声抑制依据。 */
   readonly tabId: string;
   /** 订阅者集合：底层 onmessage 单槽位，由本服务多路分发。 */
-  private readonly handlers = new Set<(event: AppSyncEvent) => void>();
+  private readonly handlers = new Set<ChangeCallback>();
   private listening = false;
 
   constructor(
@@ -58,18 +64,18 @@ export class SyncChannelService {
   }
 
   /** 创建生产实例；环境无 BroadcastChannel 时返回 no-op 实例。 */
-  static browser(tabId: string): SyncChannelService {
+  static browser(tabId: string): BroadcastChangeChannel {
     const channel =
       typeof BroadcastChannel !== "undefined"
         ? (new BroadcastChannel(
             SYNC_CHANNEL_NAME,
           ) as unknown as BroadcastChannelLike)
         : null;
-    return new SyncChannelService(channel, tabId);
+    return new BroadcastChangeChannel(channel, tabId);
   }
 
   /** 广播事件（自动附来源 tabId）；no-op 实例静默丢弃。 */
-  post(event: AppSyncEvent): void {
+  publish(event: ApplicationChangeEvent): void {
     if (!this.channel) return;
     const envelope: SyncEnvelope = { source: this.tabId, event };
     try {
@@ -84,16 +90,16 @@ export class SyncChannelService {
    * 多个订阅者共享同一底层频道（onmessage 单槽位由本服务多路分发）；
    * no-op 实例不会收到任何事件。
    */
-  subscribe(handler: (event: AppSyncEvent) => void): () => void {
+  subscribe(callback: ChangeCallback): () => void {
     const channel = this.channel;
     if (!channel) return () => {};
-    this.handlers.add(handler);
+    this.handlers.add(callback);
     if (!this.listening) {
       this.listening = true;
       channel.onmessage = (msg) => this.dispatch(msg);
     }
     return () => {
-      this.handlers.delete(handler);
+      this.handlers.delete(callback);
     };
   }
 
@@ -104,7 +110,7 @@ export class SyncChannelService {
       !data ||
       typeof data.source !== "string" ||
       data.source === this.tabId ||
-      !isAppSyncEvent(data.event)
+      !isApplicationChangeEvent(data.event)
     ) {
       return;
     }
@@ -117,7 +123,7 @@ export class SyncChannelService {
     }
   }
 
-  /** 关闭底层频道（应用卸载/测试清理）。 */
+  /** 关闭底层频道（应用卸载/测试清理；装配根生命周期用，不在 port 上）。 */
   close(): void {
     this.channel?.close();
   }

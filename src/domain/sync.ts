@@ -1,8 +1,10 @@
 /**
- * 跨标签页同步事件契约（R004 阶段 7 §7.2）。
+ * 跨标签页同步事件契约（R004 阶段 7 §7.2；R005 阶段 8 §8.3 起经
+ * ChangeChannel port 传输，application/services/ChangeChannel.ts 的
+ * ApplicationChangeEvent 为本类型的平台无关别名）。
  * 事件类型是稳定契约：发送方（工作区动作、正文提交、偏好写入）与
- * 接收方（镜像刷新、正文重载、冲突提示）共享，传输见
- * application/services/SyncChannelService。
+ * 接收方（镜像刷新、正文重载、冲突提示）共享，Web 传输实现见
+ * platform/web/BroadcastChangeChannel。
  */
 import type { ContentVersionToken } from "./types";
 

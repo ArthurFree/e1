@@ -13,7 +13,7 @@ import { increment } from "../application/devDiagnostics";
  * 不会留下半新半旧的 schema（见 R001 §6.3 兼容与回滚原则）。
  */
 export const DB_NAME = "notion-like-web";
-export const DB_VERSION = 4;
+export const DB_VERSION = 5;
 
 // 各 object store 名集中定义为常量，避免仓储层散落硬编码字符串。
 export const STORE_WORKSPACES = "workspaces";
@@ -25,6 +25,8 @@ export const STORE_PREFERENCES = "preferences";
 export const STORE_TRASH = "trash";
 export const STORE_REVISIONS = "revisions";
 export const STORE_ATTACHMENTS = "attachments";
+/** 机密值（R005 阶段 8 §8.2 SecretStore 的 Web 实现）：{ name, value }。 */
+export const STORE_SECRETS = "secrets";
 
 /**
  * v1 schema。导出供迁移测试用真实旧库 fixture：
@@ -284,6 +286,50 @@ async function upgradeToV4(
 }
 
 /**
+ * v4 → v5（R005 阶段 8 §8.2）：新增 secrets store（SecretStore 的 Web
+ * 实现），并把偏好记录中旧版 aiConfig 的 apiKey 迁移为 "ai.apiKey"
+ * secret——机密从普通偏好模型剥离，偏好记录改写为 aiEndpoint/aiModel
+ * 并删除 aiConfig 字段。迁移在 upgrade 事务内完成，失败即整体回滚；
+ * 对无旧配置的记录为 no-op（幂等语义由「upgrade 只执行一次」保证）。
+ */
+async function upgradeToV5(
+  db: IDBPDatabase,
+  tx: { objectStore(name: string): unknown },
+) {
+  db.createObjectStore(STORE_SECRETS, { keyPath: "name" });
+
+  interface Store {
+    get(key: string): Promise<unknown>;
+    put(value: unknown): Promise<unknown>;
+  }
+  const prefsStore = tx.objectStore(STORE_PREFERENCES) as Store;
+  const stored = await prefsStore.get("preferences");
+  if (!stored || typeof stored !== "object") return;
+  const record = stored as Record<string, unknown>;
+  const ai = record.aiConfig;
+  if (ai !== null && typeof ai === "object") {
+    const { endpoint, model, apiKey } = ai as {
+      endpoint?: unknown;
+      model?: unknown;
+      apiKey?: unknown;
+    };
+    if (typeof apiKey === "string" && apiKey !== "") {
+      const secretsStore = tx.objectStore(STORE_SECRETS) as Store;
+      await secretsStore.put({ name: "ai.apiKey", value: apiKey });
+    }
+    // 已被新代码写过的记录（aiEndpoint 已存在）不覆盖。
+    if (record.aiEndpoint === undefined) {
+      record.aiEndpoint = typeof endpoint === "string" ? endpoint : null;
+    }
+    if (record.aiModel === undefined) {
+      record.aiModel = typeof model === "string" ? model : null;
+    }
+  }
+  delete record.aiConfig;
+  await prefsStore.put(record);
+}
+
+/**
  * 打开数据库。schema 变更通过提升 DB_VERSION 并在 upgrade 中
  * 按 oldVersion 逐级迁移；新增 store/索引写在对应分支里。
  *
@@ -302,6 +348,7 @@ export function getDB(): Promise<IDBPDatabase> {
           if (oldVersion < 2) await upgradeToV2(db, tx);
           if (oldVersion < 3) await upgradeToV3(db, tx);
           if (oldVersion < 4) await upgradeToV4(db, tx);
+          if (oldVersion < 5) await upgradeToV5(db, tx);
           // 开发诊断：迁移结果（仅版本号，R003 §8.3）。
           increment(
             "db-migration",

@@ -12,11 +12,7 @@ import { INITIAL_CONTENT_VERSION_TOKEN } from "../domain/types";
 import { exportDocumentMarkdown } from "../application/markdown/documentExport";
 import { useAppServices } from "../state/AppServicesProvider";
 import type { DocumentEditorController } from "../application/services/DocumentEditorController";
-import {
-  discardRecovery,
-  readRecovery,
-  type DocumentRecoveryRecord,
-} from "../application/services/documentRecovery";
+import type { RecoveryRecord } from "../application/services/RecoveryStore";
 import {
   clearCorruptedDiagnostic,
   writeCorruptedDiagnostic,
@@ -104,7 +100,7 @@ export function MainArea() {
   // 提前提示冲突，与乐观锁冲突 UI（errorKind: conflict）汇合为同一面板。
   const [remoteConflict, setRemoteConflict] = useState(false);
   // 未落盘编辑的恢复提示（R003 §1.4）：恢复缓冲比 IndexedDB 正文更新时出现。
-  const [recovery, setRecovery] = useState<DocumentRecoveryRecord | null>(null);
+  const [recovery, setRecovery] = useState<RecoveryRecord | null>(null);
   // 正文 JSON 校验失败（R003 阶段 4）：不渲染编辑器，显示损坏处理面板。
   const [corrupted, setCorrupted] = useState<{
     raw: unknown;
@@ -132,30 +128,34 @@ export function MainArea() {
     setRemoteConflict(false);
     pendingExitToBodyRef.current = false;
     if (view === "document" && page?.kind === "document") {
-      void services.queries.document.getContent(page.id).then((result) => {
-        if (cancelled) return;
-        // 新建文档尚无内容行：以空文档作为初始内容，首次编辑即落盘。
-        const base = result ?? emptyContent(page.id, page.workspaceId);
-        // 正文 JSON 运行时校验：损坏时不进编辑器，转入损坏处理面板（R003 阶段 4）。
-        const parsed = parseDocumentContent(base.contentJson);
-        if (!parsed.ok) {
-          writeCorruptedDiagnostic({
-            pageId: page.id,
-            raw: parsed.raw,
-            error: parsed.error.message,
-            detectedAt: Date.now(),
-          });
-          setCorrupted({ raw: parsed.raw, error: parsed.error.message });
+      void services.queries.document
+        .getContent(page.id)
+        .then(async (result) => {
+          if (cancelled) return;
+          // 新建文档尚无内容行：以空文档作为初始内容，首次编辑即落盘。
+          const base = result ?? emptyContent(page.id, page.workspaceId);
+          // 正文 JSON 运行时校验：损坏时不进编辑器，转入损坏处理面板（R003 阶段 4）。
+          const parsed = parseDocumentContent(base.contentJson);
+          if (!parsed.ok) {
+            writeCorruptedDiagnostic({
+              pageId: page.id,
+              raw: parsed.raw,
+              error: parsed.error.message,
+              detectedAt: Date.now(),
+            });
+            setCorrupted({ raw: parsed.raw, error: parsed.error.message });
+            setContent(base);
+            return;
+          }
+          // 恢复缓冲比已落盘正文更新：提示用户恢复上次未保存的编辑。
+          // R005 阶段 8：经容器注入的 RecoveryStore port 读取（Web 为 localStorage）。
+          const record = await services.recoveryStore.read(page.id);
+          if (cancelled) return;
+          if (record && record.timestamp > base.updatedAt) {
+            setRecovery(record);
+          }
           setContent(base);
-          return;
-        }
-        // 恢复缓冲比已落盘正文更新：提示用户恢复上次未保存的编辑。
-        const record = readRecovery(page.id);
-        if (record && record.timestamp > base.updatedAt) {
-          setRecovery(record);
-        }
-        setContent(base);
-      });
+        });
     }
     return () => {
       cancelled = true;
@@ -198,7 +198,7 @@ export function MainArea() {
     if (!latest || pageRef.current?.id !== current.id) return;
     const parsed = parseDocumentContent(latest.contentJson);
     if (!parsed.ok) return;
-    discardRecovery(current.id);
+    void services.recoveryStore.discard(current.id);
     services.queries.search.syncText(
       current.id,
       latest.textSnapshot,
@@ -286,9 +286,9 @@ export function MainArea() {
   }, [recovery, content]);
 
   const discardRecoveryPrompt = useCallback(() => {
-    if (page) discardRecovery(page.id);
+    if (page) void services.recoveryStore.discard(page.id);
     setRecovery(null);
-  }, [page]);
+  }, [page, services]);
 
   // 损坏正文：尝试恢复（sanitize 尽力保留合法内容），重建编辑器并立即保存。
   const recoverCorrupted = useCallback(() => {

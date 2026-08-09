@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { StorageConnectionEvent } from "../application/services/StorageConnectionEventBus";
+import type { StorageConnectionEvent } from "../application/services/StorageHealthService";
 import { useAppServices } from "../state/AppServicesProvider";
 import {
   useWorkspaceCommands,
@@ -39,7 +39,7 @@ export function AppShell() {
   }, [preferences.theme]);
 
   useEffect(() => {
-    return services.storageEvents.subscribe((event) => {
+    return services.storageHealth.subscribe((event) => {
       if (event === "terminated") return;
       setStorageEvent(event);
     });

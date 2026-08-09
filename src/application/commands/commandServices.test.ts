@@ -24,9 +24,9 @@ import { createInMemoryAppServices } from "../../infrastructure/memory/createInM
 import { BrowserMemorySearchIndex } from "../../platform/web/search/BrowserMemorySearchIndex";
 import { DocumentCommitService } from "../services/DocumentCommitService";
 import {
-  SyncChannelService,
+  BroadcastChangeChannel,
   type BroadcastChannelLike,
-} from "../services/SyncChannelService";
+} from "../../platform/web/BroadcastChangeChannel";
 import { WorkspaceSessionService } from "../services/WorkspaceSessionService";
 import { WorkspaceCommandService } from "./WorkspaceCommandService";
 import { PageCommandService } from "./PageCommandService";
@@ -80,7 +80,7 @@ async function makeBrowserContext(): Promise<CommandTestContext> {
     content: idbContent,
   });
   const { channel, posted } = makeMockChannel();
-  const syncChannel = new SyncChannelService(channel, "tab-test");
+  const syncChannel = new BroadcastChangeChannel(channel, "tab-test");
   const session = new WorkspaceSessionService({
     pages: idbPage,
     tags: idbTag,

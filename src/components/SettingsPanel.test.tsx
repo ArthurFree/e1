@@ -7,6 +7,8 @@ import {
   preferencesRepository,
   workspaceRepository,
 } from "../infrastructure/repositories";
+import { secretStore } from "../infrastructure/secretStore";
+import { AI_API_KEY_SECRET } from "../application/services/SecretStore";
 import { WebAssetPicker } from "../platform/web/webAssetPicker";
 import { SettingsPanel } from "./SettingsPanel";
 
@@ -71,10 +73,12 @@ describe("SettingsPanel", () => {
       await screen.findByText("Endpoint 必须是合法的 http(s) 地址"),
     ).toBeInTheDocument();
     const prefs = await preferencesRepository.get();
-    expect(prefs.aiConfig).toBeNull();
+    expect(prefs.aiEndpoint).toBeNull();
+    expect(prefs.aiModel).toBeNull();
+    expect(await secretStore.get(AI_API_KEY_SECRET)).toBeNull();
   });
 
-  it("合法配置保存后写入 IndexedDB 并可清除", async () => {
+  it("合法配置保存后 endpoint/model 写入偏好、apiKey 写入 SecretStore，并可清除", async () => {
     render(
       <TestApp>
         <ReadySettingsPanel />
@@ -94,15 +98,18 @@ describe("SettingsPanel", () => {
     expect(await screen.findByText("已保存。")).toBeInTheDocument();
     expect(await screen.findByText("AI 已配置")).toBeInTheDocument();
     const prefs = await preferencesRepository.get();
-    expect(prefs.aiConfig).toEqual({
-      endpoint: "https://api.openai.com/v1",
-      model: "gpt-4o-mini",
-      apiKey: "sk-test",
-    });
+    expect(prefs.aiEndpoint).toBe("https://api.openai.com/v1");
+    expect(prefs.aiModel).toBe("gpt-4o-mini");
+    // apiKey 不进入偏好记录（R005 阶段 8 §8.2），只在 SecretStore。
+    expect("aiConfig" in prefs).toBe(false);
+    expect(await secretStore.get(AI_API_KEY_SECRET)).toBe("sk-test");
 
     fireEvent.click(screen.getByText("清除配置"));
     expect(await screen.findByText("AI 未配置")).toBeInTheDocument();
-    expect((await preferencesRepository.get()).aiConfig).toBeNull();
+    const cleared = await preferencesRepository.get();
+    expect(cleared.aiEndpoint).toBeNull();
+    expect(cleared.aiModel).toBeNull();
+    expect(await secretStore.get(AI_API_KEY_SECRET)).toBeNull();
   });
 });
 

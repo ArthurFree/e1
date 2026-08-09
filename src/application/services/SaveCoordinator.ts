@@ -32,7 +32,7 @@ import {
 import { collectAttachmentIds } from "../../editor/attachment";
 import { increment, trackTiming } from "../devDiagnostics";
 import type { DocumentContentCommitter } from "./DocumentCommitService";
-import type { DocumentRecoveryRecord } from "./documentRecovery";
+import type { RecoveryRecord } from "./RecoveryStore";
 
 /** 待保存快照；generation 与 capturedAt 由协调器在入队时盖章。 */
 export interface SaveSnapshot {
@@ -67,9 +67,14 @@ export interface SaveCoordinatorState {
   errorKind: SaveErrorKind | null;
 }
 
-/** 恢复缓冲抽象：生产实现为 localStorage（documentRecovery），测试可注入内存版。 */
-export interface RecoveryStore {
-  write(record: DocumentRecoveryRecord): void;
+/**
+ * 恢复缓冲写入点（窄接口，R005 阶段 8）：协调器只负责「入队时写、保存
+ * 成功清」，读取/丢弃由 UI 经 AppServices.recoveryStore（RecoveryStore
+ * port）消费。方法为同步返回类型，RecoveryStore 的异步实现可直接赋值
+ * （Promise 返回被丢弃；Web/内存实现内部自行降级，不会拒绝）。
+ */
+export interface RecoverySink {
+  write(record: RecoveryRecord): void;
   clear(pageId: string, savedGeneration: number): void;
 }
 
@@ -82,8 +87,8 @@ export interface SaveCoordinatorDeps {
    * 装配根注入实现，维护任务只跟随当前代次快照）。
    */
   assets: Pick<AssetStore, "removeOrphans">;
-  /** 可选恢复缓冲；每次入队写、保存成功清。 */
-  recovery?: RecoveryStore;
+  /** 可选恢复缓冲写入点；每次入队写、保存成功清。 */
+  recovery?: RecoverySink;
   /**
    * 维护步骤失败回调（R004 阶段 1）：版本创建、附件清理、恢复缓冲清理
    * 失败时正文已落盘，不进 error 态，只经此回调上报诊断。

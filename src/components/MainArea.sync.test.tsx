@@ -10,8 +10,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
-import type { BroadcastChannelLike } from "../application/services/SyncChannelService";
-import { writeRecovery } from "../application/services/documentRecovery";
+import type { BroadcastChannelLike } from "../platform/web/BroadcastChangeChannel";
 import { serializeRoute } from "../domain/route";
 import type { Page } from "../domain/types";
 import {
@@ -124,7 +123,8 @@ async function setupConflict(localText: string, remoteText: string) {
   const { services } = createInMemoryAppServices({ syncChannel: channel });
   const { ws, pageA, pageB } = await seedWorkspace(services);
   // 本地未保存修改：恢复缓冲比磁盘正文新，启动后出现恢复提示条。
-  writeRecovery({
+  // R005 阶段 8：恢复缓冲经容器注入的 RecoveryStore（内存实现）写入。
+  await services.recoveryStore.write({
     pageId: pageA.id,
     contentJson: docWith(localText),
     generation: 1,

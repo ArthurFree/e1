@@ -1,14 +1,15 @@
 /**
- * SyncChannelService 单元测试（R004 阶段 7 §7.2）：
+ * BroadcastChangeChannel 单元测试（R004 阶段 7 §7.2；R005 阶段 8 §8.3
+ * 自 application/services/SyncChannelService.test.ts 迁入并随 publish 更名）：
  * 发送信封（来源 tabId）、接收过滤（回声抑制/非法数据）、
  * 退订、无 BroadcastChannel 环境降级 no-op。
  */
 import { describe, expect, it, vi } from "vitest";
-import type { AppSyncEvent } from "../../domain/sync";
+import type { ApplicationChangeEvent } from "../../application/services/ChangeChannel";
 import {
-  SyncChannelService,
+  BroadcastChangeChannel,
   type BroadcastChannelLike,
-} from "./SyncChannelService";
+} from "./BroadcastChangeChannel";
 
 function makeMockChannel() {
   const posted: unknown[] = [];
@@ -26,20 +27,20 @@ function makeMockChannel() {
   return { channel, posted, emit };
 }
 
-const EVENT: AppSyncEvent = { type: "preferences-changed" };
+const EVENT: ApplicationChangeEvent = { type: "preferences-changed" };
 
-describe("SyncChannelService", () => {
-  it("post 广播带 tabId 的信封", () => {
+describe("BroadcastChangeChannel", () => {
+  it("publish 广播带 tabId 的信封", () => {
     const { channel, posted } = makeMockChannel();
-    const service = new SyncChannelService(channel, "tab-A");
-    service.post(EVENT);
+    const service = new BroadcastChangeChannel(channel, "tab-A");
+    service.publish(EVENT);
     expect(posted).toEqual([{ source: "tab-A", event: EVENT }]);
   });
 
   it("subscribe 收到其他标签页的事件", () => {
     const { channel, emit } = makeMockChannel();
-    const service = new SyncChannelService(channel, "tab-A");
-    const received: AppSyncEvent[] = [];
+    const service = new BroadcastChangeChannel(channel, "tab-A");
+    const received: ApplicationChangeEvent[] = [];
     service.subscribe((event) => received.push(event));
     emit({ source: "tab-B", event: EVENT });
     expect(received).toEqual([EVENT]);
@@ -47,8 +48,8 @@ describe("SyncChannelService", () => {
 
   it("回声抑制：忽略自己发出的事件与非法数据", () => {
     const { channel, emit } = makeMockChannel();
-    const service = new SyncChannelService(channel, "tab-A");
-    const received: AppSyncEvent[] = [];
+    const service = new BroadcastChangeChannel(channel, "tab-A");
+    const received: ApplicationChangeEvent[] = [];
     service.subscribe((event) => received.push(event));
     emit({ source: "tab-A", event: EVENT });
     emit(null);
@@ -60,9 +61,9 @@ describe("SyncChannelService", () => {
 
   it("多个订阅者共享频道，互不覆盖", () => {
     const { channel, emit } = makeMockChannel();
-    const service = new SyncChannelService(channel, "tab-A");
-    const a: AppSyncEvent[] = [];
-    const b: AppSyncEvent[] = [];
+    const service = new BroadcastChangeChannel(channel, "tab-A");
+    const a: ApplicationChangeEvent[] = [];
+    const b: ApplicationChangeEvent[] = [];
     service.subscribe((event) => a.push(event));
     service.subscribe((event) => b.push(event));
     emit({ source: "tab-B", event: EVENT });
@@ -72,8 +73,8 @@ describe("SyncChannelService", () => {
 
   it("退订后不再接收", () => {
     const { channel, emit } = makeMockChannel();
-    const service = new SyncChannelService(channel, "tab-A");
-    const received: AppSyncEvent[] = [];
+    const service = new BroadcastChangeChannel(channel, "tab-A");
+    const received: ApplicationChangeEvent[] = [];
     const unsubscribe = service.subscribe((event) => received.push(event));
     emit({ source: "tab-B", event: EVENT });
     unsubscribe();
@@ -81,9 +82,9 @@ describe("SyncChannelService", () => {
     expect(received).toEqual([EVENT]);
   });
 
-  it("无 BroadcastChannel（null 频道）：post/subscribe 为 no-op", () => {
-    const service = new SyncChannelService(null, "tab-A");
-    expect(() => service.post(EVENT)).not.toThrow();
+  it("无 BroadcastChannel（null 频道）：publish/subscribe 为 no-op", () => {
+    const service = new BroadcastChangeChannel(null, "tab-A");
+    expect(() => service.publish(EVENT)).not.toThrow();
     const unsubscribe = service.subscribe(() => {
       throw new Error("不应被调用");
     });
@@ -96,7 +97,7 @@ describe("SyncChannelService", () => {
     channel.postMessage = () => {
       throw new Error("频道已关闭");
     };
-    const service = new SyncChannelService(channel, "tab-A");
-    expect(() => service.post(EVENT)).not.toThrow();
+    const service = new BroadcastChangeChannel(channel, "tab-A");
+    expect(() => service.publish(EVENT)).not.toThrow();
   });
 });

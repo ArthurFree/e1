@@ -10,9 +10,20 @@ import { Editor } from "@tiptap/core";
 import { TestApp } from "../../test/TestApp";
 import { resetDB } from "../../infrastructure/db";
 import { preferencesRepository } from "../../infrastructure/repositories";
+import { secretStore } from "../../infrastructure/secretStore";
+import { AI_API_KEY_SECRET } from "../../application/services/SecretStore";
 import { buildEditorExtensions } from "../../editor/extensions";
 import { openAIAssistant } from "../../editor/aiBridge";
 import { AIAssistantPanel } from "./AIAssistantPanel";
+
+/** R005 阶段 8 §8.2：endpoint/model 入偏好，apiKey 入 SecretStore。 */
+async function configureAI() {
+  await preferencesRepository.update({
+    aiEndpoint: "https://example.com/v1",
+    aiModel: "test",
+  });
+  await secretStore.set(AI_API_KEY_SECRET, "sk");
+}
 
 function createEditor(text: string) {
   const holder: { editor: Editor | null } = { editor: null };
@@ -68,13 +79,7 @@ describe("AIAssistantPanel", () => {
   });
 
   it("ask 模式：提问后预览结果，应用后插入文档", async () => {
-    await preferencesRepository.update({
-      aiConfig: {
-        endpoint: "https://example.com/v1",
-        model: "test",
-        apiKey: "sk",
-      },
-    });
+    await configureAI();
     mockFetchResult("AI 回答内容");
     const editor = createEditor("正文");
     render(
@@ -99,13 +104,7 @@ describe("AIAssistantPanel", () => {
   });
 
   it("polish 模式：应用后替换原选区", async () => {
-    await preferencesRepository.update({
-      aiConfig: {
-        endpoint: "https://example.com/v1",
-        model: "test",
-        apiKey: "sk",
-      },
-    });
+    await configureAI();
     mockFetchResult("润色后的文字");
     const editor = createEditor("这是一段需要润色的文字");
     render(
@@ -133,13 +132,7 @@ describe("AIAssistantPanel", () => {
   });
 
   it("请求失败时显示错误并可重试", async () => {
-    await preferencesRepository.update({
-      aiConfig: {
-        endpoint: "https://example.com/v1",
-        model: "test",
-        apiKey: "sk",
-      },
-    });
+    await configureAI();
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response("unauthorized", { status: 401 })),

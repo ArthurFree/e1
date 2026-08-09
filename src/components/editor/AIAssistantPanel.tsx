@@ -11,7 +11,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Editor, JSONContent } from "@tiptap/core";
 import { usePreferences } from "../../state/PreferencesContext";
 import { useOverlay } from "../../state/OverlayContext";
-import { isAIConfigured, type AIMode } from "../../domain/ai";
+import { isAIConfigured, getAISettings, type AIMode } from "../../domain/ai";
 import { useAppServices } from "../../state/AppServicesProvider";
 import { markdownToJson } from "../../editor/markdown";
 import { Dialog } from "../ui/Dialog";
@@ -46,7 +46,9 @@ export function AIAssistantPanel({ editor }: AIAssistantPanelProps) {
   const services = useAppServices();
   const { preferences } = usePreferences();
   const { openSettings } = useOverlay();
-  const configured = isAIConfigured(preferences.aiConfig);
+  // 未配置门槛只看非机密设置（R005 阶段 8 §8.2）；apiKey 在请求时经
+  // aiConfigService.get() 组装，缺失则不发起请求。
+  const configured = isAIConfigured(getAISettings(preferences));
 
   const [request, setRequest] = useState<AIAssistantOpen | null>(null);
   const [status, setStatus] = useState<Status>("input");
@@ -60,8 +62,10 @@ export function AIAssistantPanel({ editor }: AIAssistantPanelProps) {
 
   const run = useCallback(
     async (req: AIAssistantOpen, userPrompt: string) => {
-      const config = preferences.aiConfig;
-      if (!isAIConfigured(config) || config === null) return;
+      // 请求组装（R005 阶段 8 §8.2）：endpoint/model 取偏好、apiKey 取
+      // SecretStore；任一缺失按未配置处理，不发起任何外部请求。
+      const config = await services.aiConfigService.get();
+      if (!config) return;
       lastRun.current = { request: req, prompt: userPrompt };
       setStatus("loading");
       setError("");
@@ -84,7 +88,7 @@ export function AIAssistantPanel({ editor }: AIAssistantPanelProps) {
         setStatus("error");
       }
     },
-    [editor, preferences.aiConfig, services],
+    [editor, services],
   );
 
   const close = useCallback(() => {

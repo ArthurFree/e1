@@ -6,7 +6,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { isAIConfigured } from "../domain/ai";
+import { isAIConfigured, getAISettings } from "../domain/ai";
 import {
   useWorkspaceCommands,
   useWorkspaceData,
@@ -47,7 +47,8 @@ export function StartPage() {
       null,
     [workspaces],
   );
-  const aiConfigured = isAIConfigured(preferences.aiConfig);
+  // 未配置门槛只看非机密设置（R005 阶段 8 §8.2）；apiKey 在请求组装时校验。
+  const aiConfigured = isAIConfigured(getAISettings(preferences));
 
   const quickCreate = () => {
     // 没有最近使用的知识库时必须先选择目标。
