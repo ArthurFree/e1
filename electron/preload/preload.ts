@@ -1,4 +1,5 @@
 // R006 阶段 1：预加载脚本——contextBridge 暴露完整 E1DesktopAPI。
+// R006 阶段 2：vault 组扩展 open / listRecent（channel 与信封语义不变）。
 // sandbox 预加载只支持 CJS（构建产物 dist-electron/preload.cjs）。
 //
 // 错误传递策略（与 src/platform/desktop/desktopApi.ts 注释共同锁定）：
@@ -16,9 +17,12 @@ import {
   type IpcResult,
   type ImportAssetInput,
   type ImportedAsset,
+  type OpenedVault,
+  type OpenVaultRequest,
   type PickedFile,
   type ReadNoteInput,
   type ReadNoteResult,
+  type RecentVault,
   type SaveNoteInput,
   type SaveNoteResult,
   type SelectedVault,
@@ -47,6 +51,9 @@ const api: E1DesktopAPI = {
   vault: {
     selectDirectory: () =>
       invoke<SelectedVault | null>(IPC_CHANNELS.vaultSelectDirectory),
+    open: (input: OpenVaultRequest) =>
+      invoke<OpenedVault>(IPC_CHANNELS.vaultOpen, input),
+    listRecent: () => invoke<RecentVault[]>(IPC_CHANNELS.vaultListRecent),
     scan: (vaultId) => invoke<VaultScanResult>(IPC_CHANNELS.vaultScan, vaultId),
   },
   note: {

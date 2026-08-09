@@ -39,7 +39,12 @@ describe("preload 暴露形状", () => {
   it("platform/versions + vault/note/asset 三组方法齐全", async () => {
     expect(api.platform).toBe("desktop");
     expect(api.versions).toBeTypeOf("object");
-    expect(Object.keys(api.vault).sort()).toEqual(["scan", "selectDirectory"]);
+    expect(Object.keys(api.vault).sort()).toEqual([
+      "listRecent",
+      "open",
+      "scan",
+      "selectDirectory",
+    ]);
     expect(Object.keys(api.note).sort()).toEqual(["create", "read", "save"]);
     expect(Object.keys(api.asset).sort()).toEqual([
       "import",
@@ -64,7 +69,7 @@ describe("channel 与负载透传", () => {
   it("字符串负载原样透传（scan/resolveUrl）", async () => {
     invoke.mockResolvedValue({
       ok: true,
-      value: { vaultId: "v", folders: [], notes: [] },
+      value: { vault: { vaultId: "v", name: "n" }, entries: [] },
     });
     await api.vault.scan("v1");
     expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.vaultScan, "v1");
@@ -73,6 +78,20 @@ describe("channel 与负载透传", () => {
     expect(invoke).toHaveBeenCalledWith(
       IPC_CHANNELS.assetResolveUrl,
       "asset-1",
+    );
+  });
+
+  it("vault.open 对象负载透传；vault.listRecent 只传 channel", async () => {
+    const openInput = { absolutePath: "/x/笔记", name: "我的库" };
+    invoke.mockResolvedValue({ ok: true, value: {} });
+    await api.vault.open(openInput);
+    expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.vaultOpen, openInput);
+
+    invoke.mockResolvedValue({ ok: true, value: [] });
+    await api.vault.listRecent();
+    expect(invoke).toHaveBeenCalledWith(
+      IPC_CHANNELS.vaultListRecent,
+      undefined,
     );
   });
 

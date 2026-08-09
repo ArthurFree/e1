@@ -2,16 +2,21 @@
 /**
  * R006 阶段 1：Main 侧 IPC handler 分发与错误归一测试。
  * ipcMain/原生对话框全部注入 mock（registerIpcHandlers 依赖注入），
- * 验证：八个 channel 注册齐全、selectDirectory 真实行为（取消/选中）、
+ * 验证：channel 注册齐全、selectDirectory 真实行为（取消/选中）、
  * schema 校验失败归一 INVALID_INPUT/PATH_ESCAPE、契约桩归一 NOT_IMPLEMENTED。
+ * R006 阶段 2：vault.open/scan/listRecent 真实实现的行为测试见
+ * ./vault.test.ts（真实 tmp 文件系统 + 真实注册表）；本文件保留
+ * 注册齐全与 schema 拦截断言。
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { tmpdir } from "node:os";
 import { IPC_CHANNELS, type IpcResult } from "../../../shared/ipc/contracts.js";
 import { registerIpcHandlers } from "./index.js";
 import type { IpcMainLike } from "./handler.js";
 import type { OpenDialogLike } from "./vault.js";
 
 vi.mock("electron", () => ({
+  app: { getPath: () => tmpdir() },
   ipcMain: { handle: vi.fn() },
   dialog: { showOpenDialog: vi.fn() },
 }));
@@ -40,7 +45,7 @@ beforeEach(() => {
 });
 
 describe("registerIpcHandlers 注册", () => {
-  it("八个 channel 全部注册", () => {
+  it("全部 channel 注册（vault 4 + note 3 + asset 3）", () => {
     registerIpcHandlers({ ipc: bus });
     expect([...handlers.keys()].sort()).toEqual(
       Object.values(IPC_CHANNELS).sort(),
@@ -92,17 +97,6 @@ describe("vault.selectDirectory（真实实现，对话框 mock）", () => {
 describe("契约桩 NOT_IMPLEMENTED 归一", () => {
   beforeEach(() => {
     registerIpcHandlers({ ipc: bus });
-  });
-
-  it("vault.scan 合法入参 → NOT_IMPLEMENTED 线格式", async () => {
-    const result = await call(IPC_CHANNELS.vaultScan, "v1");
-    expect(result).toEqual({
-      ok: false,
-      error: {
-        code: "NOT_IMPLEMENTED",
-        message: expect.stringContaining("阶段 2"),
-      },
-    });
   });
 
   it("note.read/create/save 合法入参 → NOT_IMPLEMENTED", async () => {

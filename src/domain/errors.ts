@@ -34,7 +34,11 @@ export type DomainErrorCode =
   /** 文档正文 JSON 损坏。 */
   | "CORRUPTED_DOCUMENT"
   /** 正文乐观并发冲突：磁盘 version 与保存时的 expectedVersion 不一致。 */
-  | "DOCUMENT_CONFLICT";
+  | "DOCUMENT_CONFLICT"
+  /** 当前平台/阶段尚未实现的能力（R006 阶段 2：Desktop 写路径诚实失败）。 */
+  | "NOT_IMPLEMENTED"
+  /** 用户取消了原生选择流程（R006 阶段 2：Desktop 目录选择取消）。 */
+  | "CANCELLED";
 
 /** 领域错误：code 是稳定契约，message 是中文用户文案。 */
 export class DomainError extends Error {

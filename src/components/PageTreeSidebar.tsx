@@ -58,6 +58,12 @@ interface PageTreeBodyProps {
   renamePage(id: string, title: string): Promise<void>;
   deletePage(id: string): Promise<void>;
   movePage(id: string, parentId: string | null, index: number): Promise<void>;
+  /**
+   * 树内动作（移动/重命名/删除/新建）失败的统一上报（R006 阶段 2）：
+   * Web 下这些操作正常不会失败；Desktop 写路径诚实抛错时经此通道
+   * 让用户可感知（侧栏错误条），而不是无声的未处理拒签。
+   */
+  onActionError(message: string): void;
   /** 抽屉模式下选中页面后关闭抽屉。 */
   onPick(): void;
   /** 请求某页面进入行内重命名（新建分组后立即改名）。 */
@@ -78,6 +84,7 @@ const PageTreeBody = memo(function PageTreeBody({
   renamePage,
   deletePage,
   movePage,
+  onActionError,
   onPick,
   renameRequest,
 }: PageTreeBodyProps) {
@@ -111,10 +118,16 @@ const PageTreeBody = memo(function PageTreeBody({
     // 只在请求对象变化时触发。
   }, [renameRequest]);
 
+  // 树内写动作的统一失败上报：错误文案优先取 DomainError 的中文 message
+  // （Desktop 阶段 2 写路径的 NOT_IMPLEMENTED 提示即经此到达用户）。
+  const reportActionError = (err: unknown) => {
+    onActionError(err instanceof Error ? err.message : "操作失败，请重试。");
+  };
+
   const commitRename = () => {
     if (renamingId) {
       const value = renameValue.trim();
-      if (value) void renamePage(renamingId, value);
+      if (value) void renamePage(renamingId, value).catch(reportActionError);
     }
     setRenamingId(null);
   };
@@ -145,7 +158,13 @@ const PageTreeBody = memo(function PageTreeBody({
     const rect = event.currentTarget.getBoundingClientRect();
     const zone = dropZoneAt((event.clientY - rect.top) / rect.height);
     const target = resolveDrop(pages, draggedId, page.id, zone);
-    if (target) void movePage(draggedId, target.parentId, target.index);
+    if (target) {
+      // Desktop 阶段 2 拖拽排序关闭（r006 §8）：move 抛错经上报通道提示，
+      // 不崩、不静默。
+      void movePage(draggedId, target.parentId, target.index).catch(
+        reportActionError,
+      );
+    }
   };
 
   const dropClass = (page: Page) => {
@@ -277,7 +296,7 @@ const PageTreeBody = memo(function PageTreeBody({
             title="新建子文档"
             onClick={(event) => {
               event.stopPropagation();
-              void createPage("document", page.id);
+              void createPage("document", page.id).catch(reportActionError);
             }}
           >
             <IconPlus size={14} />
@@ -301,7 +320,7 @@ const PageTreeBody = memo(function PageTreeBody({
             title="删除"
             onClick={(event) => {
               event.stopPropagation();
-              void deletePage(page.id);
+              void deletePage(page.id).catch(reportActionError);
             }}
           >
             <IconTrash size={14} />
@@ -386,7 +405,9 @@ export function PageTreeSidebar() {
   const [renamingSeed, setRenamingSeed] = useState<Page | null>(null);
   const [resizing, setResizing] = useState(false);
   const [activeTagId, setActiveTagId] = useState<string | null>(null);
-  const [importError, setImportError] = useState<string | null>(null);
+  // 树内动作错误条（导入失败 + R006 阶段 2 起移动/重命名/删除/新建的
+  // 诚实失败提示——Desktop 写路径抛 DomainError 时用户可感知）。
+  const [actionError, setActionError] = useState<string | null>(null);
   const widthRef = useRef(preferences.sidebarWidth);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -421,7 +442,7 @@ export function PageTreeSidebar() {
   );
 
   const onImportFile = async (file: File) => {
-    setImportError(null);
+    setActionError(null);
     try {
       const text = await file.text();
       // Markdown 经白名单解析成文档 JSON（不注入原始 HTML）
@@ -440,7 +461,7 @@ export function PageTreeSidebar() {
       if (!page) throw new Error("create failed");
       selectPage(page.id);
     } catch (error) {
-      setImportError(
+      setActionError(
         error instanceof Error && error.message === "无法解析该 Markdown 文件"
           ? error.message
           : "导入失败，请确认文件为有效的 Markdown。",
@@ -482,7 +503,13 @@ export function PageTreeSidebar() {
             className="icon-button"
             aria-label="新建文档"
             title="新建文档"
-            onClick={() => void createPage("document", null)}
+            onClick={() =>
+              void createPage("document", null).catch((err: unknown) =>
+                setActionError(
+                  err instanceof Error ? err.message : "操作失败，请重试。",
+                ),
+              )
+            }
           >
             <IconPlus />
           </button>
@@ -496,7 +523,11 @@ export function PageTreeSidebar() {
               void (async () => {
                 const page = await createPage("group", null);
                 if (page) setRenamingSeed(page);
-              })();
+              })().catch((err: unknown) =>
+                setActionError(
+                  err instanceof Error ? err.message : "操作失败，请重试。",
+                ),
+              );
             }}
           >
             <IconFolderPlus />
@@ -515,14 +546,14 @@ export function PageTreeSidebar() {
           }}
         />
       </div>
-      {importError && (
+      {actionError && (
         <div className="tree-sidebar__error" role="alert">
-          <span>{importError}</span>
+          <span>{actionError}</span>
           <button
             type="button"
             className="tree-row__action"
             aria-label="关闭错误提示"
-            onClick={() => setImportError(null)}
+            onClick={() => setActionError(null)}
           >
             <IconClose size={12} />
           </button>
@@ -538,6 +569,7 @@ export function PageTreeSidebar() {
         renamePage={renamePage}
         deletePage={deletePage}
         movePage={movePage}
+        onActionError={setActionError}
         onPick={closeTreeDrawer}
         renameRequest={renamingSeed}
       />

@@ -1,24 +1,78 @@
 /**
- * R006 阶段 1：createDesktopRuntime 测试——fake adapter 接线验证：
- * 返回完整 AppServices 容器（内存实现），capabilities 为桌面矩阵；
- * 容器可真实跑通业务编排（内存创建知识库/文档），证明 PoC 可用。
+ * R006 阶段 2（C2）：createDesktopRuntime 测试——真实 IPC-backed 装配：
+ * 容器字段完整、capabilities 为桌面矩阵；mock E1DesktopAPI 验证
+ * 读路径（listWorkspaces / loadSession / 标题搜索）真实走 IPC、
+ * 写路径经命令服务诚实失败（DomainError）。
  */
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createDesktopRuntime } from "./createDesktopRuntime";
 import { desktopCapabilities } from "./desktopCapabilities";
 import type { E1DesktopAPI } from "./desktopApi";
 
-const stubApi = { platform: "desktop" } as unknown as E1DesktopAPI;
+const SCAN = {
+  vault: { vaultId: "v1", name: "我的笔记" },
+  entries: [
+    {
+      noteId: null,
+      relativePath: "学习",
+      kind: "group" as const,
+      title: "学习",
+      parentPath: null,
+      tags: [],
+    },
+    {
+      noteId: "01JABC",
+      relativePath: "学习/React.md",
+      kind: "document" as const,
+      title: "React 笔记",
+      parentPath: "学习",
+      tags: ["前端"],
+    },
+  ],
+};
 
-describe("createDesktopRuntime", () => {
+function mockApi(
+  overrides: Partial<{
+    selectDirectory: E1DesktopAPI["vault"]["selectDirectory"];
+  }> = {},
+): E1DesktopAPI {
+  return {
+    platform: "desktop",
+    versions: {},
+    vault: {
+      selectDirectory: overrides.selectDirectory ?? vi.fn(async () => null),
+      open: vi.fn(async () => {
+        throw new Error("unexpected open");
+      }),
+      listRecent: vi.fn(async () => [
+        {
+          vaultId: "v1",
+          absolutePath: "/tmp/a",
+          displayName: "我的笔记",
+          lastOpenedAt: "2026-08-09T10:00:00.000Z",
+          accessible: true,
+        },
+      ]),
+      scan: vi.fn(async () => SCAN),
+    },
+    note: { read: vi.fn(), create: vi.fn(), save: vi.fn() },
+    asset: { pick: vi.fn(), import: vi.fn(), resolveUrl: vi.fn() },
+  } as unknown as E1DesktopAPI;
+}
+
+describe("createDesktopRuntime（IPC-backed）", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
   it("capabilities 为桌面能力矩阵（runtime 与 services 两处一致）", () => {
-    const runtime = createDesktopRuntime(stubApi);
+    const runtime = createDesktopRuntime(mockApi());
     expect(runtime.capabilities).toBe(desktopCapabilities);
     expect(runtime.services.capabilities).toBe(desktopCapabilities);
   });
 
   it("返回完整 AppServices 形状", () => {
-    const { services } = createDesktopRuntime(stubApi);
+    const { services } = createDesktopRuntime(mockApi());
     expect(Object.keys(services.commands).sort()).toEqual([
       "document",
       "page",
@@ -45,17 +99,58 @@ describe("createDesktopRuntime", () => {
     }
   });
 
-  it("fake adapter 可跑通业务编排（内存创建知识库与文档）", async () => {
-    const { services } = createDesktopRuntime(stubApi);
-    const workspace = await services.commands.workspace.create("桌面 PoC 库");
-    const page = await services.commands.page.create({
-      workspaceId: workspace.id,
-      parentId: null,
-      kind: "document",
-      title: "第一篇",
-    });
+  it("listWorkspaces 经 vault:listRecent 映射", async () => {
+    const { services } = createDesktopRuntime(mockApi());
     const workspaces = await services.queries.workspace.listWorkspaces();
-    expect(workspaces.map((w) => w.name)).toContain("桌面 PoC 库");
-    expect(page.title).toBe("第一篇");
+    expect(workspaces.map((w) => [w.id, w.name])).toEqual([["v1", "我的笔记"]]);
+  });
+
+  it("loadSession 经 vault:scan 映射页面树与标签；搜索索引含标题", async () => {
+    const { services } = createDesktopRuntime(mockApi());
+    const data = await services.queries.workspace.loadSession("v1");
+    expect(data.pages.map((p) => [p.id, p.parentId])).toEqual([
+      ["path:学习", null],
+      ["01JABC", "path:学习"],
+    ]);
+    expect(data.tags.map((t) => t.name)).toEqual(["前端"]);
+    expect(data.pageTags).toEqual([
+      { pageId: "01JABC", tagId: "tag:前端", workspaceId: "v1" },
+    ]);
+    // 正文仓储恒空：索引只有标题元数据，标题搜索可用。
+    const hits = await services.queries.search.query("v1", data.pages, "React");
+    expect(hits.map((h) => h.pageId)).toEqual(["01JABC"]);
+  });
+
+  it("写路径诚实失败：page.create / document.createWithContent / getContent", async () => {
+    const { services } = createDesktopRuntime(mockApi());
+    await expect(
+      services.commands.page.create({
+        workspaceId: "v1",
+        parentId: null,
+        kind: "document",
+        title: "x",
+      }),
+    ).rejects.toMatchObject({ code: "NOT_IMPLEMENTED" });
+    await expect(
+      services.commands.document.createWithContent({
+        workspaceId: "v1",
+        parentId: null,
+        title: "x",
+        contentJson: {},
+        textSnapshot: "",
+      }),
+    ).rejects.toMatchObject({ code: "NOT_IMPLEMENTED" });
+    await expect(
+      services.queries.document.getContent("01JABC"),
+    ).rejects.toMatchObject({ code: "NOT_IMPLEMENTED" });
+  });
+
+  it("workspace.create：取消目录选择抛 DomainError(CANCELLED)", async () => {
+    const { services } = createDesktopRuntime(
+      mockApi({ selectDirectory: vi.fn(async () => null) }),
+    );
+    await expect(services.commands.workspace.create("x")).rejects.toMatchObject(
+      { name: "DomainError", code: "CANCELLED" },
+    );
   });
 });

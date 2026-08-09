@@ -10,32 +10,17 @@
  * 节点级序列化策略对照表：docs/architecture/markdown-compatibility.md。
  */
 
-/** Frontmatter 中无法识别（未纳入已知字段集）的字段，原始行保序保留。 */
-export interface FrontmatterExtraField {
-  /** 字段名（YAML key），仅诊断用途；写回以 rawLines 为准。 */
-  key: string;
-  /**
-   * 该字段在原文中的完整行（含 `key: value` 行与续行，如块式列表项），
-   * serialize 时逐行原样写回——不解析、不重排、不丢弃。
-   */
-  rawLines: string[];
-}
-
-/**
- * 笔记的可移植元数据：Portable Vault Frontmatter 的内存形态
- * （portable-vault.md：id/title/tags/created/updated，aliases 为通用扩展）。
- * 时间字段为 ISO 字符串。
- */
-export interface PortableNoteMetadata {
-  id?: string;
-  title?: string;
-  tags?: string[];
-  createdAt?: string;
-  updatedAt?: string;
-  aliases?: string[];
-  /** 解析侧保留的未知 Frontmatter 字段；serialize 原样写回。 */
-  extra?: FrontmatterExtraField[];
-}
+// R006 阶段 2：FrontmatterExtraField / PortableNoteMetadata 随 frontmatter.ts
+// 平移至 shared/markdown/frontmatter.ts（Electron Main 共用同一解析实现）；
+// 此处 re-export 保持既有 import 路径不变。
+export type {
+  FrontmatterExtraField,
+  PortableNoteMetadata,
+} from "../../../shared/markdown/frontmatter";
+import type {
+  FrontmatterExtraField,
+  PortableNoteMetadata,
+} from "../../../shared/markdown/frontmatter";
 
 /** 解析出的笔记内链接（只收集不改写；链接重写属 Portable Vault 阶段）。 */
 export interface ParsedLink {

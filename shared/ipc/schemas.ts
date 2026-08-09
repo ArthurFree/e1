@@ -12,6 +12,7 @@ import { IpcFailure } from "../errors.js";
 import type {
   CreateNoteInput,
   ImportAssetInput,
+  OpenVaultRequest,
   ReadNoteInput,
   SaveNoteInput,
 } from "./contracts.js";
@@ -75,6 +76,21 @@ export function parseVaultScanRequest(payload: unknown): string {
     invalid("vault.scan 入参必须为非空 vaultId 字符串");
   }
   return payload;
+}
+
+/**
+ * vault.open：absolutePath 必填非空；name 可选字符串（仅初始化时生效）。
+ * 绝对性/存在性由 Main 侧 vault.open 实现复查（schema 层只校验形状）。
+ */
+export function parseOpenVaultRequest(payload: unknown): OpenVaultRequest {
+  if (!isRecord(payload)) invalid("vault.open 入参必须为对象");
+  const request: OpenVaultRequest = {
+    absolutePath: requireString(payload, "absolutePath", { nonEmpty: true }),
+  };
+  if (payload.name !== undefined) {
+    request.name = requireString(payload, "name", { nonEmpty: true });
+  }
+  return request;
 }
 
 export function parseReadNoteInput(payload: unknown): ReadNoteInput {

@@ -1,5 +1,7 @@
 /**
  * R006 阶段 1：Desktop IPC 产品契约（r006 §16）。
+ * R006 阶段 2：vault.scan 落地真实形状（扁平 VaultScanEntry 列表）；
+ * 新增 vault:open / vault:listRecent（US-01/02/06）。
  *
  * shared/ 为 Renderer（src/platform/desktop）与 Electron Main/Preload 共用
  * 的唯一契约来源：channel 常量、请求/响应类型、E1DesktopAPI 形状。
@@ -7,8 +9,9 @@
  *
  * 路径安全（r006 §17）：Renderer 只传 vaultId + relativePath，绝不传任意
  * 绝对路径（asset.import 的 sourceAbsolutePath 例外——它来自 Main 侧原生
- * 文件选择器 asset.pick 的返回值，非 Renderer 自造）；Main 侧不信任任何
- * 入参，逐字段 schema 校验 + 阶段 2 的 PathGuard（normalize/realpath）。
+ * 文件选择器 asset.pick 的返回值，非 Renderer 自造；vault.open 的
+ * absolutePath 同理——它来自 Main 侧 vault.selectDirectory 的返回值）；
+ * Main 侧不信任任何入参，逐字段 schema 校验 + PathGuard（normalize/realpath）。
  *
  * 版本令牌（r006 §18）：versionToken 为不透明字符串，Desktop 编码
  * "sha256:<hash>"（Web 为 "idb:N"）；save 入参携带 expectedVersionToken
@@ -19,6 +22,8 @@ import type { IpcErrorPayload } from "../errors.js";
 /** IPC channel 常量：Main 注册与 Preload 调用共用，禁止散落字符串。 */
 export const IPC_CHANNELS = {
   vaultSelectDirectory: "vault:selectDirectory",
+  vaultOpen: "vault:open",
+  vaultListRecent: "vault:listRecent",
   vaultScan: "vault:scan",
   noteRead: "note:read",
   noteCreate: "note:create",
@@ -34,38 +39,95 @@ export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
 
 /**
  * 已选中的本地 Vault 目录。
- * vaultId 为 null：selectDirectory 只完成目录选择，vaultId 待阶段 2 扫描
- * （读取/创建 .e1/vault.json）后分配。
+ * vaultId 为 null：目录尚未初始化（无 .e1/vault.json）——US-01 要求首次
+ * 打开不修改原文件，是否初始化由 Renderer 经用户确认后调 vault.open 决定；
+ * 目录已是 Vault 时返回真实 vaultId（R006 阶段 2 起读取 .e1/vault.json）。
  */
 export interface SelectedVault {
   vaultId: string | null;
-  /** 目录绝对路径（Main 侧原生对话框返回，Renderer 只读展示用）。 */
+  /** 目录绝对路径（Main 侧原生对话框返回，Renderer 只读展示与回传 vault.open）。 */
   absolutePath: string;
   /** 展示名（目录 basename）。 */
   displayName: string;
 }
 
+/**
+ * vault.open 请求：打开（必要时初始化）一个本地 Vault。
+ * absolutePath 只可能来自 vault.selectDirectory / vault.listRecent 的
+ * Main 侧返回值；name 仅在该目录尚未初始化时作为 vault.json 的库名
+ * （缺省取目录 basename），已是 Vault 时忽略。
+ */
+export interface OpenVaultRequest {
+  absolutePath: string;
+  name?: string;
+}
+
+/** vault.open 响应：Vault 元信息（initialized 标记本次是否新建了 vault.json）。 */
+export interface OpenedVault {
+  vaultId: string;
+  absolutePath: string;
+  /** vault.json 中的库名。 */
+  name: string;
+  /** 展示名（目录 basename）。 */
+  displayName: string;
+  /** vault.json 创建时间（ISO 字符串）。 */
+  createdAt: string;
+  /** true：本次调用新建了 .e1/vault.json（US-02 / 首次打开确认初始化）。 */
+  initialized: boolean;
+}
+
+/** 最近打开的 Vault（userData/recent-vaults.json，r006 US-06）。 */
+export interface RecentVault {
+  vaultId: string;
+  absolutePath: string;
+  displayName: string;
+  /** 最近打开时间（ISO 字符串），listRecent 按其倒序。 */
+  lastOpenedAt: string;
+  /** 目录当前是否可访问；false 时由 UI 提示「已移动或不可访问」（重新定位属阶段 6）。 */
+  accessible: boolean;
+}
+
 /** vault.scan 请求：payload 即 vaultId 字符串。 */
 export type VaultScanRequest = string;
 
-/** 扫描出的单条笔记条目（阶段 2 产物形状，阶段 1 仅冻结契约）。 */
+/**
+ * 扫描出的单条树条目（R006 阶段 2 真实形状）。
+ *
+ * 采用扁平列表 + parentPath（而非嵌套树）：Renderer 阶段 3 需把条目映射为
+ * Page[]（含 parentId），扁平结构按 relativePath 建索引即可一次成型，
+ * 无需先遍历嵌套树再拍平。
+ */
 export interface VaultScanEntry {
-  /** 笔记稳定身份（Markdown Frontmatter id；缺失时由扫描分配并回写）。 */
-  noteId: string;
-  /** 相对 Vault 根的 POSIX 风格路径（如 "学习/React.md"）。 */
+  /**
+   * 笔记稳定身份：document 取 Markdown Frontmatter id，缺失为 null
+   * （r006 §6.2 身份回写属阶段 3+；本批扫描不修改任何文件）；
+   * group 恒为 null——分组无 Frontmatter，以 relativePath 为身份。
+   */
+  noteId: string | null;
+  /** 相对 Vault 根的 POSIX 风格路径（如 "学习" / "学习/React.md"）。 */
   relativePath: string;
-  /** 标题（Frontmatter title 或文件名去扩展名）。 */
+  /** 文件夹 → group（r006 §7）；.md 文件 → document。 */
+  kind: "group" | "document";
+  /** 标题：document 取 Frontmatter title，缺省为文件名去 .md；group 为目录名。 */
   title: string;
-  /** 文件 mtime（毫秒时间戳）。 */
-  updatedAt: number;
+  /** 父目录相对路径；位于 Vault 根为 null。 */
+  parentPath: string | null;
+  /** Frontmatter tags（document；group 恒为空数组）。 */
+  tags: string[];
 }
 
 export interface VaultScanResult {
-  vaultId: string;
-  /** 文件夹相对路径列表（映射为分组），按名称排序。 */
-  folders: string[];
-  /** 全部 .md 笔记条目，按 relativePath 排序（r006 §8：文件名排序）。 */
-  notes: VaultScanEntry[];
+  vault: {
+    /** .e1/vault.json 的 vaultId；目录未初始化（纯 Markdown 文件夹）为 null。 */
+    vaultId: string | null;
+    /** 库名：vault.json name，未初始化时为目录 basename。 */
+    name: string;
+  };
+  /**
+   * 全部条目（DFS 序：每目录内先 group 后 document，各按名称
+   * localeCompare("zh-CN") 排序——r006 §8 文件名排序，比较器选择在此锁定）。
+   */
+  entries: VaultScanEntry[];
 }
 
 /* ---------------------------------- note ---------------------------------- */
@@ -164,9 +226,16 @@ export interface E1DesktopAPI {
     node?: string;
   };
   vault: {
-    /** 原生目录选择；取消返回 null，选中返回 vaultId 为 null 的目录信息。 */
+    /** 原生目录选择；取消返回 null，选中返回目录信息（已是 Vault 时带 vaultId）。 */
     selectDirectory(): Promise<SelectedVault | null>;
-    /** 扫描 Vault 生成笔记树（阶段 2 实现，阶段 1 返回 NOT_IMPLEMENTED）。 */
+    /**
+     * 打开本地 Vault：未初始化目录经用户确认后初始化（创建 .e1/vault.json
+     * 与 assets/），已初始化目录直接打开；成功后记入最近列表（US-06）。
+     */
+    open(input: OpenVaultRequest): Promise<OpenedVault>;
+    /** 最近打开的 Vault 列表（lastOpenedAt 倒序，上限 10 条）。 */
+    listRecent(): Promise<RecentVault[]>;
+    /** 扫描 Vault 生成笔记树（vaultId 经最近列表解析根目录）。 */
     scan(vaultId: string): Promise<VaultScanResult>;
   };
   note: {

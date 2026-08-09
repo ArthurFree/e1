@@ -106,6 +106,9 @@ export function MainArea() {
     raw: unknown;
     error: string;
   } | null>(null);
+  // 正文加载失败（R006 阶段 2：Desktop 的 get 诚实抛错——note.read 属
+  // 阶段 3）：显示错误文案而非永远停在「正在加载文档…」。
+  const [contentError, setContentError] = useState<string | null>(null);
   // 应用恢复后递增：强制编辑器以恢复内容重建，并触发一次立即保存。
   const [contentEpoch, setContentEpoch] = useState(0);
   const retrySaveRef = useRef<(() => void) | null>(null);
@@ -125,6 +128,7 @@ export function MainArea() {
     setContent(null);
     setRecovery(null);
     setCorrupted(null);
+    setContentError(null);
     setRemoteConflict(false);
     pendingExitToBodyRef.current = false;
     if (view === "document" && page?.kind === "document") {
@@ -155,6 +159,15 @@ export function MainArea() {
             setRecovery(record);
           }
           setContent(base);
+        })
+        .catch((err: unknown) => {
+          // 加载失败（如 Desktop 阶段 2 的 get 诚实抛错）：展示错误文案，
+          // 不再永远停在加载占位（此前该路径是无感知的未处理拒签）。
+          if (cancelled) return;
+          console.error("文档内容加载失败", err);
+          setContentError(
+            err instanceof Error ? err.message : "文档内容加载失败，请重试。",
+          );
         });
     }
     return () => {
@@ -591,7 +604,11 @@ export function MainArea() {
                 <TagPicker pageId={page.id} />
               </div>
               <div className="doc-body">
-                {corrupted ? (
+                {contentError ? (
+                  <p className="doc-placeholder" role="alert">
+                    {contentError}
+                  </p>
+                ) : corrupted ? (
                   <div className="corrupted-panel" role="alert">
                     <h2 className="corrupted-panel__title">文档内容损坏</h2>
                     <p className="corrupted-panel__hint">

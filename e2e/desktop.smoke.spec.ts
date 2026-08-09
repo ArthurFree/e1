@@ -3,10 +3,30 @@
 // 因此需要先运行 npm run build:desktop 产出 dist/ 与 dist-electron/。
 // 本 spec 不进默认 test:e2e 链路：默认脚本以 --grep-invert "桌面冒烟" 排除，
 // 独立运行用 npm run test:e2e:desktop（--grep "桌面冒烟"）。
+// R006 阶段 2（C2）：新增「打开本地 Vault 全链路」用例；两个用例均以
+// E1_USER_DATA_DIR 指向临时目录，recent-vaults.json 互相隔离、不污染开发数据。
 import { test, expect, _electron as electron } from "@playwright/test";
 import { existsSync } from "node:fs";
+import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+/** 以隔离的临时 userData 启动应用（返回 app 与清理函数）。 */
+async function launchIsolated() {
+  const userDataDir = await mkdtemp(path.join(os.tmpdir(), "e1-userdata-"));
+  const app = await electron.launch({
+    args: ["."],
+    env: { ...process.env, E1_USER_DATA_DIR: userDataDir },
+  });
+  return {
+    app,
+    async cleanup() {
+      await app.close();
+      await rm(userDataDir, { recursive: true, force: true });
+    },
+  };
+}
 
 test.describe("桌面冒烟", () => {
   test.beforeAll(() => {
@@ -22,8 +42,8 @@ test.describe("桌面冒烟", () => {
     );
   });
 
-  test("桌面冒烟：desktop 入口渲染 fake adapter UI + IPC 桥存在", async () => {
-    const app = await electron.launch({ args: ["."] });
+  test("桌面冒烟：desktop 入口渲染应用 UI + IPC 桥存在", async () => {
+    const { app, cleanup } = await launchIsolated();
     const window = await app.firstWindow();
 
     // R006 阶段 1 预加载契约：contextBridge 暴露的完整 E1DesktopAPI
@@ -48,16 +68,137 @@ test.describe("桌面冒烟", () => {
     });
     expect(bridge).toEqual({
       platform: "desktop",
-      vault: ["scan", "selectDirectory"],
+      // R006 阶段 2：vault 组扩展 open / listRecent。
+      vault: ["listRecent", "open", "scan", "selectDirectory"],
       note: ["create", "read", "save"],
       asset: ["import", "pick", "resolveUrl"],
     });
 
-    // desktop.html 经 fake adapter（内存容器）渲染应用 UI；开始首页标题
-    // 与知识库无关，空库也渲染。页面树无种子数据不渲染，不做断言。
+    // R006 阶段 2 起 desktop.html 经 IPC-backed 容器渲染；隔离 userData 下
+    // 无最近 Vault，进入开始首页（标题与知识库无关，空库也渲染）。
     await expect(window.getByRole("heading", { name: "开始" })).toBeVisible();
+    // C2 能力门控入口：localDirectory=true → 「打开本地知识库」。
+    await expect(window.getByLabel("打开本地知识库")).toBeVisible();
 
     await window.screenshot({ path: "test-results/desktop-smoke.png" });
-    await app.close();
+    await cleanup();
+  });
+
+  test("桌面冒烟：打开本地 Vault 全链路（open+scan+重开自动进入，US-01/06）", async () => {
+    // 临时 Vault：52 个 Markdown + 5 个嵌套中文目录（其中一篇带 Frontmatter）。
+    const vaultDir = await mkdtemp(path.join(os.tmpdir(), "e1-vault-"));
+    const vaultName = path.basename(vaultDir);
+    const files: Array<[string, string]> = [];
+    files.push(
+      ["根笔记一.md", "# 根笔记一\n"],
+      ["根笔记二.md", "# 根笔记二\n"],
+    );
+    for (let i = 1; i <= 5; i += 1)
+      files.push([`学习/学习笔记${i}.md`, `# 学习笔记${i}\n`]);
+    for (let i = 1; i <= 19; i += 1)
+      files.push([`学习/前端/前端笔记${i}.md`, `# 前端笔记${i}\n`]);
+    files.push([
+      "学习/前端/React 进阶.md",
+      [
+        "---",
+        "id: 01JTESTSMOKE000000000001",
+        "title: React 进阶",
+        "tags: [前端, 框架]",
+        "---",
+        "",
+        "# React 进阶",
+        "",
+      ].join("\n"),
+    ]);
+    for (let i = 1; i <= 5; i += 1)
+      files.push([`工作/工作笔记${i}.md`, `# 工作笔记${i}\n`]);
+    for (let i = 1; i <= 15; i += 1)
+      files.push([`工作/会议/会议纪要${i}.md`, `# 会议纪要${i}\n`]);
+    for (let i = 1; i <= 5; i += 1)
+      files.push([`生活/生活笔记${i}.md`, `# 生活笔记${i}\n`]);
+    for (const [rel, content] of files) {
+      const abs = path.join(vaultDir, rel);
+      await mkdir(path.dirname(abs), { recursive: true });
+      await writeFile(abs, content, "utf8");
+    }
+
+    const userDataDir = await mkdtemp(path.join(os.tmpdir(), "e1-userdata-"));
+    const launch = () =>
+      electron.launch({
+        args: ["."],
+        env: { ...process.env, E1_USER_DATA_DIR: userDataDir },
+      });
+
+    // —— 第一次启动：经 window.e1 直接打通 open（初始化+登记最近）→ scan ——
+    const app1 = await launch();
+    const window1 = await app1.firstWindow();
+    const opened = await window1.evaluate(async (dir) => {
+      const e1 = (
+        window as unknown as {
+          e1: {
+            vault: {
+              open(input: { absolutePath: string }): Promise<{
+                vaultId: string;
+                name: string;
+                initialized: boolean;
+              }>;
+              scan(vaultId: string): Promise<{
+                vault: { vaultId: string | null; name: string };
+                entries: Array<{
+                  noteId: string | null;
+                  relativePath: string;
+                  kind: "group" | "document";
+                  title: string;
+                  parentPath: string | null;
+                  tags: string[];
+                }>;
+              }>;
+            };
+          };
+        }
+      ).e1;
+      const vault = await e1.vault.open({ absolutePath: dir });
+      const scan = await e1.vault.scan(vault.vaultId);
+      return { vault, scan };
+    }, vaultDir);
+
+    expect(opened.vault.initialized).toBe(true);
+    expect(opened.vault.name).toBe(vaultName);
+    expect(opened.scan.vault.vaultId).toBe(opened.vault.vaultId);
+    // 52 篇文档 + 5 个目录分组（学习/学习·前端/工作/工作·会议/生活）。
+    expect(opened.scan.entries).toHaveLength(57);
+    expect(opened.scan.entries.filter((e) => e.kind === "group")).toHaveLength(
+      5,
+    );
+    // 树形状抽查：Frontmatter 解析（id/title/tags）+ 父子链接。
+    const react = opened.scan.entries.find(
+      (e) => e.relativePath === "学习/前端/React 进阶.md",
+    );
+    expect(react).toMatchObject({
+      noteId: "01JTESTSMOKE000000000001",
+      kind: "document",
+      title: "React 进阶",
+      parentPath: "学习/前端",
+      tags: ["前端", "框架"],
+    });
+    await app1.close();
+
+    // —— 第二次启动（同一 userData）：自动列出最近 Vault 并进入（US-06）——
+    const app2 = await launch();
+    const window2 = await app2.firstWindow();
+    // 侧栏出现该知识库（listRecent 映射），无需重新选目录。
+    await expect(window2.getByLabel(`知识库「${vaultName}」`)).toBeVisible();
+    // 页面树真实渲染：文件夹=分组、md=文档（Frontmatter 标题）。
+    await expect(
+      window2.getByRole("treeitem", { name: /React 进阶/ }),
+    ).toBeVisible();
+    await expect(
+      window2.getByRole("treeitem", { name: /会议纪要15/ }),
+    ).toBeVisible();
+    await window2.screenshot({ path: "test-results/desktop-vault-smoke.png" });
+    await app2.close();
+
+    await rm(vaultDir, { recursive: true, force: true });
+    await rm(userDataDir, { recursive: true, force: true });
   });
 });

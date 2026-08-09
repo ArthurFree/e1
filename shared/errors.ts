@@ -103,6 +103,9 @@ const DOMAIN_TO_IPC: Record<string, IpcErrorCode> = {
   ATTACHMENT_TOO_LARGE: "INVALID_INPUT",
   UNSUPPORTED_ATTACHMENT_TYPE: "INVALID_INPUT",
   CORRUPTED_DOCUMENT: "INTERNAL",
+  // R006 阶段 2：Desktop 写路径的诚实失败码原样透传（CANCELLED 只出现在
+  // Renderer 侧原生选择流程，不跨 IPC，刻意不映射）。
+  NOT_IMPLEMENTED: "NOT_IMPLEMENTED",
 };
 
 /** IPC 错误码 → domain 错误码（可反向映射的子集；无对应 domain 语义时为 null）。 */

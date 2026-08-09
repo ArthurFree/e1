@@ -9,6 +9,7 @@ import {
   parseCreateNoteInput,
   parseImportAssetInput,
   parseNoInput,
+  parseOpenVaultRequest,
   parseReadNoteInput,
   parseResolveAssetUrlInput,
   parseSaveNoteInput,
@@ -53,6 +54,30 @@ describe("parseVaultScanRequest", () => {
     expectFailure(() => parseVaultScanRequest(42), "INVALID_INPUT");
     expectFailure(
       () => parseVaultScanRequest({ vaultId: "v" }),
+      "INVALID_INPUT",
+    );
+  });
+});
+
+describe("parseOpenVaultRequest（R006 阶段 2）", () => {
+  it("absolutePath 必填；name 可选", () => {
+    expect(parseOpenVaultRequest({ absolutePath: "/x/笔记" })).toEqual({
+      absolutePath: "/x/笔记",
+    });
+    expect(
+      parseOpenVaultRequest({ absolutePath: "/x/笔记", name: "我的库" }),
+    ).toEqual({ absolutePath: "/x/笔记", name: "我的库" });
+  });
+
+  it("形状非法 INVALID_INPUT", () => {
+    expectFailure(() => parseOpenVaultRequest("/x"), "INVALID_INPUT");
+    expectFailure(() => parseOpenVaultRequest({}), "INVALID_INPUT");
+    expectFailure(
+      () => parseOpenVaultRequest({ absolutePath: "  " }),
+      "INVALID_INPUT",
+    );
+    expectFailure(
+      () => parseOpenVaultRequest({ absolutePath: "/x", name: 42 }),
       "INVALID_INPUT",
     );
   });

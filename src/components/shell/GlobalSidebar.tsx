@@ -8,6 +8,8 @@
  */
 
 import { useState } from "react";
+import { isDomainError } from "../../domain/errors";
+import { useAppServices } from "../../state/AppServicesProvider";
 import {
   useWorkspaceCommands,
   useWorkspaceData,
@@ -24,6 +26,7 @@ import { StartPreview } from "../StartPreview";
 import {
   IconBook,
   IconClock,
+  IconFolderPlus,
   IconHome,
   IconPlus,
   IconSearch,
@@ -39,6 +42,7 @@ import {
  * 面板开关统一由 OverlayContext 持有（R003 阶段 6）。
  */
 export function GlobalSidebar() {
+  const services = useAppServices();
   const { workspaces, workspace } = useWorkspaceData();
   const { switchWorkspace, createWorkspace } = useWorkspaceCommands();
   const { view } = useNavigationState();
@@ -54,6 +58,23 @@ export function GlobalSidebar() {
     closeTrash,
   } = useOverlay();
   const [previewOpen, setPreviewOpen] = useState(false);
+  // DUAL-01：只判断能力字段。localDirectory（R006 阶段 2，桌面端）下
+  // 「新建知识库」入口替换为「打开本地知识库」——同一 createWorkspace
+  // 命令通道，Desktop WorkspaceRepository.create 内含原生目录选择 +
+  // vault.open 初始化语义（US-01/US-02），不新增 Provider 命令。
+  const canOpenLocalVault = services.capabilities.localDirectory;
+
+  const onOpenLocalVault = () => {
+    // name 入参在桌面端被忽略（库名取 vault.json / 目录 basename）。
+    void createWorkspace("本地知识库").catch((err: unknown) => {
+      // 用户取消目录选择：静默返回，不打扰。
+      if (isDomainError(err, "CANCELLED")) return;
+      console.error("打开本地知识库失败", err);
+      services.assets.notify.notify(
+        err instanceof Error ? err.message : "打开本地知识库失败，请重试。",
+      );
+    });
+  };
 
   return (
     <nav className="gsb" aria-label="全局导航">
@@ -131,15 +152,27 @@ export function GlobalSidebar() {
       <div className="gsb__section">
         <div className="gsb__section-title">
           <span className="gsb__label">知识库</span>
-          <button
-            type="button"
-            className="gsb__section-action"
-            aria-label="新建知识库"
-            title="新建知识库"
-            onClick={() => void createWorkspace("新建知识库")}
-          >
-            <IconPlus size={14} />
-          </button>
+          {canOpenLocalVault ? (
+            <button
+              type="button"
+              className="gsb__section-action"
+              aria-label="打开本地知识库"
+              title="打开本地知识库"
+              onClick={onOpenLocalVault}
+            >
+              <IconFolderPlus size={14} />
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="gsb__section-action"
+              aria-label="新建知识库"
+              title="新建知识库"
+              onClick={() => void createWorkspace("新建知识库")}
+            >
+              <IconPlus size={14} />
+            </button>
+          )}
         </div>
         {workspaces.map((ws) => (
           <button

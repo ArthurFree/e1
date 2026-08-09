@@ -35,9 +35,9 @@ R005 将项目划分为四层运行时边界：Shared UI、Shared Application、
 - 不得把浏览器实现细节（Blob、Object URL、BroadcastChannel 事件形状）泄漏进 application/domain 的公开接口；
 - `browserServices.ts` 只负责装配，不含业务判断。
 
-### Desktop Runtime（R006 阶段 0+1 已落地骨架，阶段 2 起接入真实文件系统）
+### Desktop Runtime（R006 阶段 0+1 骨架、阶段 2 已接入真实文件系统读路径）
 
-现状：Electron Shell（`electron/main` ESM + sandbox preload CJS，contextIsolation 开启、nodeIntegration 关闭）、`shared/ipc` 契约与手写 schema 校验、`shared/errors` 统一错误码、preload `window.e1`（vault/note/asset 三组，信封解包 + 带码拒签）、`src/platform/desktop/`（`desktopCapabilities` 仅 `localDirectory: true`、`createDesktopRuntime` 暂为内存容器 fake adapter）。装配根 `src/main.desktop.tsx` 经 `desktop.html` 多页入口加载。
+现状：Electron Shell（`electron/main` ESM + sandbox preload CJS，contextIsolation 开启、nodeIntegration 关闭）、`shared/ipc` 契约与手写 schema 校验、`shared/errors` 统一错误码、preload `window.e1`（vault/note/asset 三组，信封解包 + 带码拒签）、`src/platform/desktop/`（`desktopCapabilities` 仅 `localDirectory: true`；阶段 2 起 `createDesktopRuntime` 为 IPC-backed 真实装配——Workspace/Page/Tag 读路径经 vault:listRecent/open/scan 映射 domain port，Content 读与全部写路径抛 DomainError("NOT_IMPLEMENTED") 诚实失败，note.read/create/save 属阶段 3/4）。装配根 `src/main.desktop.tsx` 经 `desktop.html` 多页入口加载。
 
 职责（目标）：Renderer 侧经 IPC Client 实现同一组 port；Electron Main 负责目录选择、路径安全校验、Markdown 文件读写、临时文件原子替换、附件复制、自定义资源协议、文件 hash、IPC 参数校验。Desktop 以 Markdown 文件为真实数据源（DUAL-04）。
 
