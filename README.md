@@ -37,6 +37,15 @@ npm run test:e2e         # Playwright 端到端 + 1440×900 截图回归 + 响�
 npm run test:e2e:update  # 更新截图基线（界面变更后执行并审查 diff）
 ```
 
+Desktop（R006 技术验证版，Electron）：
+
+```bash
+npm run dev:desktop      # 桌面开发（vite dev + esbuild watch + Electron 窗口）
+npm run build:desktop    # Web 构建 + Electron 主进程/预加载打包（dist-electron/）
+npm run test:desktop     # 桌面侧单元测试（IPC 契约/preload/平台适配）
+npm run test:e2e:desktop # Electron 冒烟（需先 build:desktop，不进 CI）
+```
+
 Playwright 浏览器二进制安装在项目内（`PLAYWRIGHT_BROWSERS_PATH=0`），首次运行 `test:e2e` 前如缺浏览器，执行 `PLAYWRIGHT_BROWSERS_PATH=0 npx playwright install chromium`。
 
 CI（`.github/workflows/ci.yml`）：quality job 跑 `npm run ci` + 覆盖率；e2e job 跑功能与响应式（视觉截图基线为 macOS 生成，不纳入 CI，基线变化须人工审查）。

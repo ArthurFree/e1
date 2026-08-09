@@ -2,6 +2,21 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      R006 阶段 0：内容安全策略（Web 与 Electron 桌面共用同一份 index.html）。
+      script-src 含 'unsafe-inline' 的取舍：Vite dev 的 React refresh 以 inline
+      preamble 注入本页面，'self' 严格策略会在 dev 下直接阻断模块加载；
+      生产构建产物无 inline 脚本，此处为兼容 dev 而放宽，是静态 meta CSP
+      无法区分环境的折中。其余指令保持严格：
+      - style-src 'unsafe-inline'：React 内联 style 属性所需；
+      - img-src blob:/data:：附件 Object URL 与内联图片；
+      - font-src data:：KaTeX 等内联字体兜底；
+      - connect-src http:/https:/ws:：AI endpoint 与 Vite HMR WebSocket。
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' http: https: ws:"
+    />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Notion-like Web</title>
   </head>

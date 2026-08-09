@@ -267,4 +267,50 @@ describe("架构分层约束", () => {
     expect(format(violations)).toBe("");
     expect(violations).toEqual([]);
   });
+
+  /**
+   * R006 阶段 1：window.e1 / getDesktopApi 只允许出现在 Desktop 装配根
+   * （main.desktop.tsx）与 platform/desktop/**——桌面桥是平台边界，
+   * 组件与状态层不得直接触碰（测试与测试基建已由 entries 过滤豁免）。
+   */
+  it("仅 main.desktop.tsx 与 platform/desktop 可访问 window.e1/getDesktopApi（R006 阶段 1）", () => {
+    const pattern = /\bwindow\.e1\b|\bgetDesktopApi\b/;
+    const violations: Violation[] = [];
+    for (const [path, content] of entries) {
+      if (path === "../main.desktop.tsx") continue;
+      if (path.startsWith("../platform/desktop/")) continue;
+      content.split("\n").forEach((text, index) => {
+        const trimmed = text.trim();
+        if (trimmed.startsWith("*") || trimmed.startsWith("//")) return;
+        if (pattern.test(text)) {
+          violations.push({ file: path, line: index + 1, text: trimmed });
+        }
+      });
+    }
+    expect(format(violations)).toBe("");
+    expect(violations).toEqual([]);
+  });
+
+  /**
+   * R006 阶段 1（DUAL-01）：src 不得出现平台名称判断字面量
+   * （isElectron / process.platform / process.versions.electron）——
+   * 组件只能判断能力矩阵字段。测试与测试基建豁免（entries 已过滤）；
+   * 注释中的说明文字不计违规（只统计代码行）。
+   */
+  it("src 不得出现平台判断字面量 isElectron/process.platform（DUAL-01，R006 阶段 1）", () => {
+    const pattern =
+      /\bisElectron\b|process\.platform|process\.versions\.electron/;
+    const violations: Violation[] = [];
+    for (const [path, content] of entries) {
+      content.split("\n").forEach((text, index) => {
+        const trimmed = text.trim();
+        if (trimmed.startsWith("*") || trimmed.startsWith("//")) return;
+        if (pattern.test(text)) {
+          violations.push({ file: path, line: index + 1, text: trimmed });
+        }
+      });
+    }
+    expect(format(violations)).toBe("");
+    expect(violations).toEqual([]);
+  });
 });

@@ -7,6 +7,7 @@ export default tseslint.config(
   {
     ignores: [
       "dist",
+      "dist-electron",
       "node_modules",
       "coverage",
       "playwright-report",
@@ -46,6 +47,18 @@ export default tseslint.config(
       globals: {
         process: "readonly",
         console: "readonly",
+      },
+    },
+  },
+  {
+    // R006 阶段 0：Electron 主进程/预加载与 node 脚本的 Node 全局。
+    files: ["electron/**/*.ts", "scripts/*.{mjs,js}"],
+    languageOptions: {
+      globals: {
+        process: "readonly",
+        console: "readonly",
+        fetch: "readonly",
+        setTimeout: "readonly",
       },
     },
   },

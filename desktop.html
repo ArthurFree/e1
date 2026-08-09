@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <!--
+      R006 阶段 1：Desktop 入口（多页构建第二页）。CSP 与 index.html 保持
+      一致（含 script-src 'unsafe-inline' 的 dev 折中，取舍见 index.html
+      文件头注释）；本页面只在 Electron 内加载，preload 注入 window.e1。
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' http: https: ws:"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>E1 Desktop</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.desktop.tsx"></script>
+  </body>
+</html>

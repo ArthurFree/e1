@@ -39,6 +39,7 @@ import {
 import { AssetCommandService } from "../../application/assets/AssetCommandService";
 import { webCapabilities } from "../../platform/web/webCapabilities";
 import { BrowserMemorySearchIndex } from "../../platform/web/search/BrowserMemorySearchIndex";
+import type { RuntimeCapabilities } from "../../runtime/RuntimeCapabilities";
 
 export interface InMemoryAppServicesOptions {
   /** 预置数据；缺省为全新空库。 */
@@ -51,6 +52,11 @@ export interface InMemoryAppServicesOptions {
    * 测试注入 mock 后可验证发送/接收/回声抑制。
    */
   syncChannel?: BroadcastChannelLike | null;
+  /**
+   * 能力矩阵覆盖（R006 阶段 1）：缺省 webCapabilities（测试环境即 Web
+   * 语义）；Desktop fake adapter 经本参数注入 desktopCapabilities。
+   */
+  capabilities?: RuntimeCapabilities;
 }
 
 /**
@@ -132,8 +138,9 @@ export function createInMemoryAppServices(
       picker: new StubAssetPicker(),
       notify: new StubNotificationService(),
     },
-    // 运行时能力矩阵（R005 阶段 2）：测试环境即 Web 语义，复用同一常量。
-    capabilities: webCapabilities,
+    // 运行时能力矩阵（R005 阶段 2）：缺省 webCapabilities（测试环境即 Web
+    // 语义）；R006 阶段 1 起 Desktop fake adapter 经 options 覆盖。
+    capabilities: options.capabilities ?? webCapabilities,
     // 命令/查询服务（R005 批次 1）：与生产容器同装配。
     commands: {
       workspace: new WorkspaceCommandService({

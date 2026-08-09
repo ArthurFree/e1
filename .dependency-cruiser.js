@@ -47,6 +47,22 @@ export default {
       },
       to: { path: "^src/infrastructure" },
     },
+    {
+      name: "electron-no-src",
+      comment:
+        "R006 阶段 1：electron 不得依赖 src（Main/Preload 与 Renderer 只经 shared/ 共享契约）",
+      severity: "error",
+      from: { path: "^electron" },
+      to: { path: "^src" },
+    },
+    {
+      name: "src-no-electron",
+      comment:
+        "R006 阶段 1：src 不得依赖 electron（桌面能力只经 platform/desktop + shared/ 契约）",
+      severity: "error",
+      from: { path: "^src" },
+      to: { path: "^electron" },
+    },
   ],
   options: {
     doNotFollow: {
