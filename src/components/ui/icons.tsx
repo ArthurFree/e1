@@ -288,6 +288,15 @@ export const IconHistory = (p: IconProps) => (
   </Svg>
 );
 
+/** 警告（R006-C3 FR-20/§36.3：兼容性提示与文件读取错误块）。 */
+export const IconAlertTriangle = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+    <path d="M12 9v4" />
+    <path d="M12 17h.01" />
+  </Svg>
+);
+
 export const IconAlignLeft = (p: IconProps) => (
   <Svg {...p}>
     <path d="M21 6H3M15 12H3M17 18H3" />

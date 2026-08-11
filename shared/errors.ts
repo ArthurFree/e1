@@ -19,8 +19,24 @@ export type IpcErrorCode =
   | "NOT_IMPLEMENTED"
   /** vaultId 对应的 Vault 不存在或目录不可访问。 */
   | "VAULT_NOT_FOUND"
+  /** R006-C2.1（FR-04）：读取 Vault 元数据被拒绝（EACCES/EPERM）。 */
+  | "VAULT_PERMISSION_DENIED"
+  /** R006-C2.1（FR-04）：读取 Vault 元数据的其他系统 I/O 错误。 */
+  | "VAULT_IO_ERROR"
+  /** R006-C2.1（FR-01）：目录选择授权令牌过期（5 分钟）。 */
+  | "SELECTION_EXPIRED"
+  /** R006-C2.1（FR-01）：目录选择授权令牌不存在/已被消费/伪造。 */
+  | "SELECTION_INVALID"
   /** 指定 noteId/relativePath 的笔记不存在。 */
   | "NOTE_NOT_FOUND"
+  /** R006-C3（FR-24）：读取 Markdown 被拒绝（EACCES/EPERM）。 */
+  | "NOTE_PERMISSION_DENIED"
+  /** R006-C3（FR-25）：读取 Markdown 的其他系统 I/O 错误。 */
+  | "NOTE_IO_ERROR"
+  /** R006-C3（FR-09）：Markdown 超过单文件大小上限（10 MiB）。 */
+  | "DOCUMENT_TOO_LARGE"
+  /** R006-C3（FR-10）：文件无法作为 UTF-8 安全解码（不猜测/不转码）。 */
+  | "UNSUPPORTED_ENCODING"
   /** 附件不存在。 */
   | "ASSET_NOT_FOUND"
   /** 路径逃逸：相对路径含 ../、绝对路径注入或符号链接逃逸出 Vault 根。 */
@@ -34,6 +50,12 @@ export type IpcErrorCode =
 export interface IpcErrorPayload {
   code: IpcErrorCode;
   message: string;
+  /**
+   * R006-C3（FR-09）：可选结构化细节（如 DOCUMENT_TOO_LARGE 携带
+   * { sizeBytes, maxBytes } 供 UI 展示文件大小/上限）；程序只读字段值，
+   * 不得以此替代 code 判断错误类型。
+   */
+  details?: Record<string, unknown>;
 }
 
 /** IPC 调用失败：Main/Preload/Renderer 三侧共用的带码 Error。 */
@@ -41,6 +63,7 @@ export class IpcFailure extends Error {
   constructor(
     readonly code: IpcErrorCode,
     message: string,
+    readonly details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = "IpcFailure";
@@ -55,6 +78,7 @@ export class DesktopIpcError extends Error {
   constructor(
     readonly code: IpcErrorCode,
     message: string,
+    readonly details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = "DesktopIpcError";
@@ -106,6 +130,12 @@ const DOMAIN_TO_IPC: Record<string, IpcErrorCode> = {
   // R006 阶段 2：Desktop 写路径的诚实失败码原样透传（CANCELLED 只出现在
   // Renderer 侧原生选择流程，不跨 IPC，刻意不映射）。
   NOT_IMPLEMENTED: "NOT_IMPLEMENTED",
+  // R006-C3：笔记读取的四个 Main 侧原生码在 domain 中有同名对应（FR-09/10/24/25），
+  // 双向原样透传。
+  NOTE_PERMISSION_DENIED: "NOTE_PERMISSION_DENIED",
+  NOTE_IO_ERROR: "NOTE_IO_ERROR",
+  DOCUMENT_TOO_LARGE: "DOCUMENT_TOO_LARGE",
+  UNSUPPORTED_ENCODING: "UNSUPPORTED_ENCODING",
 };
 
 /** IPC 错误码 → domain 错误码（可反向映射的子集；无对应 domain 语义时为 null）。 */
@@ -114,6 +144,14 @@ const IPC_TO_DOMAIN: Partial<Record<IpcErrorCode, string>> = {
   DOCUMENT_CONFLICT: "DOCUMENT_CONFLICT",
   VAULT_NOT_FOUND: "WORKSPACE_NOT_FOUND",
   NOTE_NOT_FOUND: "PAGE_NOT_FOUND",
+  // R006-C2.1：VAULT_PERMISSION_DENIED / VAULT_IO_ERROR / SELECTION_EXPIRED /
+  // SELECTION_INVALID 为 Main 侧 IpcFailure 原生码，无 domain 对应语义，
+  // 反向映射得 null（与 NOT_IMPLEMENTED/PATH_ESCAPE 同处理）。
+  // R006-C3（FR-09/10/24/25）：笔记读取四码已加入 domain（同名），反向映射。
+  NOTE_PERMISSION_DENIED: "NOTE_PERMISSION_DENIED",
+  NOTE_IO_ERROR: "NOTE_IO_ERROR",
+  DOCUMENT_TOO_LARGE: "DOCUMENT_TOO_LARGE",
+  UNSUPPORTED_ENCODING: "UNSUPPORTED_ENCODING",
 };
 
 /** DomainError → IPC 错误载荷；未识别的 domain code 归一为 INTERNAL。 */
@@ -135,7 +173,11 @@ export function domainCodeFromIpc(code: IpcErrorCode): string | null {
  */
 export function toIpcErrorPayload(error: unknown): IpcErrorPayload {
   if (error instanceof IpcFailure) {
-    return { code: error.code, message: error.message };
+    return {
+      code: error.code,
+      message: error.message,
+      ...(error.details ? { details: error.details } : {}),
+    };
   }
   // DomainError 判定先于线格式守卫：DomainError 同样带 code/message，
   // 但其 code 是 domain 码，必须经映射表转换。
@@ -143,7 +185,12 @@ export function toIpcErrorPayload(error: unknown): IpcErrorPayload {
     return ipcErrorFromDomain(error);
   }
   if (isIpcErrorPayload(error)) {
-    return { code: error.code, message: error.message };
+    // details 透传（仅当是普通对象；FR-09 DOCUMENT_TOO_LARGE 的 sizeBytes/maxBytes）。
+    const details =
+      typeof error.details === "object" && error.details !== null
+        ? { details: error.details }
+        : {};
+    return { code: error.code, message: error.message, ...details };
   }
   if (error instanceof Error) {
     return { code: "INTERNAL", message: error.message };

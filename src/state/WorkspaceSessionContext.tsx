@@ -49,6 +49,12 @@ export interface WorkspaceDataContextValue {
 export interface WorkspaceCommandContextValue {
   /** 初始加载失败后重试。 */
   retryLoad(): void;
+  /**
+   * 刷新当前知识库的页面/标签镜像（R006-C3 FR-26）：从存储重读页面、
+   * 标签与页面-标签关联。供 Desktop「重新扫描知识库」在扫描缓存失效后
+   * 刷新树与标签；Web 无外部变更源，语义等价于从 IndexedDB 重读镜像。
+   */
+  refreshCurrentWorkspace(): Promise<void>;
   /** 切换当前知识库：原子重载其页面/标签/关联并进入知识库首页。 */
   switchWorkspace(id: string): Promise<void>;
   /** 创建知识库并立即切换过去。 */

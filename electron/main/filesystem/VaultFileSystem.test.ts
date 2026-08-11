@@ -3,7 +3,9 @@
  * R006 阶段 2：VaultFileSystem 测试（真实 tmp 文件系统）。
  *
  * 覆盖：readVault 未初始化/合法/坏 JSON/坏 format/不支持的 formatVersion
- * （损坏时不修改任何文件）；initializeVault 创建 vault.json + assets/、
+ * （损坏时不修改任何文件）；R006-C2.1（FR-04 / §41.2）错误分类——EACCES
+ * （chmod 000 真实模拟）/EPERM/其他 I/O（classifyVaultReadError 纯函数）
+ * 与 assertVaultRootDirectory 同步分类；initializeVault 创建 vault.json + assets/、
  * 幂等、name 缺省回退目录名；scanVault 树映射（中文名/嵌套/同名不同目录/
  * 无 Frontmatter/有 Frontmatter id·title·tags/非 md 混入/.e1·隐藏目录·
  * node_modules 跳过/符号链接不跟随）、group 身份与 parentPath、
@@ -92,6 +94,86 @@ describe("readVault", () => {
     await expectInvalid(readVault(root));
     // 损坏时不修改任何文件（US-01/防数据破坏）。
     expect(await readFile(file, "utf8")).toBe(content);
+  });
+
+  // R006-C2.1（FR-04 / r006-c3 §41.2）：读取失败按 FS error code 分类，
+  // 绝不自动初始化/重建/修复（SEC-07）。
+  it("EACCES（.e1 目录无权限）→ VAULT_PERMISSION_DENIED，不创建任何文件", async () => {
+    const root = await makeDir();
+    const e1Dir = join(root, ".e1");
+    await mkdir(e1Dir);
+    await writeFile(
+      join(e1Dir, "vault.json"),
+      JSON.stringify({
+        format: "e1-vault",
+        formatVersion: 1,
+        vaultId: "v-1",
+        name: "库",
+      }),
+    );
+    const { chmod } = await import("node:fs/promises");
+    await chmod(e1Dir, 0o000);
+    try {
+      const error = await readVault(root).then(
+        () => {
+          throw new Error("应抛 VAULT_PERMISSION_DENIED");
+        },
+        (e: unknown) => e,
+      );
+      expect(error).toBeInstanceOf(IpcFailure);
+      expect((error as IpcFailure).code).toBe("VAULT_PERMISSION_DENIED");
+      expect((error as IpcFailure).message).toBe(
+        "无法读取该文件夹，请检查文件或目录访问权限。",
+      );
+    } finally {
+      // 恢复权限，保证临时目录可清理。
+      await chmod(e1Dir, 0o755);
+    }
+  });
+
+  it("EPERM / 其他 I/O 的分类（classifyVaultReadError 纯函数）", async () => {
+    const { classifyVaultReadError } = await import("./VaultFileSystem.js");
+    // ENOENT → null（未初始化，由 readVault 转 uninitialized）。
+    expect(classifyVaultReadError({ code: "ENOENT" })).toBeNull();
+    // EPERM → VAULT_PERMISSION_DENIED。
+    const perm = classifyVaultReadError({ code: "EPERM" });
+    expect(perm).toBeInstanceOf(IpcFailure);
+    expect(perm?.code).toBe("VAULT_PERMISSION_DENIED");
+    // 其他 I/O（EIO/无 code 的未知错误）→ VAULT_IO_ERROR。
+    const io = classifyVaultReadError({ code: "EIO" });
+    expect(io?.code).toBe("VAULT_IO_ERROR");
+    expect(io?.message).toBe("读取知识库时发生系统错误，请重新尝试。");
+    const unknown = classifyVaultReadError(new Error("奇怪的错误"));
+    expect(unknown?.code).toBe("VAULT_IO_ERROR");
+  });
+
+  it("assertVaultRootDirectory：EACCES → VAULT_PERMISSION_DENIED，ENOENT → VAULT_NOT_FOUND", async () => {
+    const { assertVaultRootDirectory } = await import("./VaultFileSystem.js");
+    const root = await makeDir();
+    // stat 目标目录需要其父目录的读/执行权限——锁定父目录制造 EACCES。
+    const parent = join(root, "锁定父目录");
+    await mkdir(join(parent, "目标"), { recursive: true });
+    const { chmod } = await import("node:fs/promises");
+    await chmod(parent, 0o000);
+    try {
+      const denied = await assertVaultRootDirectory(join(parent, "目标")).then(
+        () => {
+          throw new Error("应抛 VAULT_PERMISSION_DENIED");
+        },
+        (e: unknown) => e,
+      );
+      expect((denied as IpcFailure).code).toBe("VAULT_PERMISSION_DENIED");
+    } finally {
+      // 恢复权限，保证临时目录可清理。
+      await chmod(parent, 0o755);
+    }
+    const missing = await assertVaultRootDirectory(join(root, "不存在")).then(
+      () => {
+        throw new Error("应抛 VAULT_NOT_FOUND");
+      },
+      (e: unknown) => e,
+    );
+    expect((missing as IpcFailure).code).toBe("VAULT_NOT_FOUND");
   });
 });
 

@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { desktopCapabilities } from "./desktopCapabilities";
 
 describe("desktopCapabilities", () => {
-  it("六字段齐全且仅 localDirectory 为 true", () => {
+  it("七字段齐全且仅 localDirectory 为 true", () => {
     expect(desktopCapabilities).toEqual({
       localDirectory: true,
       fileWatching: false,
@@ -14,6 +14,8 @@ describe("desktopCapabilities", () => {
       nativeMenu: false,
       nativeSecrets: false,
       persistentAssetPaths: false,
+      // R006-C3（FR-22）：编辑器不写盘，C4 接通 note.save 后翻 true。
+      documentPersistence: false,
     });
   });
 });

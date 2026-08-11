@@ -12,7 +12,8 @@ import { IpcFailure } from "../errors.js";
 import type {
   CreateNoteInput,
   ImportAssetInput,
-  OpenVaultRequest,
+  OpenRecentRequest,
+  OpenSelectionRequest,
   ReadNoteInput,
   SaveNoteInput,
 } from "./contracts.js";
@@ -79,18 +80,33 @@ export function parseVaultScanRequest(payload: unknown): string {
 }
 
 /**
- * vault.open：absolutePath 必填非空；name 可选字符串（仅初始化时生效）。
- * 绝对性/存在性由 Main 侧 vault.open 实现复查（schema 层只校验形状）。
+ * vault.openSelection（R006-C2.1 FR-01）：selectionToken 必填非空，
+ * initialize 必填布尔。令牌有效性（存在/未消费/未过期）由 Main 侧
+ * SelectionTokenStore 校验（SELECTION_INVALID / SELECTION_EXPIRED）。
  */
-export function parseOpenVaultRequest(payload: unknown): OpenVaultRequest {
-  if (!isRecord(payload)) invalid("vault.open 入参必须为对象");
-  const request: OpenVaultRequest = {
-    absolutePath: requireString(payload, "absolutePath", { nonEmpty: true }),
-  };
-  if (payload.name !== undefined) {
-    request.name = requireString(payload, "name", { nonEmpty: true });
+export function parseOpenSelectionRequest(
+  payload: unknown,
+): OpenSelectionRequest {
+  if (!isRecord(payload)) invalid("vault.openSelection 入参必须为对象");
+  const initialize = payload.initialize;
+  if (typeof initialize !== "boolean") {
+    invalid("字段 initialize 必须为布尔值");
   }
-  return request;
+  return {
+    selectionToken: requireString(payload, "selectionToken", {
+      nonEmpty: true,
+    }),
+    initialize,
+  };
+}
+
+/**
+ * vault.openRecent（R006-C2.1 FR-02）：vaultId 必填非空；
+ * 登记/可达性由 Main 侧注册表复查（VAULT_NOT_FOUND）。
+ */
+export function parseOpenRecentRequest(payload: unknown): OpenRecentRequest {
+  if (!isRecord(payload)) invalid("vault.openRecent 入参必须为对象");
+  return { vaultId: requireString(payload, "vaultId", { nonEmpty: true }) };
 }
 
 export function parseReadNoteInput(payload: unknown): ReadNoteInput {
@@ -140,11 +156,9 @@ export function parseImportAssetInput(payload: unknown): ImportAssetInput {
   if (!isRecord(payload)) invalid("asset.import 入参必须为对象");
   return {
     vaultId: requireString(payload, "vaultId", { nonEmpty: true }),
-    // 源文件绝对路径只可能来自 asset.pick 的 Main 侧返回值；
-    // Main 实现仍需复查其存在性与类型白名单（阶段 5）。
-    sourceAbsolutePath: requireString(payload, "sourceAbsolutePath", {
-      nonEmpty: true,
-    }),
+    // R006-C2.1（FR-05）：来源授权为 asset.pick 签发的一次性 pickToken；
+    // Main 实现需复查令牌有效性与类型白名单（阶段 5）。
+    pickToken: requireString(payload, "pickToken", { nonEmpty: true }),
     fileName: requireString(payload, "fileName", { nonEmpty: true }),
   };
 }

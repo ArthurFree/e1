@@ -1,5 +1,6 @@
 // R006 阶段 1：预加载脚本——contextBridge 暴露完整 E1DesktopAPI。
-// R006 阶段 2：vault 组扩展 open / listRecent（channel 与信封语义不变）。
+// R006 阶段 2：vault 组扩展 listRecent（channel 与信封语义不变）。
+// R006-C2.1：vault.open 删除，替换为 openSelection / openRecent（FR-01/02）。
 // sandbox 预加载只支持 CJS（构建产物 dist-electron/preload.cjs）。
 //
 // 错误传递策略（与 src/platform/desktop/desktopApi.ts 注释共同锁定）：
@@ -18,7 +19,8 @@ import {
   type ImportAssetInput,
   type ImportedAsset,
   type OpenedVault,
-  type OpenVaultRequest,
+  type OpenRecentRequest,
+  type OpenSelectionRequest,
   type PickedFile,
   type ReadNoteInput,
   type ReadNoteResult,
@@ -35,7 +37,11 @@ async function invoke<T>(channel: string, payload?: unknown): Promise<T> {
   if (typeof result === "object" && result !== null && "ok" in result) {
     if (result.ok) return result.value;
     if (isIpcErrorPayload(result.error)) {
-      throw new DesktopIpcError(result.error.code, result.error.message);
+      throw new DesktopIpcError(
+        result.error.code,
+        result.error.message,
+        result.error.details,
+      );
     }
   }
   throw new DesktopIpcError("INTERNAL", `IPC ${channel} 返回形状非法`);
@@ -51,8 +57,10 @@ const api: E1DesktopAPI = {
   vault: {
     selectDirectory: () =>
       invoke<SelectedVault | null>(IPC_CHANNELS.vaultSelectDirectory),
-    open: (input: OpenVaultRequest) =>
-      invoke<OpenedVault>(IPC_CHANNELS.vaultOpen, input),
+    openSelection: (input: OpenSelectionRequest) =>
+      invoke<OpenedVault>(IPC_CHANNELS.vaultOpenSelection, input),
+    openRecent: (input: OpenRecentRequest) =>
+      invoke<OpenedVault>(IPC_CHANNELS.vaultOpenRecent, input),
     listRecent: () => invoke<RecentVault[]>(IPC_CHANNELS.vaultListRecent),
     scan: (vaultId) => invoke<VaultScanResult>(IPC_CHANNELS.vaultScan, vaultId),
   },

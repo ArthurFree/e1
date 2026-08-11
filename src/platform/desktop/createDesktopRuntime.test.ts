@@ -121,7 +121,7 @@ describe("createDesktopRuntime（IPC-backed）", () => {
     expect(hits.map((h) => h.pageId)).toEqual(["01JABC"]);
   });
 
-  it("写路径诚实失败：page.create / document.createWithContent / getContent", async () => {
+  it("写路径诚实失败：page.create / document.createWithContent；正文读取为真实路径（R006-C3）", async () => {
     const { services } = createDesktopRuntime(mockApi());
     await expect(
       services.commands.page.create({
@@ -140,9 +140,11 @@ describe("createDesktopRuntime（IPC-backed）", () => {
         textSnapshot: "",
       }),
     ).rejects.toMatchObject({ code: "NOT_IMPLEMENTED" });
+    // getContent 已非桩（C3 批次 3 真实读路径）：未经会话扫描时扫描缓存
+    // 反查落空，映射为 DomainError(PAGE_NOT_FOUND)。
     await expect(
       services.queries.document.getContent("01JABC"),
-    ).rejects.toMatchObject({ code: "NOT_IMPLEMENTED" });
+    ).rejects.toMatchObject({ code: "PAGE_NOT_FOUND" });
   });
 
   it("workspace.create：取消目录选择抛 DomainError(CANCELLED)", async () => {
@@ -152,5 +154,20 @@ describe("createDesktopRuntime（IPC-backed）", () => {
     await expect(services.commands.workspace.create("x")).rejects.toMatchObject(
       { name: "DomainError", code: "CANCELLED" },
     );
+  });
+
+  it("desktopExtras.rescanVault：扫描缓存失效并重新扫描（FR-26）", async () => {
+    const api = mockApi();
+    const { services } = createDesktopRuntime(api);
+    expect(services.desktopExtras).toBeDefined();
+    // 会话加载建立缓存快照（扫描一次）。
+    await services.queries.workspace.loadSession("v1");
+    expect(api.vault.scan).toHaveBeenCalledTimes(1);
+    // 重新扫描：缓存失效 + 新快照预热。
+    await services.desktopExtras!.rescanVault("v1");
+    expect(api.vault.scan).toHaveBeenCalledTimes(2);
+    // 预热快照被后续页面刷新复用，不触发第三次扫描。
+    await services.queries.workspace.loadPages("v1");
+    expect(api.vault.scan).toHaveBeenCalledTimes(2);
   });
 });

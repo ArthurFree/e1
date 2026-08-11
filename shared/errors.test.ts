@@ -35,6 +35,21 @@ describe("toIpcErrorPayload 异常归一", () => {
     });
   });
 
+  it("IpcFailure 的 details 透传进信封（FR-09 DOCUMENT_TOO_LARGE）", () => {
+    expect(
+      toIpcErrorPayload(
+        new IpcFailure("DOCUMENT_TOO_LARGE", "过大", {
+          sizeBytes: 11,
+          maxBytes: 10,
+        }),
+      ),
+    ).toEqual({
+      code: "DOCUMENT_TOO_LARGE",
+      message: "过大",
+      details: { sizeBytes: 11, maxBytes: 10 },
+    });
+  });
+
   it("DomainError（鸭子类型）经映射表归一", () => {
     const domainError = {
       name: "DomainError",
@@ -82,6 +97,23 @@ describe("DomainError ↔ IPC 错误码映射", () => {
     expect(domainCodeFromIpc("NOT_IMPLEMENTED")).toBeNull();
     expect(domainCodeFromIpc("PATH_ESCAPE")).toBeNull();
     expect(domainCodeFromIpc("INTERNAL")).toBeNull();
+  });
+
+  it("R006-C3 笔记读取四码双向同名往返（批次 3 起 domain 有同名对应码）", () => {
+    for (const code of [
+      "NOTE_PERMISSION_DENIED",
+      "NOTE_IO_ERROR",
+      "DOCUMENT_TOO_LARGE",
+      "UNSUPPORTED_ENCODING",
+    ] as const) {
+      const payload = ipcErrorFromDomain({
+        name: "DomainError",
+        code,
+        message: "m",
+      });
+      expect(payload.code).toBe(code);
+      expect(domainCodeFromIpc(payload.code)).toBe(code);
+    }
   });
 
   it("未识别的 domain code 归一为 INTERNAL", () => {

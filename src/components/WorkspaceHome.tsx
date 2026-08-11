@@ -31,12 +31,20 @@ import {
 export function WorkspaceHome() {
   const services = useAppServices();
   const { workspace, pages } = useWorkspaceData();
-  const { createPage, toggleWorkspaceFavorite } = useWorkspaceCommands();
+  const { createPage, toggleWorkspaceFavorite, refreshCurrentWorkspace } =
+    useWorkspaceCommands();
   const { openDocument } = useNavigationCommands();
   const { openTreeDrawer } = useOverlay();
   const [contents, setContents] = useState<DocumentContent[]>([]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [now] = useState(() => Date.now());
+  // 「重新扫描知识库」进行中（R006-C3 FR-26，仅 Desktop 入口渲染）。
+  const [rescanning, setRescanning] = useState(false);
+  // FR-26/§36.4：仅 Desktop（有 desktopExtras 过渡通道且具备本地目录能力）
+  // 提供主动刷新；§34.1 明确不做文件监听，只支持用户主动刷新。
+  const canRescan =
+    services.desktopExtras !== undefined &&
+    services.capabilities.localDirectory;
 
   // 总字数统计需要正文快照，页面元数据里没有，只能额外取内容行
   useEffect(() => {
@@ -137,6 +145,18 @@ export function WorkspaceHome() {
   const topLevel = liveChildren(null);
   const favorite = workspace.favoriteAt !== null;
 
+  // FR-26：扫描缓存失效 + 重新扫描（desktopExtras）→ 刷新页面树/标签镜像。
+  const rescanVault = async () => {
+    if (!services.desktopExtras || rescanning) return;
+    setRescanning(true);
+    try {
+      await services.desktopExtras.rescanVault(workspace.id);
+      await refreshCurrentWorkspace();
+    } finally {
+      setRescanning(false);
+    }
+  };
+
   return (
     <div className="ws-home">
       <div className="ws-home__inner">
@@ -176,6 +196,16 @@ export function WorkspaceHome() {
           <span aria-hidden="true">·</span>
           <span>共 {(stats?.totalChars ?? 0).toLocaleString()} 字</span>
           <span className="ws-home__meta-spacer" />
+          {canRescan && (
+            <button
+              type="button"
+              className="button"
+              disabled={rescanning}
+              onClick={() => void rescanVault()}
+            >
+              {rescanning ? "正在重新扫描…" : "重新扫描"}
+            </button>
+          )}
           <button
             type="button"
             className="button button--primary"

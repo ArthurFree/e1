@@ -38,13 +38,38 @@ export type DomainErrorCode =
   /** 当前平台/阶段尚未实现的能力（R006 阶段 2：Desktop 写路径诚实失败）。 */
   | "NOT_IMPLEMENTED"
   /** 用户取消了原生选择流程（R006 阶段 2：Desktop 目录选择取消）。 */
-  | "CANCELLED";
+  | "CANCELLED"
+  /**
+   * R006-C3（FR-24）：读取 Markdown 被系统拒绝（EACCES/EPERM）。
+   * 由 Desktop 正文仓储把同名 IPC 码映射进 domain，UI 按 code 分流。
+   */
+  | "NOTE_PERMISSION_DENIED"
+  /** R006-C3（FR-25）：读取 Markdown 的其他系统 I/O 错误（文件未被修改）。 */
+  | "NOTE_IO_ERROR"
+  /**
+   * R006-C3（FR-09）：Markdown 超过单文件大小上限（10 MiB）；
+   * details 携带 { sizeBytes, maxBytes } 供 UI 展示。
+   */
+  | "DOCUMENT_TOO_LARGE"
+  /** R006-C3（FR-10）：文件无法作为 UTF-8 安全解码（不猜测/不转码）。 */
+  | "UNSUPPORTED_ENCODING"
+  /**
+   * R006-C2.1（FR-03）：选中的文件夹尚未初始化，等待用户在确认框中选择
+   * 「仅预览 / 初始化并打开 / 取消」——仅 Desktop 打开本地知识库链路使用，
+   * 不跨 IPC；UI 接住后调 platform/desktop 的确认握手模块再继续。
+   */
+  | "VAULT_CONFIRMATION_REQUIRED";
 
 /** 领域错误：code 是稳定契约，message 是中文用户文案。 */
 export class DomainError extends Error {
   constructor(
     readonly code: DomainErrorCode,
     message: string,
+    /**
+     * R006-C3：可选结构化细节（如 DOCUMENT_TOO_LARGE 的 { sizeBytes, maxBytes }）。
+     * 程序只读字段值，不得以此替代 code 判断错误类型。
+     */
+    readonly details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = "DomainError";

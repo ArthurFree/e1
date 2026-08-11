@@ -9,7 +9,8 @@ import {
   parseCreateNoteInput,
   parseImportAssetInput,
   parseNoInput,
-  parseOpenVaultRequest,
+  parseOpenRecentRequest,
+  parseOpenSelectionRequest,
   parseReadNoteInput,
   parseResolveAssetUrlInput,
   parseSaveNoteInput,
@@ -59,25 +60,51 @@ describe("parseVaultScanRequest", () => {
   });
 });
 
-describe("parseOpenVaultRequest（R006 阶段 2）", () => {
-  it("absolutePath 必填；name 可选", () => {
-    expect(parseOpenVaultRequest({ absolutePath: "/x/笔记" })).toEqual({
-      absolutePath: "/x/笔记",
-    });
+describe("parseOpenSelectionRequest（R006-C2.1 FR-01）", () => {
+  it("selectionToken + initialize 布尔通过", () => {
     expect(
-      parseOpenVaultRequest({ absolutePath: "/x/笔记", name: "我的库" }),
-    ).toEqual({ absolutePath: "/x/笔记", name: "我的库" });
+      parseOpenSelectionRequest({ selectionToken: "s-1", initialize: true }),
+    ).toEqual({ selectionToken: "s-1", initialize: true });
+    expect(
+      parseOpenSelectionRequest({ selectionToken: "s-1", initialize: false }),
+    ).toEqual({ selectionToken: "s-1", initialize: false });
   });
 
   it("形状非法 INVALID_INPUT", () => {
-    expectFailure(() => parseOpenVaultRequest("/x"), "INVALID_INPUT");
-    expectFailure(() => parseOpenVaultRequest({}), "INVALID_INPUT");
+    expectFailure(() => parseOpenSelectionRequest("s-1"), "INVALID_INPUT");
+    expectFailure(() => parseOpenSelectionRequest({}), "INVALID_INPUT");
     expectFailure(
-      () => parseOpenVaultRequest({ absolutePath: "  " }),
+      () => parseOpenSelectionRequest({ selectionToken: "  ", initialize: 1 }),
       "INVALID_INPUT",
     );
     expectFailure(
-      () => parseOpenVaultRequest({ absolutePath: "/x", name: 42 }),
+      () =>
+        parseOpenSelectionRequest({ selectionToken: "s-1", initialize: "yes" }),
+      "INVALID_INPUT",
+    );
+    expectFailure(
+      () => parseOpenSelectionRequest({ selectionToken: "s-1" }),
+      "INVALID_INPUT",
+    );
+  });
+});
+
+describe("parseOpenRecentRequest（R006-C2.1 FR-02）", () => {
+  it("非空 vaultId 通过", () => {
+    expect(parseOpenRecentRequest({ vaultId: "v-1" })).toEqual({
+      vaultId: "v-1",
+    });
+  });
+
+  it("形状非法 INVALID_INPUT", () => {
+    expectFailure(() => parseOpenRecentRequest("v-1"), "INVALID_INPUT");
+    expectFailure(() => parseOpenRecentRequest({}), "INVALID_INPUT");
+    expectFailure(
+      () => parseOpenRecentRequest({ vaultId: "  " }),
+      "INVALID_INPUT",
+    );
+    expectFailure(
+      () => parseOpenRecentRequest({ vaultId: 42 }),
       "INVALID_INPUT",
     );
   });
@@ -242,10 +269,10 @@ describe("parseSaveNoteInput", () => {
 });
 
 describe("parseImportAssetInput", () => {
-  it("合法入参通过", () => {
+  it("合法入参通过（R006-C2.1 FR-05：pickToken）", () => {
     const input = {
       vaultId: "v1",
-      sourceAbsolutePath: "/Users/x/pic.png",
+      pickToken: "p-token",
       fileName: "pic.png",
     };
     expect(parseImportAssetInput(input)).toEqual(input);
@@ -260,7 +287,7 @@ describe("parseImportAssetInput", () => {
       () =>
         parseImportAssetInput({
           vaultId: "v1",
-          sourceAbsolutePath: "/x/a.png",
+          pickToken: "p-token",
           fileName: "",
         }),
       "INVALID_INPUT",

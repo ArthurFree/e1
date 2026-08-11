@@ -1,17 +1,23 @@
 /**
  * R006 阶段 1：Desktop IPC 产品契约（r006 §16）。
  * R006 阶段 2：vault.scan 落地真实形状（扁平 VaultScanEntry 列表）；
- * 新增 vault:open / vault:listRecent（US-01/02/06）。
+ * 新增 vault:listRecent（US-06）。
+ * R006-C2.1（FR-01/02/05，r006-c3 §8/§9/§12）：授权边界收口——
+ * vault.open(absolutePath) 删除，替换为 vault.openSelection（一次性
+ * selectionToken）与 vault.openRecent（registry vaultId）；selectDirectory
+ * 不再向 Renderer 返回 absolutePath；PickedFile 改持 pickToken。
+ * R006-C3-A（FR-12，r006-c3 §20）：note.read 落地，ReadNoteResult 改形——
+ * noteId → stableNoteId（Frontmatter id，缺失为 null，Main 不创建），
+ * 新增 source{modifiedAt,sizeBytes}。
  *
  * shared/ 为 Renderer（src/platform/desktop）与 Electron Main/Preload 共用
  * 的唯一契约来源：channel 常量、请求/响应类型、E1DesktopAPI 形状。
  * 运行时校验见 ./schemas.js；错误线格式见 ../errors.js。
  *
- * 路径安全（r006 §17）：Renderer 只传 vaultId + relativePath，绝不传任意
- * 绝对路径（asset.import 的 sourceAbsolutePath 例外——它来自 Main 侧原生
- * 文件选择器 asset.pick 的返回值，非 Renderer 自造；vault.open 的
- * absolutePath 同理——它来自 Main 侧 vault.selectDirectory 的返回值）；
- * Main 侧不信任任何入参，逐字段 schema 校验 + PathGuard（normalize/realpath）。
+ * 路径安全（r006 §17 / r006-c3 SEC-01）：Renderer 只传 vaultId + relativePath
+ * 或 Main 签发的一次性令牌（selectionToken / pickToken），绝不传任意绝对
+ * 路径——所有本地能力必须来源于用户显式选择（原生对话框）或 Main 已登记的
+ * vaultId；Main 侧不信任任何入参，逐字段 schema 校验 + PathGuard。
  *
  * 版本令牌（r006 §18）：versionToken 为不透明字符串，Desktop 编码
  * "sha256:<hash>"（Web 为 "idb:N"）；save 入参携带 expectedVersionToken
@@ -22,7 +28,8 @@ import type { IpcErrorPayload } from "../errors.js";
 /** IPC channel 常量：Main 注册与 Preload 调用共用，禁止散落字符串。 */
 export const IPC_CHANNELS = {
   vaultSelectDirectory: "vault:selectDirectory",
-  vaultOpen: "vault:open",
+  vaultOpenSelection: "vault:openSelection",
+  vaultOpenRecent: "vault:openRecent",
   vaultListRecent: "vault:listRecent",
   vaultScan: "vault:scan",
   noteRead: "note:read",
@@ -38,42 +45,65 @@ export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
 /* ---------------------------------- vault ---------------------------------- */
 
 /**
- * 已选中的本地 Vault 目录。
- * vaultId 为 null：目录尚未初始化（无 .e1/vault.json）——US-01 要求首次
- * 打开不修改原文件，是否初始化由 Renderer 经用户确认后调 vault.open 决定；
- * 目录已是 Vault 时返回真实 vaultId（R006 阶段 2 起读取 .e1/vault.json）。
+ * 已选中的本地 Vault 目录（R006-C2.1 FR-01）。
+ *
+ * Renderer 不再拿到 absolutePath：后续授权只凭 selectionToken（Main 签发的
+ * 一次性令牌，单次消费、5 分钟过期、进程退出失效）或已登记的 vaultId。
+ *
+ * vaultId 为 null：目录尚未初始化（无 .e1/vault.json）——US-01/FR-03 要求
+ * 首次打开不修改原文件，是否初始化由 Renderer 弹确认框后调
+ * vault.openSelection 决定；initialized 与 (vaultId !== null) 同义，
+ * 显式携带便于 Renderer 分流，不必做空值判断。
  */
 export interface SelectedVault {
+  /** 一次性目录选择授权令牌（vault.openSelection 的唯一凭证）。 */
+  selectionToken: string;
   vaultId: string | null;
-  /** 目录绝对路径（Main 侧原生对话框返回，Renderer 只读展示与回传 vault.open）。 */
-  absolutePath: string;
   /** 展示名（目录 basename）。 */
   displayName: string;
+  /** true：目录已含合法 .e1/vault.json。 */
+  initialized: boolean;
 }
 
 /**
- * vault.open 请求：打开（必要时初始化）一个本地 Vault。
- * absolutePath 只可能来自 vault.selectDirectory / vault.listRecent 的
- * Main 侧返回值；name 仅在该目录尚未初始化时作为 vault.json 的库名
- * （缺省取目录 basename），已是 Vault 时忽略。
+ * vault.openSelection 请求（R006-C2.1 FR-01）：消费目录选择令牌。
+ * initialize=false 且目录未初始化：登记 transient（仅预览）会话；
+ * initialize=true 且目录未初始化：才创建 .e1/vault.json 与 assets/（FR-03）。
  */
-export interface OpenVaultRequest {
-  absolutePath: string;
-  name?: string;
+export interface OpenSelectionRequest {
+  selectionToken: string;
+  initialize: boolean;
 }
 
-/** vault.open 响应：Vault 元信息（initialized 标记本次是否新建了 vault.json）。 */
+/**
+ * vault.openRecent 请求（R006-C2.1 FR-02）：按已登记 vaultId 重新打开。
+ * absolutePath 由 Main 侧注册表解析，Renderer 全程不参与路径。
+ */
+export interface OpenRecentRequest {
+  vaultId: string;
+}
+
+/**
+ * vault.openSelection / vault.openRecent 响应：Vault 元信息。
+ * initialized 标记本次调用是否新建了 vault.json；transient=true 表示
+ * 「仅预览」会话（vaultId 形如 transient:<uuid>，不进最近列表，重启消失）。
+ *
+ * absolutePath 仅作展示/诊断信息返回——已授权后告知路径可行，但 Renderer
+ * 不得把它当作后续调用的授权凭证（没有任何 IPC 接口接受 absolutePath）。
+ */
 export interface OpenedVault {
   vaultId: string;
   absolutePath: string;
-  /** vault.json 中的库名。 */
+  /** vault.json 中的库名；transient 会话为目录 basename。 */
   name: string;
   /** 展示名（目录 basename）。 */
   displayName: string;
-  /** vault.json 创建时间（ISO 字符串）。 */
+  /** vault.json 创建时间（ISO 字符串）；transient 会话为打开时刻。 */
   createdAt: string;
-  /** true：本次调用新建了 .e1/vault.json（US-02 / 首次打开确认初始化）。 */
+  /** true：本次调用新建了 .e1/vault.json（FR-03「初始化并打开」）。 */
   initialized: boolean;
+  /** true：仅预览会话（FR-10/§36.1「仅预览」）；缺省/false 为常规 Vault。 */
+  transient?: boolean;
 }
 
 /** 最近打开的 Vault（userData/recent-vaults.json，r006 US-06）。 */
@@ -134,8 +164,9 @@ export interface VaultScanResult {
 
 /**
  * 笔记定位形状：vaultId + relativePath（r006 §17）。
- * noteId 是 Frontmatter 稳定身份，relativePath 只是当前位置（r006 §6.2）；
- * 读写接口按当前位置寻址，noteId 在结果中返回供镜像/索引使用。
+ * stableNoteId 是 Frontmatter 稳定身份，relativePath 只是当前位置（r006 §6.2）；
+ * 读写接口按当前位置寻址，stableNoteId 在结果中返回供镜像/索引使用
+ * （缺失为 null——无 id 文档以 path:<relativePath> 作会话身份，PR-03）。
  */
 export interface ReadNoteInput {
   vaultId: string;
@@ -143,12 +174,23 @@ export interface ReadNoteInput {
 }
 
 export interface ReadNoteResult {
-  noteId: string;
+  /**
+   * R006-C3（FR-12/§20.3）：Frontmatter 稳定 id；缺失为 null——Main 只解析
+   * 不创建（PR-03：无 id 文档以 path:<relativePath> 作会话身份，首次保存
+   * 回写 id 属 C4）。原 noteId: string 字段由本字段替代。
+   */
+  stableNoteId: string | null;
   relativePath: string;
   /** Markdown 原文（含 Frontmatter）；解析走 Renderer 侧 MarkdownCodec。 */
   markdown: string;
   /** 读取时的版本令牌（"sha256:<hash>"），作为后续 save 的乐观锁起点。 */
   versionToken: string;
+  /** 磁盘来源信息（mtime/大小），供打开模型与冲突诊断使用。 */
+  source: {
+    /** 文件最后修改时间（ms 整数，取自 stat.mtimeMs）。 */
+    modifiedAt: number;
+    sizeBytes: number;
+  };
 }
 
 export interface CreateNoteInput {
@@ -184,20 +226,24 @@ export interface SaveNoteResult {
 
 /* ---------------------------------- asset ---------------------------------- */
 
-/** asset.pick 原生文件选择结果（取消返回 null）。 */
+/**
+ * asset.pick 原生文件选择结果（取消返回 null）。
+ * R006-C2.1（FR-05）：absolutePath 替换为 pickToken——源路径授权同样
+ * 收归 Main（一次性令牌），Renderer 不拥有来源路径。
+ */
 export interface PickedFile {
+  /** 一次性文件选择授权令牌（asset.import 的唯一凭证）。 */
+  pickToken: string;
   /** 文件名（含扩展名）。 */
   name: string;
-  /** 源文件绝对路径——仅可回传给 asset.import，Renderer 不得他用。 */
-  absolutePath: string;
   sizeBytes: number;
   mimeType: string;
 }
 
 export interface ImportAssetInput {
   vaultId: string;
-  /** asset.pick 返回的源文件绝对路径（Main 复制进 Vault assets/）。 */
-  sourceAbsolutePath: string;
+  /** asset.pick 返回的一次性令牌（Main 据此解析源文件并复制进 assets/）。 */
+  pickToken: string;
   /** 期望文件名（Main 侧做冲突递增与非法字符清理）。 */
   fileName: string;
 }
@@ -226,16 +272,29 @@ export interface E1DesktopAPI {
     node?: string;
   };
   vault: {
-    /** 原生目录选择；取消返回 null，选中返回目录信息（已是 Vault 时带 vaultId）。 */
+    /**
+     * 原生目录选择；取消返回 null，选中返回目录信息 + 一次性
+     * selectionToken（不再返回 absolutePath，R006-C2.1 FR-01）。
+     */
     selectDirectory(): Promise<SelectedVault | null>;
     /**
-     * 打开本地 Vault：未初始化目录经用户确认后初始化（创建 .e1/vault.json
-     * 与 assets/），已初始化目录直接打开；成功后记入最近列表（US-06）。
+     * 消费目录选择令牌打开 Vault（R006-C2.1 FR-01）：已初始化目录直接打开
+     * 并登记最近列表；未初始化目录按 initialize 分流——false 建立 transient
+     * 仅预览会话（FR-03/§36.1），true 才初始化（创建 .e1/vault.json 与
+     * assets/）并登记最近列表。
      */
-    open(input: OpenVaultRequest): Promise<OpenedVault>;
+    openSelection(input: OpenSelectionRequest): Promise<OpenedVault>;
+    /**
+     * 按已登记 vaultId 重新打开（R006-C2.1 FR-02）：absolutePath 由 Main
+     * 注册表解析；未登记或目录不可达 → VAULT_NOT_FOUND。
+     */
+    openRecent(input: OpenRecentRequest): Promise<OpenedVault>;
     /** 最近打开的 Vault 列表（lastOpenedAt 倒序，上限 10 条）。 */
     listRecent(): Promise<RecentVault[]>;
-    /** 扫描 Vault 生成笔记树（vaultId 经最近列表解析根目录）。 */
+    /**
+     * 扫描 Vault 生成笔记树；vaultId 双通道解析——注册表（常规 Vault）或
+     * transient 仅预览会话（R006-C2.1）。
+     */
     scan(vaultId: string): Promise<VaultScanResult>;
   };
   note: {

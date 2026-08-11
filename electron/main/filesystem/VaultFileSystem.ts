@@ -3,10 +3,13 @@
  *
  * 职责：
  * - readVault：读取 .e1/vault.json。**不存在或损坏时不修改任何文件**
- *   （US-01：不修改原文件内容即可完成首次打开）——不存在视为未初始化
- *   Vault，返回 suggestedName 供用户确认后初始化；存在但非法（坏 JSON /
- *   format 不符 / formatVersion 不支持）抛 INVALID_INPUT，绝不静默重建
- *   （重建会生成新 vaultId，破坏既有笔记 Frontmatter id 的归属语义）。
+ *   （US-01：不修改原文件内容即可完成首次打开）——不存在（ENOENT）视为
+ *   未初始化 Vault，返回 suggestedName 供用户确认后初始化；R006-C2.1
+ *   （FR-04）起按 Node FS error code 分类：EACCES/EPERM 抛
+ *   VAULT_PERMISSION_DENIED，其他 I/O 抛 VAULT_IO_ERROR，绝不自动
+ *   初始化/重建/修复（SEC-07）；存在但非法（坏 JSON / format 不符 /
+ *   formatVersion 不支持）抛 INVALID_INPUT，绝不静默重建（重建会生成
+ *   新 vaultId，破坏既有笔记 Frontmatter id 的归属语义）。
  * - initializeVault：创建 .e1/vault.json + assets/（US-02）；幂等——
  *   已是 Vault 时直接返回既有 meta，不覆写。
  * - scanVault：递归扫描映射页面树（r006 §7：文件夹 → group、.md →
@@ -60,14 +63,39 @@ const SUPPORTED_FORMAT_VERSION = 1;
  */
 const FRONTMATTER_HEAD_BYTES = 8192;
 
+/**
+ * R006-C2.1（FR-04）：读取失败的错误分类——不再把所有 readFile 失败
+ * 统一解释为「未初始化」。ENOENT 才是未初始化；权限与其他 I/O 错误显式
+ * 抛出，且绝不自动初始化/重建/修复（SEC-07）。
+ * 导出为纯函数便于测试（EPERM/EIO 等难以用真实文件系统稳定模拟）。
+ */
+export function classifyVaultReadError(error: unknown): IpcFailure | null {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  // 文件不存在（含 .e1 目录不存在）：未初始化的普通文件夹。
+  if (code === "ENOENT") return null;
+  if (code === "EACCES" || code === "EPERM") {
+    return new IpcFailure(
+      "VAULT_PERMISSION_DENIED",
+      "无法读取该文件夹，请检查文件或目录访问权限。",
+    );
+  }
+  return new IpcFailure(
+    "VAULT_IO_ERROR",
+    "读取知识库时发生系统错误，请重新尝试。",
+  );
+}
+
 /** 读取 .e1/vault.json；不存在 → uninitialized，非法 → INVALID_INPUT。 */
 export async function readVault(root: string): Promise<ReadVaultResult> {
   let raw: string;
   try {
     raw = await readFile(join(root, VAULT_FILE), "utf8");
-  } catch {
-    // 文件不存在（含 .e1 目录不存在）：未初始化的普通文件夹，不改任何文件。
-    return { status: "uninitialized", suggestedName: basename(root) };
+  } catch (error) {
+    const classified = classifyVaultReadError(error);
+    // ENOENT：未初始化的普通文件夹，不改任何文件（US-01）。
+    if (!classified)
+      return { status: "uninitialized", suggestedName: basename(root) };
+    throw classified;
   }
 
   let parsed: unknown;
@@ -260,7 +288,7 @@ async function readHead(absolutePath: string): Promise<string> {
   }
 }
 
-/** vault.open 的入参校验辅助：绝对路径 + 必须是已存在目录（供 IPC 层使用）。 */
+/** Vault 根目录校验辅助：绝对路径 + 必须是已存在目录（供 IPC 层使用）。 */
 export async function assertVaultRootDirectory(
   absolutePath: string,
 ): Promise<void> {
@@ -272,13 +300,28 @@ export async function assertVaultRootDirectory(
   ) {
     throw new IpcFailure(
       "INVALID_INPUT",
-      `vault.open 需要绝对路径：${absolutePath}`,
+      `Vault 根目录需要绝对路径：${absolutePath}`,
     );
   }
   let stats;
   try {
     stats = await stat(absolutePath);
-  } catch {
+  } catch (error) {
+    // R006-C2.1（FR-04 同步分类）：权限拒绝与其余 I/O 错误不再笼统归为
+    // 「目录不存在」；ENOENT/ENOTDIR 保持 VAULT_NOT_FOUND。
+    const code = (error as NodeJS.ErrnoException | undefined)?.code;
+    if (code === "EACCES" || code === "EPERM") {
+      throw new IpcFailure(
+        "VAULT_PERMISSION_DENIED",
+        "无法读取该文件夹，请检查文件或目录访问权限。",
+      );
+    }
+    if (code !== "ENOENT" && code !== "ENOTDIR") {
+      throw new IpcFailure(
+        "VAULT_IO_ERROR",
+        "读取知识库时发生系统错误，请重新尝试。",
+      );
+    }
     throw new IpcFailure(
       "VAULT_NOT_FOUND",
       `目录不存在或不可访问：${absolutePath}`,

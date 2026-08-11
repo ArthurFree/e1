@@ -41,7 +41,8 @@ describe("preload 暴露形状", () => {
     expect(api.versions).toBeTypeOf("object");
     expect(Object.keys(api.vault).sort()).toEqual([
       "listRecent",
-      "open",
+      "openRecent",
+      "openSelection",
       "scan",
       "selectDirectory",
     ]);
@@ -81,11 +82,21 @@ describe("channel 与负载透传", () => {
     );
   });
 
-  it("vault.open 对象负载透传；vault.listRecent 只传 channel", async () => {
-    const openInput = { absolutePath: "/x/笔记", name: "我的库" };
+  it("vault.openSelection/openRecent 对象负载透传；vault.listRecent 只传 channel", async () => {
+    const selectionInput = { selectionToken: "s-token", initialize: true };
     invoke.mockResolvedValue({ ok: true, value: {} });
-    await api.vault.open(openInput);
-    expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.vaultOpen, openInput);
+    await api.vault.openSelection(selectionInput);
+    expect(invoke).toHaveBeenCalledWith(
+      IPC_CHANNELS.vaultOpenSelection,
+      selectionInput,
+    );
+
+    const recentInput = { vaultId: "v1" };
+    await api.vault.openRecent(recentInput);
+    expect(invoke).toHaveBeenCalledWith(
+      IPC_CHANNELS.vaultOpenRecent,
+      recentInput,
+    );
 
     invoke.mockResolvedValue({ ok: true, value: [] });
     await api.vault.listRecent();
@@ -116,7 +127,7 @@ describe("channel 与负载透传", () => {
 
     const importInput = {
       vaultId: "v1",
-      sourceAbsolutePath: "/x/a.png",
+      pickToken: "p-token",
       fileName: "a.png",
     };
     await api.asset.import(importInput);
@@ -129,9 +140,10 @@ describe("IpcResult 信封解包", () => {
     invoke.mockResolvedValue({ ok: true, value: null });
     await expect(api.vault.selectDirectory()).resolves.toBeNull();
     const vault = {
+      selectionToken: "s-token",
       vaultId: null,
-      absolutePath: "/x/Notes",
       displayName: "Notes",
+      initialized: false,
     };
     invoke.mockResolvedValue({ ok: true, value: vault });
     await expect(api.vault.selectDirectory()).resolves.toEqual(vault);

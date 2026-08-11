@@ -269,6 +269,17 @@ export function WorkspaceProvider({
     setLoadKey((k) => k + 1);
   }, []);
 
+  /**
+   * 刷新当前知识库的页面/标签镜像（R006-C3 FR-26）：重读页面、标签与
+   * 页面-标签关联，供 Desktop「重新扫描知识库」在扫描缓存失效后刷新
+   * 树与标签；无会话时为 no-op。
+   */
+  const refreshCurrentWorkspace = useCallback(async () => {
+    const wsId = sessionRef.current.workspaceId;
+    if (!wsId) return;
+    await Promise.all([loadPages(wsId), loadTags(wsId)]);
+  }, [loadPages, loadTags]);
+
   // —— 以下命令回调统一经 sessionRef/workspacesRef 读取最新数据，
   //    依赖只剩稳定引用（命令/查询服务/桥），回调身份恒定（R004 §4.6）——
 
@@ -629,6 +640,7 @@ export function WorkspaceProvider({
   const commandValue = useMemo<WorkspaceCommandContextValue>(
     () => ({
       retryLoad,
+      refreshCurrentWorkspace,
       switchWorkspace,
       createWorkspace,
       importVault,
@@ -651,6 +663,7 @@ export function WorkspaceProvider({
     }),
     [
       retryLoad,
+      refreshCurrentWorkspace,
       switchWorkspace,
       createWorkspace,
       importVault,

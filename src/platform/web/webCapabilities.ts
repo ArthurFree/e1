@@ -1,6 +1,7 @@
 /**
  * Web 平台能力矩阵（R005 阶段 2，DUAL-01）：浏览器环境无本地目录、
- * 文件监听、原生菜单等桌面能力，六字段全 false。
+ * 文件监听、原生菜单等桌面能力；仅 documentPersistence 为 true
+ * （编辑经 SaveCoordinator 落 IndexedDB，R006-C3 FR-22 新增字段）。
  * 组件经 useAppServices().capabilities 判断能力，不得判断平台名称。
  */
 import type { RuntimeCapabilities } from "../../runtime/RuntimeCapabilities";
@@ -18,4 +19,6 @@ export const webCapabilities: RuntimeCapabilities = {
   nativeSecrets: false,
   // 附件存 IndexedDB，只能以 Blob/Object URL 访问，无稳定文件路径。
   persistentAssetPaths: false,
+  // 编辑经 SaveCoordinator 落 IndexedDB（R006-C3 FR-22 新增字段）。
+  documentPersistence: true,
 };

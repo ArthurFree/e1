@@ -35,9 +35,9 @@ R005 将项目划分为四层运行时边界：Shared UI、Shared Application、
 - 不得把浏览器实现细节（Blob、Object URL、BroadcastChannel 事件形状）泄漏进 application/domain 的公开接口；
 - `browserServices.ts` 只负责装配，不含业务判断。
 
-### Desktop Runtime（R006 阶段 0+1 骨架、阶段 2 已接入真实文件系统读路径）
+### Desktop Runtime（R006 阶段 0+1 骨架、阶段 2 读路径、C2.1 授权边界、C3 安全阅读已落地）
 
-现状：Electron Shell（`electron/main` ESM + sandbox preload CJS，contextIsolation 开启、nodeIntegration 关闭）、`shared/ipc` 契约与手写 schema 校验、`shared/errors` 统一错误码、preload `window.e1`（vault/note/asset 三组，信封解包 + 带码拒签）、`src/platform/desktop/`（`desktopCapabilities` 仅 `localDirectory: true`；阶段 2 起 `createDesktopRuntime` 为 IPC-backed 真实装配——Workspace/Page/Tag 读路径经 vault:listRecent/open/scan 映射 domain port，Content 读与全部写路径抛 DomainError("NOT_IMPLEMENTED") 诚实失败，note.read/create/save 属阶段 3/4）。装配根 `src/main.desktop.tsx` 经 `desktop.html` 多页入口加载。
+现状：Electron Shell（`electron/main` ESM + sandbox preload CJS，contextIsolation 开启、nodeIntegration 关闭）、`shared/ipc` 契约与手写 schema 校验、`shared/errors` 统一错误码、preload `window.e1`（vault/note/asset 三组，信封解包 + 带码拒签）、`src/platform/desktop/`（`desktopCapabilities` 为 `localDirectory: true` 其余 false——含 C3 新增的 `documentPersistence: false`，FR-22 技术验证模式不写盘；`createDesktopRuntime` 为 IPC-backed 真实装配——Workspace/Page/Tag 读路径经 vault:listRecent/openRecent/openSelection/scan 映射 domain port，Content 经 note.read 真实读取（C3：MarkdownCodec.parse 在 Renderer，lossy 默认只读），写路径全部抛 DomainError("NOT_IMPLEMENTED") 诚实失败，note.create/save 属 C4）。装配根 `src/main.desktop.tsx` 经 `desktop.html` 多页入口加载。C2.1 起 Renderer 全程不接触 absolutePath（一次性 selectionToken + openRecent + transient 仅预览，SEC-01）；C3 起 `AppServices.desktopExtras`（可选，仅 Desktop）承载「重新扫描知识库」过渡通道（FR-26，PoC）。
 
 职责（目标）：Renderer 侧经 IPC Client 实现同一组 port；Electron Main 负责目录选择、路径安全校验、Markdown 文件读写、临时文件原子替换、附件复制、自定义资源协议、文件 hash、IPC 参数校验。Desktop 以 Markdown 文件为真实数据源（DUAL-04）。
 
@@ -65,13 +65,14 @@ R005 将项目划分为四层运行时边界：Shared UI、Shared Application、
 
 类型定义在 `src/runtime/RuntimeCapabilities.ts`。组件经 `capabilities.<field>` 判断能力是否存在，不做平台分支（DUAL-01）。
 
-| 字段                   | 语义                                                               | Web | Desktop（未来） |
-| ---------------------- | ------------------------------------------------------------------ | :-: | :-------------: |
-| `localDirectory`       | 能以本地目录作为 Vault 直接读写（文件夹即页面树）                  | 否  |       是        |
-| `fileWatching`         | 能监听真实数据源的外部变更并触发刷新/冲突提示                      | 否  |       是        |
-| `revealInFileManager`  | 能在系统文件管理器中显示笔记或附件文件                             | 否  |       是        |
-| `nativeMenu`           | 能使用系统原生菜单（应用菜单/上下文菜单）                          | 否  |       是        |
-| `nativeSecrets`        | 能使用系统级安全存储保存 AI 密钥等机密                             | 否  |       是        |
-| `persistentAssetPaths` | 附件拥有稳定文件路径，可被外部软件直接访问（而非 Blob/Object URL） | 否  |       是        |
+| 字段                   | 语义                                                                                    | Web | Desktop（未来） |
+| ---------------------- | -------------------------------------------------------------------------------------- | :-: | :-------------: |
+| `localDirectory`       | 能以本地目录作为 Vault 直接读写（文件夹即页面树）                                      | 否  |       是        |
+| `fileWatching`         | 能监听真实数据源的外部变更并触发刷新/冲突提示                                          | 否  |       是        |
+| `revealInFileManager`  | 能在系统文件管理器中显示笔记或附件文件                                                 | 否  |       是        |
+| `nativeMenu`           | 能使用系统原生菜单（应用菜单/上下文菜单）                                              | 否  |       是        |
+| `nativeSecrets`        | 能使用系统级安全存储保存 AI 密钥等机密                                                 | 否  |       是        |
+| `persistentAssetPaths` | 附件拥有稳定文件路径，可被外部软件直接访问（而非 Blob/Object URL）                     | 否  |       是        |
+| `documentPersistence`  | 文档编辑会真实持久化（false 时编辑器不启动 SaveCoordinator，UI 必须提示修改不写回磁盘） | 是  |  否（C4 翻是）  |
 
 约定：能力为 `false` 时对应 UI 入口隐藏或降级，不做「平台名 + 弹窗提示」式分支；新增平台功能一律先定义能力字段再实现（r005.md §十六）。

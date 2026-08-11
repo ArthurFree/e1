@@ -23,6 +23,7 @@ import type {
   DocumentSaveCoordinator,
   SaveCoordinatorState,
 } from "../../application/services/SaveCoordinator";
+import type { DocumentAccess } from "../../application/queries/DocumentQueryService";
 import type { DocumentEditorController } from "../../application/services/DocumentEditorController";
 import { BubbleToolbar } from "./BubbleToolbar";
 import { BlockHandle } from "./BlockHandle";
@@ -64,6 +65,12 @@ interface DocumentEditorProps {
    * 与保存协调器串行化，null 表示编辑器已销毁。
    */
   onControllerReady?(controller: DocumentEditorController | null): void;
+  /**
+   * 访问级别（R006-C3 FR-21，默认 editable）：read-only 为保护性只读——
+   * 编辑器不可编辑、不创建保存协调器、不挂浮动编辑 UI（选区/表格工具栏、
+   * 块把手、AI 面板），只允许选择/复制/滚动/目录跳转等阅读操作。
+   */
+  access?: DocumentAccess;
 }
 
 /**
@@ -80,6 +87,7 @@ export function DocumentEditor({
   onRegisterConflictActions,
   restoreRequestId,
   onControllerReady,
+  access = "editable",
 }: DocumentEditorProps) {
   const { pages } = useWorkspaceData();
   const services = useAppServices();
@@ -89,6 +97,11 @@ export function DocumentEditor({
     savedAt: null,
     errorKind: null,
   });
+  const readOnly = access === "read-only";
+  // 保存协调器启动条件（R006-C3 FR-21/FR-22）：只读文档不保存；平台无
+  // 文档持久化能力（Desktop 技术验证模式，documentPersistence=false）时
+  // 即使可编辑也不启动协调器——修改只停留在内存，顶栏有固定提示文案。
+  const saveEnabled = !readOnly && services.capabilities.documentPersistence;
   // 每个文档一个保存协调器；pageIdRef 先于渲染更新，供回调判断「当前文档」。
   const coordinatorsRef = useRef(new Map<string, DocumentSaveCoordinator>());
   const pageIdRef = useRef(pageId);
@@ -135,6 +148,7 @@ export function DocumentEditor({
 
   // 保存失败重试：重试当前文档协调器中的最新快照。
   useEffect(() => {
+    if (!saveEnabled) return;
     onRegisterRetry?.(() => {
       const coordinator = coordinatorsRef.current.get(pageIdRef.current);
       if (coordinator) {
@@ -143,11 +157,12 @@ export function DocumentEditor({
         });
       }
     });
-  }, [onRegisterRetry]);
+  }, [onRegisterRetry, saveEnabled]);
 
   // 冲突处理动作（R004 阶段 7）：「强制覆盖」读取磁盘最新版本后以之为
   // expectedVersion 重试当前快照；成功与否都经 onStateChange 发布。
   useEffect(() => {
+    if (!saveEnabled) return;
     onRegisterConflictActions?.({
       forceOverwrite: () => {
         const pid = pageIdRef.current;
@@ -167,10 +182,11 @@ export function DocumentEditor({
       },
     });
     return () => onRegisterConflictActions?.(null);
-  }, [onRegisterConflictActions, services]);
+  }, [onRegisterConflictActions, services, saveEnabled]);
 
   // 切换文档：先把挂起的防抖保存提交给旧文档协调器，再排空并销毁它。
   useEffect(() => {
+    if (!saveEnabled) return;
     if (pageIdRef.current !== pageId) {
       const prev = pageIdRef.current;
       pageIdRef.current = pageId;
@@ -183,7 +199,7 @@ export function DocumentEditor({
       // 新文档从干净的保存状态开始。
       setSaveState({ status: "saved", savedAt: null, errorKind: null });
     }
-  }, [pageId, flush]);
+  }, [pageId, flush, saveEnabled]);
 
   // @ 提及候选只含文档页：知识库节点不可被提及链接。
   // 经 ref 供扩展动态读取（R003 阶段 6）：编辑器实例不随 pages 重建，
@@ -201,8 +217,12 @@ export function DocumentEditor({
       }),
       // Tiptap content 类型不含 unknown；历史数据均为合法 doc JSON，仅断言不校验。
       content: initialContent as never,
+      // 只读（R006-C3 FR-21）：编辑器拒绝一切修改，仍可选择/复制/滚动。
+      editable: !readOnly,
       autofocus: "end",
       onUpdate: ({ editor: e }) => {
+        // 只读或无持久化能力（FR-22）：不触发任何保存链路。
+        if (!saveEnabled) return;
         const coordinator = getCoordinator(pageId);
         // 版本恢复的 setContent：跳过防抖保存（恢复经协调器单独提交）。
         if (restoreSuppressRef.current) {
@@ -214,8 +234,9 @@ export function DocumentEditor({
         debounced(pageId, e.getJSON(), e.getText());
       },
     },
-    // pageId 变化时重建编辑器实例，切换文档后内容与扩展状态从头装配。
-    [pageId],
+    // pageId 变化时重建编辑器实例，切换文档后内容与扩展状态从头装配；
+    // 只读 ↔ 可编辑切换（「允许本次编辑」）同样以重建保证 editable 生效。
+    [pageId, readOnly],
   );
 
   useEffect(() => {
@@ -239,7 +260,9 @@ export function DocumentEditor({
   // setContent 更新编辑器（抑制其防抖保存，不产生第二次写入）。
   useEffect(() => {
     if (!onControllerReady) return;
-    if (!editor || editor.isDestroyed) {
+    // 无保存链路（只读/无持久化能力）：不注册控制器，版本恢复等外部
+    // 写入入口随之关闭（FR-21 §29.2 / FR-22）。
+    if (!saveEnabled || !editor || editor.isDestroyed) {
       onControllerReady(null);
       return;
     }
@@ -275,11 +298,20 @@ export function DocumentEditor({
     };
     onControllerReady(controller);
     return () => onControllerReady(null);
-  }, [editor, pageId, flush, getCoordinator, onControllerReady, services]);
+  }, [
+    editor,
+    pageId,
+    flush,
+    getCoordinator,
+    onControllerReady,
+    services,
+    saveEnabled,
+  ]);
 
   // 恢复缓冲应用后：对恢复内容立即执行一次保存（每个编辑器实例最多一次）。
   const restoreHandledRef = useRef(0);
   useEffect(() => {
+    if (!saveEnabled) return;
     if (
       restoreRequestId &&
       restoreRequestId !== restoreHandledRef.current &&
@@ -298,7 +330,7 @@ export function DocumentEditor({
           // 保存失败经 onStateChange 发布为 error，顶栏提供重试。
         });
     }
-  }, [restoreRequestId, editor, pageId, getCoordinator]);
+  }, [restoreRequestId, editor, pageId, getCoordinator, saveEnabled]);
 
   // 卸载：提交挂起防抖并销毁全部协调器（dispose 会先排空各自队列）。
   useEffect(() => {
@@ -314,10 +346,14 @@ export function DocumentEditor({
 
   return (
     <div className="editor">
-      <BubbleToolbar editor={editor} />
-      <TableToolbar editor={editor} />
-      <BlockHandle editor={editor} />
-      <AIAssistantPanel editor={editor} />
+      {!readOnly && (
+        <>
+          <BubbleToolbar editor={editor} />
+          <TableToolbar editor={editor} />
+          <BlockHandle editor={editor} />
+          <AIAssistantPanel editor={editor} />
+        </>
+      )}
       <EditorContent editor={editor} className="editor__content" />
     </div>
   );

@@ -15,13 +15,21 @@ import { resetDB } from "../../infrastructure/db";
 import {
   contentRepository as idbContent,
   pageRepository as idbPage,
+  revisionRepository as idbRevision,
   tagRepository as idbTag,
   workspaceRepository as idbWorkspace,
 } from "../../infrastructure/repositories";
 import { createInMemoryAppServices } from "../../infrastructure/memory/createInMemoryAppServices";
 import { BrowserMemorySearchIndex } from "../../platform/web/search/BrowserMemorySearchIndex";
+import {
+  DesktopContentRepository,
+  DesktopVaultScanCache,
+} from "../../platform/desktop/repositories";
+import { DesktopRevisionRepository } from "../../platform/desktop/stubRepositories";
+import type { E1DesktopAPI } from "../../platform/desktop/desktopApi";
 import { WorkspaceSessionService } from "../services/WorkspaceSessionService";
 import { WorkspaceQueryService } from "./WorkspaceQueryService";
+import { DocumentQueryService } from "./DocumentQueryService";
 import { SearchQueryService } from "./SearchQueryService";
 
 const DOC_WITH_KEYWORD = {
@@ -210,3 +218,120 @@ function describeQueryServices(
 
 describeQueryServices("IndexedDB", makeBrowserContext);
 describeQueryServices("内存", makeMemoryContext);
+
+/**
+ * DocumentQueryService.openDocument 三形态（R006-C3 §41.6 / FR-17/18）：
+ * Web 默认包装 editable/lossy:false；仓储实现 DocumentOpenCapable（Desktop）
+ * 时委托其真实打开语义——兼容 editable/lossy:false，不支持 read-only/lossy:true。
+ */
+describe("DocumentQueryService.openDocument（§41.6 三形态）", () => {
+  it("Web（IndexedDB）：editable + lossy:false；正文缺失返回 null", async () => {
+    await resetDB();
+    const service = new DocumentQueryService({
+      content: idbContent,
+      revisions: idbRevision,
+    });
+    const ws = await idbWorkspace.create("知识库");
+    const page = await idbPage.create({
+      workspaceId: ws.id,
+      parentId: null,
+      kind: "document",
+      title: "文档",
+    });
+    const initial = (await idbContent.get(page.id))!;
+    await idbContent.save(
+      page.id,
+      DOC_WITH_KEYWORD,
+      "正文关键词甲",
+      initial.version,
+    );
+
+    const opened = await service.openDocument(page.id);
+    expect(opened?.access).toBe("editable");
+    expect(opened?.compatibility).toEqual({ lossy: false, unsupported: [] });
+    expect(opened?.content.textSnapshot).toBe("正文关键词甲");
+    expect(opened?.source.versionToken).toBe(
+      (await idbContent.get(page.id))!.version,
+    );
+    // 无正文 = 新文档语义：返回 null 由调用方以空文档兜底。
+    expect(await service.openDocument("page-missing")).toBeNull();
+  });
+
+  it("Web（内存容器）：editable + lossy:false", async () => {
+    const { services } = createInMemoryAppServices();
+    const ws = await services.workspace.create("知识库");
+    const page = await services.page.create({
+      workspaceId: ws.id,
+      parentId: null,
+      kind: "document",
+      title: "文档",
+    });
+    const opened = await services.queries.document.openDocument(page.id);
+    expect(opened).toMatchObject({
+      access: "editable",
+      compatibility: { lossy: false, unsupported: [] },
+    });
+  });
+
+  /** Desktop 装配：扫描一条文档 + note.read 返回指定 markdown。 */
+  async function makeDesktopService(markdown: string) {
+    const api = {
+      vault: {
+        scan: async () => ({
+          vault: { vaultId: "v1", name: "我的笔记" },
+          entries: [
+            {
+              noteId: "01JABC",
+              relativePath: "React.md",
+              kind: "document" as const,
+              title: "React 笔记",
+              parentPath: null,
+              tags: [],
+            },
+          ],
+        }),
+      },
+      note: {
+        read: async () => ({
+          stableNoteId: null,
+          relativePath: "React.md",
+          markdown,
+          versionToken: `sha256:${"b".repeat(64)}`,
+          source: { modifiedAt: 1722580000000, sizeBytes: 64 },
+        }),
+      },
+    } as unknown as E1DesktopAPI;
+    const cache = new DesktopVaultScanCache(api);
+    const service = new DocumentQueryService({
+      content: new DesktopContentRepository(api, cache),
+      revisions: new DesktopRevisionRepository(),
+    });
+    await cache.scan("v1");
+    return service;
+  }
+
+  it("Desktop 兼容形态：委托 DocumentOpenCapable → editable / lossy:false", async () => {
+    const service = await makeDesktopService("# 标题\n\n普通段落");
+    const opened = await service.openDocument("01JABC");
+    expect(opened?.access).toBe("editable");
+    expect(opened?.compatibility).toEqual({ lossy: false, unsupported: [] });
+    expect(opened?.source).toMatchObject({
+      relativePath: "React.md",
+      versionToken: `sha256:${"b".repeat(64)}`,
+      modifiedAt: 1722580000000,
+      sizeBytes: 64,
+    });
+  });
+
+  it("Desktop 不支持形态：read-only / lossy:true + unsupported 明细", async () => {
+    const service = await makeDesktopService(
+      '[[Wiki Link]]\n\n<div class="custom">\nHTML\n</div>',
+    );
+    const opened = await service.openDocument("01JABC");
+    expect(opened?.access).toBe("read-only");
+    expect(opened?.compatibility.lossy).toBe(true);
+    expect(opened?.compatibility.unsupported.map((f) => f.kind)).toContain(
+      "wiki-link",
+    );
+  });
+});

@@ -13,6 +13,7 @@ import { AppServicesProvider } from "../../state/AppServicesProvider";
 import { resetDB } from "../../infrastructure/db";
 import { TestApp } from "../../test/TestApp";
 import { createDesktopRuntime } from "../../platform/desktop/createDesktopRuntime";
+import { discardPendingVaultSelection } from "../../platform/desktop/vaultOpenConfirmation";
 import type { E1DesktopAPI } from "../../platform/desktop/desktopApi";
 import type { AppServices } from "../../application/AppServices";
 import { GlobalSidebar } from "./GlobalSidebar";
@@ -44,23 +45,41 @@ function ServicesApp({
 }
 
 /** mock 桌面桥：listRecent 为空（全新安装），可选 selectDirectory 行为。 */
-function mockDesktopApi(
-  selectDirectory: E1DesktopAPI["vault"]["selectDirectory"],
-): { api: E1DesktopAPI; open: ReturnType<typeof vi.fn> } {
-  const open = vi.fn(async () => ({
+function mockDesktopApi(overrides: {
+  selectDirectory: E1DesktopAPI["vault"]["selectDirectory"];
+  openRecent?: E1DesktopAPI["vault"]["openRecent"];
+  openSelection?: E1DesktopAPI["vault"]["openSelection"];
+}): {
+  api: E1DesktopAPI;
+  openRecent: ReturnType<typeof vi.fn>;
+  openSelection: ReturnType<typeof vi.fn>;
+} {
+  const openRecent = vi.fn(async () => ({
     vaultId: "v1",
     absolutePath: "/tmp/测试库",
     name: "测试库",
     displayName: "测试库",
     createdAt: "2026-08-09T00:00:00.000Z",
-    initialized: true,
+    initialized: false,
   }));
+  const openSelection = vi.fn(
+    async (input: { selectionToken: string; initialize: boolean }) => ({
+      vaultId: input.initialize ? "v-new" : "transient:t-1",
+      absolutePath: "/tmp/测试库",
+      name: "测试库",
+      displayName: "测试库",
+      createdAt: "2026-08-09T00:00:00.000Z",
+      initialized: input.initialize,
+      transient: !input.initialize,
+    }),
+  );
   const api = {
     platform: "desktop",
     versions: {},
     vault: {
-      selectDirectory,
-      open,
+      selectDirectory: overrides.selectDirectory,
+      openRecent: overrides.openRecent ?? openRecent,
+      openSelection: overrides.openSelection ?? openSelection,
       listRecent: vi.fn(async () => []),
       scan: vi.fn(async () => ({
         vault: { vaultId: "v1", name: "测试库" },
@@ -79,7 +98,7 @@ function mockDesktopApi(
     note: { read: vi.fn(), create: vi.fn(), save: vi.fn() },
     asset: { pick: vi.fn(), import: vi.fn(), resolveUrl: vi.fn() },
   } as unknown as E1DesktopAPI;
-  return { api, open };
+  return { api, openRecent, openSelection };
 }
 
 describe("GlobalSidebar", () => {
@@ -145,14 +164,18 @@ describe("GlobalSidebar", () => {
   });
 });
 
-describe("GlobalSidebar（Desktop 能力，R006 阶段 2）", () => {
+describe("GlobalSidebar（Desktop 能力，R006 阶段 2 / C2.1）", () => {
   beforeEach(() => {
     cleanup();
     localStorage.clear();
+    // 确认握手模块为进程级单例，逐用例清理避免串扰。
+    discardPendingVaultSelection();
   });
 
   it("localDirectory=true 时渲染「打开本地知识库」而非「新建知识库」", async () => {
-    const { api } = mockDesktopApi(vi.fn(async () => null));
+    const { api } = mockDesktopApi({
+      selectDirectory: vi.fn(async () => null),
+    });
     const { services } = createDesktopRuntime(api);
     render(
       <ServicesApp services={services}>
@@ -163,13 +186,14 @@ describe("GlobalSidebar（Desktop 能力，R006 阶段 2）", () => {
     expect(screen.queryByLabelText("新建知识库")).not.toBeInTheDocument();
   });
 
-  it("点击「打开本地知识库」走 selectDirectory → vault.open 链路并入库列表", async () => {
+  it("已初始化目录：selectDirectory → openRecent 链路并入库列表", async () => {
     const selectDirectory = vi.fn(async () => ({
-      vaultId: null,
-      absolutePath: "/tmp/测试库",
+      selectionToken: "s-token",
+      vaultId: "v1",
       displayName: "测试库",
+      initialized: true,
     }));
-    const { api, open } = mockDesktopApi(selectDirectory);
+    const { api, openRecent } = mockDesktopApi({ selectDirectory });
     const { services } = createDesktopRuntime(api);
     render(
       <ServicesApp services={services}>
@@ -179,11 +203,95 @@ describe("GlobalSidebar（Desktop 能力，R006 阶段 2）", () => {
     fireEvent.click(await screen.findByLabelText("打开本地知识库"));
     await screen.findByLabelText("知识库「测试库」");
     expect(selectDirectory).toHaveBeenCalledTimes(1);
-    expect(open).toHaveBeenCalledWith({ absolutePath: "/tmp/测试库" });
+    expect(openRecent).toHaveBeenCalledWith({ vaultId: "v1" });
+  });
+
+  it("未初始化目录：弹三选项确认框（FR-03）；「初始化并打开」走 openSelection", async () => {
+    const selectDirectory = vi.fn(async () => ({
+      selectionToken: "s-token",
+      vaultId: null,
+      displayName: "测试库",
+      initialized: false,
+    }));
+    const { api, openSelection } = mockDesktopApi({ selectDirectory });
+    const { services } = createDesktopRuntime(api);
+    render(
+      <ServicesApp services={services}>
+        <ReadySidebar />
+      </ServicesApp>,
+    );
+    fireEvent.click(await screen.findByLabelText("打开本地知识库"));
+    // 三选项确认框出现（§36.1）。
+    await screen.findByRole("dialog", { name: "打开本地文件夹" });
+    expect(
+      screen.getByText("这是一个普通 Markdown 文件夹"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "仅预览" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "初始化并打开" }));
+    await screen.findByLabelText("知识库「测试库」");
+    expect(openSelection).toHaveBeenCalledWith({
+      selectionToken: "s-token",
+      initialize: true,
+    });
+    expect(
+      screen.queryByRole("dialog", { name: "打开本地文件夹" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("未初始化目录：「仅预览」入库列表并带（预览）后缀", async () => {
+    const selectDirectory = vi.fn(async () => ({
+      selectionToken: "s-token",
+      vaultId: null,
+      displayName: "测试库",
+      initialized: false,
+    }));
+    const { api, openSelection } = mockDesktopApi({ selectDirectory });
+    const { services } = createDesktopRuntime(api);
+    render(
+      <ServicesApp services={services}>
+        <ReadySidebar />
+      </ServicesApp>,
+    );
+    fireEvent.click(await screen.findByLabelText("打开本地知识库"));
+    await screen.findByRole("dialog", { name: "打开本地文件夹" });
+    fireEvent.click(screen.getByRole("button", { name: "仅预览" }));
+    await screen.findByLabelText("知识库「测试库（预览）」");
+    expect(openSelection).toHaveBeenCalledWith({
+      selectionToken: "s-token",
+      initialize: false,
+    });
+  });
+
+  it("未初始化目录：「取消」确认框后无变化（不产生知识库、不调 openSelection）", async () => {
+    const selectDirectory = vi.fn(async () => ({
+      selectionToken: "s-token",
+      vaultId: null,
+      displayName: "测试库",
+      initialized: false,
+    }));
+    const { api, openSelection } = mockDesktopApi({ selectDirectory });
+    const { services } = createDesktopRuntime(api);
+    render(
+      <ServicesApp services={services}>
+        <ReadySidebar />
+      </ServicesApp>,
+    );
+    fireEvent.click(await screen.findByLabelText("打开本地知识库"));
+    await screen.findByRole("dialog", { name: "打开本地文件夹" });
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "打开本地文件夹" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(openSelection).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText(/^知识库「/)).not.toBeInTheDocument();
   });
 
   it("取消目录选择：不产生新知识库也不报错", async () => {
-    const { api, open } = mockDesktopApi(vi.fn(async () => null));
+    const { api, openRecent } = mockDesktopApi({
+      selectDirectory: vi.fn(async () => null),
+    });
     const { services } = createDesktopRuntime(api);
     render(
       <ServicesApp services={services}>
@@ -192,7 +300,7 @@ describe("GlobalSidebar（Desktop 能力，R006 阶段 2）", () => {
     );
     fireEvent.click(await screen.findByLabelText("打开本地知识库"));
     // 等一拍确认没有异步错误落地；知识库列表保持为空。
-    await waitFor(() => expect(open).not.toHaveBeenCalled());
+    await waitFor(() => expect(openRecent).not.toHaveBeenCalled());
     expect(screen.queryByLabelText(/^知识库「/)).not.toBeInTheDocument();
   });
 });

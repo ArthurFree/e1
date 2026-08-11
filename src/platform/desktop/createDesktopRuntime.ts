@@ -3,9 +3,10 @@
  *
  * 与 Web 装配根（infrastructure/browserServices.ts）同构，仓储换成
  * platform/desktop 的 IPC-backed 实现：知识库/页面/标签读路径经
- * E1DesktopAPI 走 Main 文件系统（vault:listRecent / vault:open /
- * vault:scan），写路径抛 DomainError("NOT_IMPLEMENTED") 诚实失败
- * （note.read/create/save 属阶段 3/4，附件属阶段 5）。
+ * E1DesktopAPI 走 Main 文件系统（vault:listRecent / vault:openRecent /
+ * vault:openSelection / vault:scan），正文经 note.read 真实读取
+ * （R006-C3，DesktopContentRepository）；写路径抛 DomainError("NOT_IMPLEMENTED")
+ * 诚实失败（note.create/save 属 C4，附件属阶段 5）。
  *
  * 复用说明（platform/desktop → platform/web 方向）：
  * BrowserMemorySearchIndex / BroadcastChangeChannel / WebRecoveryStore /
@@ -68,7 +69,7 @@ export function createDesktopRuntime(api: E1DesktopAPI): DesktopRuntime {
   const scans = new DesktopVaultScanCache(api);
   const workspaceRepository = new DesktopWorkspaceRepository(api);
   const pageRepository = new DesktopPageRepository(api, scans);
-  const contentRepository = new DesktopContentRepository();
+  const contentRepository = new DesktopContentRepository(api, scans);
   const tagRepository = new DesktopTagRepository(scans);
   const revisionRepository = new DesktopRevisionRepository();
   const assetStore = new DesktopAssetStore();
@@ -80,8 +81,9 @@ export function createDesktopRuntime(api: E1DesktopAPI): DesktopRuntime {
     pages: pageRepository,
     tags: tagRepository,
   });
-  // 搜索索引：复用 Web 内存实现；正文仓储恒空 → 索引只含标题元数据
-  // （阶段 3 接入 note.read 后自动获得正文搜索）。
+  // 搜索索引：复用 Web 内存实现；正文仓储的 listAll/listByWorkspace 恒空
+  // （R006-C3 §35：C3 不扩大 Desktop 搜索，打开 Vault 不全量读正文），
+  // 索引只含标题元数据。
   const searchIndex = new BrowserMemorySearchIndex({
     pages: pageRepository,
     content: contentRepository,
@@ -153,6 +155,13 @@ export function createDesktopRuntime(api: E1DesktopAPI): DesktopRuntime {
   const services: AppServices = {
     assets,
     capabilities: desktopCapabilities,
+    // FR-26「重新扫描知识库」过渡通道（PoC）：缓存失效 + 新快照预热；
+    // 页面树/标签镜像刷新由 UI 经 refreshCurrentWorkspace 命令完成。
+    desktopExtras: {
+      rescanVault: async (vaultId) => {
+        await scans.rescan(vaultId);
+      },
+    },
     preferencesService,
     syncChannel,
     recoveryStore,

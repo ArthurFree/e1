@@ -4,9 +4,11 @@
  * ipcMain/原生对话框全部注入 mock（registerIpcHandlers 依赖注入），
  * 验证：channel 注册齐全、selectDirectory 真实行为（取消/选中）、
  * schema 校验失败归一 INVALID_INPUT/PATH_ESCAPE、契约桩归一 NOT_IMPLEMENTED。
- * R006 阶段 2：vault.open/scan/listRecent 真实实现的行为测试见
+ * R006 阶段 2：vault scan/listRecent 真实实现的行为测试见
  * ./vault.test.ts（真实 tmp 文件系统 + 真实注册表）；本文件保留
  * 注册齐全与 schema 拦截断言。
+ * R006-C2.1：selectDirectory 返回一次性 selectionToken（不再返回
+ * absolutePath）；openSelection/openRecent 行为测试同样在 vault.test.ts。
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { tmpdir } from "node:os";
@@ -45,7 +47,7 @@ beforeEach(() => {
 });
 
 describe("registerIpcHandlers 注册", () => {
-  it("全部 channel 注册（vault 4 + note 3 + asset 3）", () => {
+  it("全部 channel 注册（vault 5 + note 3 + asset 3）", () => {
     registerIpcHandlers({ ipc: bus });
     expect([...handlers.keys()].sort()).toEqual(
       Object.values(IPC_CHANNELS).sort(),
@@ -67,20 +69,23 @@ describe("vault.selectDirectory（真实实现，对话框 mock）", () => {
     });
   });
 
-  it("选中目录返回 vaultId 为 null 的目录信息（basename 为展示名）", async () => {
+  it("选中目录返回令牌 + vaultId 为 null 的目录信息（basename 为展示名，不含绝对路径）", async () => {
     const showOpenDialog = vi
       .fn()
       .mockResolvedValue({ canceled: false, filePaths: ["/Users/x/我的笔记"] });
     registerIpcHandlers({ ipc: bus, openDialog: { showOpenDialog } });
     const result = await call(IPC_CHANNELS.vaultSelectDirectory);
-    expect(result).toEqual({
-      ok: true,
-      value: {
-        vaultId: null,
-        absolutePath: "/Users/x/我的笔记",
-        displayName: "我的笔记",
-      },
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const selected = result.value as Record<string, unknown>;
+    expect(selected).toMatchObject({
+      vaultId: null,
+      displayName: "我的笔记",
+      initialized: false,
     });
+    expect(selected.selectionToken).toMatch(/^[0-9a-f-]{36}$/);
+    // SEC-01：Renderer 拿不到绝对路径。
+    expect(selected).not.toHaveProperty("absolutePath");
     expect(showOpenDialog).toHaveBeenCalledWith({
       properties: ["openDirectory", "createDirectory"],
     });
@@ -99,14 +104,7 @@ describe("契约桩 NOT_IMPLEMENTED 归一", () => {
     registerIpcHandlers({ ipc: bus });
   });
 
-  it("note.read/create/save 合法入参 → NOT_IMPLEMENTED", async () => {
-    const read = await call(IPC_CHANNELS.noteRead, {
-      vaultId: "v1",
-      relativePath: "a.md",
-    });
-    expect(read.ok).toBe(false);
-    if (!read.ok) expect(read.error.code).toBe("NOT_IMPLEMENTED");
-
+  it("note.create/save 合法入参 → NOT_IMPLEMENTED（R006-C4 实现）", async () => {
     const create = await call(IPC_CHANNELS.noteCreate, {
       vaultId: "v1",
       directory: "",
@@ -123,12 +121,24 @@ describe("契约桩 NOT_IMPLEMENTED 归一", () => {
     if (!save.ok) expect(save.error.code).toBe("NOT_IMPLEMENTED");
   });
 
+  it("note.read 已是真实实现（R006-C3-A）：未登记 vaultId → VAULT_NOT_FOUND", async () => {
+    // 行为测试（正常读取/transient/拦截链）见 ./note.test.ts；
+    // 此处只验证 registerIpcHandlers 接线后不再是 NOT_IMPLEMENTED 桩。
+    const read = await call(IPC_CHANNELS.noteRead, {
+      vaultId: "v-未登记",
+      relativePath: "a.md",
+    });
+    expect(read.ok).toBe(false);
+    if (!read.ok) expect(read.error.code).toBe("VAULT_NOT_FOUND");
+  });
+
   it("asset 三方法 → NOT_IMPLEMENTED", async () => {
     for (const [channel, payload] of [
       [IPC_CHANNELS.assetPick, undefined],
       [
         IPC_CHANNELS.assetImport,
-        { vaultId: "v1", sourceAbsolutePath: "/x/a.png", fileName: "a.png" },
+        // R006-C2.1（FR-05）：sourceAbsolutePath → pickToken。
+        { vaultId: "v1", pickToken: "p-token", fileName: "a.png" },
       ],
       [IPC_CHANNELS.assetResolveUrl, "asset-1"],
     ] as const) {

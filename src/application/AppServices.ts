@@ -97,9 +97,21 @@ export interface AppServices {
   /**
    * 运行时能力矩阵（R005 阶段 2，DUAL-01）：组件经
    * useAppServices().capabilities 判断能力，不得判断平台名称。
-   * Web 实现为 platform/web/webCapabilities（六字段全 false）。
+   * Web 实现为 platform/web/webCapabilities（仅 documentPersistence 为 true，
+   * 其余六字段全 false）。
    */
   capabilities: RuntimeCapabilities;
+  /**
+   * Desktop 过渡通道（R006-C3 FR-26，PoC）：仅 Desktop 装配提供——
+   * 「重新扫描知识库」使扫描缓存失效并以新快照预热。Web/内存容器不含
+   * 本字段；UI 一律以 `services.desktopExtras && capabilities.localDirectory`
+   * 门控渲染入口。后续若引入文件监听/多窗口，本字段应演进为正式 port，
+   * 不长期保留平台特例。
+   */
+  desktopExtras?: {
+    /** 使指定 Vault 的扫描缓存失效并重新扫描（只读，不修改任何文件）。 */
+    rescanVault(vaultId: string): Promise<void>;
+  };
   /**
    * 命令服务（R005 批次 1）：业务写编排入口，状态层经此触发仓储写、
    * 搜索索引同步与跨标签页广播。

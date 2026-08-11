@@ -9,6 +9,11 @@
 
 import { useState } from "react";
 import { isDomainError } from "../../domain/errors";
+import {
+  decidePendingVaultSelection,
+  discardPendingVaultSelection,
+  peekPendingVaultSelection,
+} from "../../platform/desktop/vaultOpenConfirmation";
 import { useAppServices } from "../../state/AppServicesProvider";
 import {
   useWorkspaceCommands,
@@ -23,6 +28,7 @@ import { SearchPanel } from "../SearchPanel";
 import { TrashPanel } from "../TrashPanel";
 import { SettingsPanel } from "../SettingsPanel";
 import { StartPreview } from "../StartPreview";
+import { VaultConfirmDialog } from "./VaultConfirmDialog";
 import {
   IconBook,
   IconClock,
@@ -58,10 +64,16 @@ export function GlobalSidebar() {
     closeTrash,
   } = useOverlay();
   const [previewOpen, setPreviewOpen] = useState(false);
+  // R006-C2.1（FR-03）：未初始化文件夹的三选项确认框（仅 Desktop 链路
+  // 会抛 VAULT_CONFIRMATION_REQUIRED，Web 端该状态恒为 null）。
+  const [vaultConfirm, setVaultConfirm] = useState<{
+    displayName: string;
+  } | null>(null);
   // DUAL-01：只判断能力字段。localDirectory（R006 阶段 2，桌面端）下
   // 「新建知识库」入口替换为「打开本地知识库」——同一 createWorkspace
-  // 命令通道，Desktop WorkspaceRepository.create 内含原生目录选择 +
-  // vault.open 初始化语义（US-01/US-02），不新增 Provider 命令。
+  // 命令通道；R006-C2.1 起 Desktop WorkspaceRepository.create 内含
+  // 原生目录选择 + 授权令牌握手（vaultOpenConfirmation 模块），
+  // 未初始化目录在此弹确认框（FR-03），不新增 Provider 命令。
   const canOpenLocalVault = services.capabilities.localDirectory;
 
   const onOpenLocalVault = () => {
@@ -69,11 +81,26 @@ export function GlobalSidebar() {
     void createWorkspace("本地知识库").catch((err: unknown) => {
       // 用户取消目录选择：静默返回，不打扰。
       if (isDomainError(err, "CANCELLED")) return;
+      // 未初始化文件夹：挂起授权令牌已就位，弹三选项确认框（FR-03）。
+      if (isDomainError(err, "VAULT_CONFIRMATION_REQUIRED")) {
+        const pending = peekPendingVaultSelection();
+        if (pending) {
+          setVaultConfirm({ displayName: pending.displayName });
+          return;
+        }
+      }
       console.error("打开本地知识库失败", err);
       services.assets.notify.notify(
         err instanceof Error ? err.message : "打开本地知识库失败，请重试。",
       );
     });
+  };
+
+  /** 确认框决定：记录 initialize 选择后重走 createWorkspace 命令链。 */
+  const onVaultConfirmDecision = (initialize: boolean) => {
+    decidePendingVaultSelection(initialize);
+    setVaultConfirm(null);
+    onOpenLocalVault();
   };
 
   return (
@@ -217,6 +244,17 @@ export function GlobalSidebar() {
       {searchOpen && <SearchPanel onClose={closeSearch} />}
       {trashOpen && <TrashPanel onClose={closeTrash} />}
       {settingsOpen && <SettingsPanel />}
+      {vaultConfirm && (
+        <VaultConfirmDialog
+          displayName={vaultConfirm.displayName}
+          onCancel={() => {
+            discardPendingVaultSelection();
+            setVaultConfirm(null);
+          }}
+          onPreview={() => onVaultConfirmDecision(false)}
+          onInitialize={() => onVaultConfirmDecision(true)}
+        />
+      )}
     </nav>
   );
 }

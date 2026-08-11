@@ -72,14 +72,17 @@ export function mapRecentVaultToWorkspace(vault: RecentVault): Workspace {
   };
 }
 
-/** vault.open 响应 → Workspace（打开成功即视为最近使用）。 */
+/** vault.openSelection / vault.openRecent 响应 → Workspace（打开成功即视为最近使用）。 */
 export function mapOpenedVaultToWorkspace(
   vault: OpenedVault,
   now: number,
 ): Workspace {
+  const baseName = vault.name || vault.displayName;
   return {
     id: vault.vaultId,
-    name: vault.name || vault.displayName,
+    // R006-C2.1（FR-03「仅预览」）：transient 会话名称加后缀标识——
+    // 不写注册表、重启消失，与常规 Vault 在列表中可区分。
+    name: vault.transient ? `${baseName}（预览）` : baseName,
     icon: null,
     description: "",
     homePageId: null,

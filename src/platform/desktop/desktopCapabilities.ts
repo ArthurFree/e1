@@ -21,4 +21,8 @@ export const desktopCapabilities: RuntimeCapabilities = {
   nativeSecrets: false,
   // 阶段 5：附件落 Vault assets/ 真实文件后翻 true（r006 §13）。
   persistentAssetPaths: false,
+  // R006-C3（FR-22）：本阶段编辑器不写盘（note.save 仍为桩），兼容文档
+  // 的「临时编辑」只验证 Tiptap 兼容性；UI 显示「技术验证模式」提示。
+  // C4 接通 note.save 后翻 true。
+  documentPersistence: false,
 };
