@@ -9,13 +9,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { useApp } from "./AppState";
-import { resetDB } from "../infrastructure/db";
+import { resetDB } from "../platform/web/persistence/db";
 import { TestApp } from "../test/TestApp";
 import {
   pageRepository,
   tagRepository,
   workspaceRepository,
-} from "../infrastructure/repositories";
+} from "../platform/web/persistence/repositories";
 import { createDeferred, sleep } from "../test/fixtures";
 
 let host: { app: ReturnType<typeof useApp> | null };

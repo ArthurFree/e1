@@ -4,8 +4,12 @@
  * 负责切换知识库、页面与标签 CRUD、搜索索引构建。
  *
  * - R005 批次 1：业务编排下沉到 application 层命令/查询服务
- *   （services.commands / services.queries），本文件只保留 useReducer、
- *   requestId 过期保护、dispatch、navBridge 调用与错误展示；
+ *   （services.commands / services.queries）；
+ * - PR4：会话生命周期（初始加载 + 路由恢复决策、requestId 过期保护、
+ *   页面/标签镜像刷新、最近打开打点）下沉到
+ *   application/services/WorkspaceSessionController，本文件退化为
+ *   React 状态容器——只保留 useReducer/useState、Context 装配、
+ *   navBridge 调用与错误展示，经 WorkspaceSessionSink 接收控制器写回；
  * - 会话数据由 useReducer 持有，原子加载与过期响应丢弃见
  *   workspace/sessionReducer.ts（R003 阶段 2）；
  * - pages / tags / workspaces 是 IndexedDB 的内存镜像：写操作先落库再刷新；
@@ -29,9 +33,12 @@ import {
   type ReactNode,
 } from "react";
 import type { Page, PageKind, Workspace } from "../domain/types";
-import { parseRoute } from "../domain/route";
 import type { WorkspaceSessionData } from "../application/services/WorkspaceSessionService";
-import { trackTiming } from "../application/devDiagnostics";
+import {
+  INITIAL_LOAD_ERROR,
+  WorkspaceSessionController,
+  type WorkspaceSessionSink,
+} from "../application/services/WorkspaceSessionController";
 import {
   VaultImportService,
   type VaultImportReport,
@@ -46,7 +53,6 @@ import {
 import { initialSession, sessionReducer } from "./workspace/sessionReducer";
 import { usePreferencesRoute } from "./PreferencesProvider";
 import type { NavigationBridge } from "./navigationBridge";
-import type { MainView } from "./NavigationContext";
 
 /** 导航域内部通道（非公开契约）：会话加载与当前会话快照。 */
 export interface WorkspaceInternalsContextValue {
@@ -100,8 +106,6 @@ export function WorkspaceProvider({
   const [loadKey, setLoadKey] = useState(0);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [session, dispatchSession] = useReducer(sessionReducer, initialSession);
-  // 会话加载请求序号：每次加载递增，过期响应据此丢弃（R003 阶段 2）。
-  const sessionRequestRef = useRef(0);
   // 会话快照镜像：命令回调与 getSnapshot 经 ref 读取最新状态，保持引用稳定。
   const sessionRef = useRef(session);
   sessionRef.current = session;
@@ -115,49 +119,61 @@ export function WorkspaceProvider({
   const pageTags = session.pageTags;
 
   /**
-   * 原子加载知识库会话：数据一次拉齐、单次 dispatch 提交；
-   * 返回数据供调用方继续流程（如路由恢复时校验文档存在性）；
-   * 过期请求或加载失败返回 null，调用方应中止后续导航。
-   * 搜索索引构建在查询服务内完成（R005 批次 1）。
+   * 会话生命周期控制器（PR4）：requestId 过期保护、初始加载与路由恢复
+   * 决策、镜像刷新与最近打开打点都在其中，本组件只做状态与导航接线。
+   *
+   * 用 useState 惰性初始化持有实例（与 DocumentEditor 持有 SaveCoordinator
+   * 同一惯例）：整个 Provider 生命周期一个实例，requestId 计数不因重渲染
+   * 归零；服务容器在应用生命周期内引用恒定，故只在首次渲染取一次。
+   * 写回通道（sink）的成员全部由稳定引用（dispatch / setState / ref）构成。
    */
-  const loadSession = useCallback(
-    async (wsId: string): Promise<WorkspaceSessionData | null> => {
-      const requestId = ++sessionRequestRef.current;
-      dispatchSession({
-        type: "session/load-start",
-        requestId,
-        workspaceId: wsId,
-      });
-      try {
-        const t0 = performance.now();
-        const data = await workspaceQueries.loadSession(wsId);
-        trackTiming("workspace-load", performance.now() - t0);
-        if (requestId !== sessionRequestRef.current) return null;
-        dispatchSession({ type: "session/load-success", requestId, data });
-        return data;
-      } catch (err) {
-        if (requestId !== sessionRequestRef.current) return null;
-        console.error("知识库会话加载失败", err);
+  const [controller] = useState(() => {
+    const sink: WorkspaceSessionSink = {
+      sessionLoadStarted: (requestId, wsId) =>
         dispatchSession({
-          type: "session/load-error",
+          type: "session/load-start",
           requestId,
-          error: "知识库加载失败，请重试。",
-        });
-        return null;
-      }
-    },
-    [workspaceQueries],
+          workspaceId: wsId,
+        }),
+      sessionLoadSucceeded: (requestId, data) =>
+        dispatchSession({ type: "session/load-success", requestId, data }),
+      sessionLoadFailed: (requestId, error) =>
+        dispatchSession({ type: "session/load-error", requestId, error }),
+      pagesLoaded: (list) => dispatchSession({ type: "pages/set", pages: list }),
+      tagsLoaded: (tagList, pageTagList) =>
+        dispatchSession({
+          type: "tags/set-all",
+          tags: tagList,
+          pageTags: pageTagList,
+        }),
+      workspacesLoaded: (list) => setWorkspaces(list),
+      workspaceLastOpened: (wsId, at) =>
+        setWorkspaces((prev) =>
+          prev.map((w) => (w.id === wsId ? { ...w, lastOpenedAt: at } : w)),
+        ),
+    };
+    return new WorkspaceSessionController({
+      queries: workspaceQueries,
+      workspaceCommands,
+      sink,
+      getCurrentWorkspaceId: () => sessionRef.current.workspaceId,
+    });
+  });
+
+  const loadSession = useCallback(
+    (wsId: string): Promise<WorkspaceSessionData | null> =>
+      controller.loadSession(wsId),
+    [controller],
   );
 
-  // 当前知识库内的增量刷新：只更新页面镜像，不触碰会话其余字段；
-  // 搜索索引同步在查询服务内完成（R005 批次 1）。
   const loadPages = useCallback(
-    async (wsId: string) => {
-      const list = await workspaceQueries.loadPages(wsId);
-      dispatchSession({ type: "pages/set", pages: list });
-      return list;
-    },
-    [workspaceQueries],
+    (wsId: string) => controller.loadPages(wsId),
+    [controller],
+  );
+
+  const loadTags = useCallback(
+    (wsId: string) => controller.loadTags(wsId),
+    [controller],
   );
 
   const getSnapshot = useCallback(
@@ -168,98 +184,41 @@ export function WorkspaceProvider({
     [],
   );
 
-  // 标签与页面-标签关联并行加载（查询服务内）、同批次提交。
-  const loadTags = useCallback(
-    async (wsId: string) => {
-      const { tags: tagList, pageTags: pageTagList } =
-        await workspaceQueries.loadTags(wsId);
-      dispatchSession({
-        type: "tags/set-all",
-        tags: tagList,
-        pageTags: pageTagList,
-      });
-    },
-    [workspaceQueries],
-  );
-
   useEffect(() => {
     // StrictMode 双调用与 retryLoad 重试都会产生过期加载，用 cancelled 丢弃其结果。
     let cancelled = false;
-    (async () => {
-      try {
-        setError(null);
-        // 偏好经 PreferencesProvider 的首次加载 Promise 就位（同一份结果）。
-        const [wsList, prefs] = await Promise.all([
-          workspaceQueries.listWorkspaces(),
-          whenLoaded,
-        ]);
+    setError(null);
+    void controller
+      // 偏好经 PreferencesProvider 的首次加载 Promise 就位（同一份结果）。
+      .bootstrap({ preferences: whenLoaded, isActive: () => !cancelled })
+      .then((result) => {
         if (cancelled) return;
-        setWorkspaces(wsList);
-        // 恢复上次路由；无记录（首次安装）或路由失效时回退开始首页。
-        const route = parseRoute(prefs.lastRoute);
-        const routeWs =
-          route && (route.view === "workspace" || route.view === "document")
-            ? (wsList.find((w) => w.id === route.workspaceId) ?? null)
-            : null;
-        const target = routeWs ?? wsList[0] ?? null;
-        if (!target) {
-          // 没有任何知识库：视为全新安装，直接就绪（UI 引导创建）。
-          setReady(true);
-          return;
+        switch (result.status) {
+          case "failed":
+            setError(result.message);
+            return;
+          case "aborted":
+            // 过期请求或会话被更新的请求取代：不置 ready，也不导航。
+            return;
+          case "empty":
+            // 没有任何知识库：视为全新安装，直接就绪（UI 引导创建）。
+            setReady(true);
+            return;
+          case "restored":
+            // 导航状态由 NavigationProvider 持有，经命令桥恢复（不写回路由）。
+            navBridge.commands?.restoreRoute(result.view, result.pageId);
+            setReady(true);
         }
-        const sessionData = await loadSession(target.id);
-        if (cancelled || !sessionData) return;
-        const pageList = sessionData.pages;
-        let nextView: MainView = "start";
-        let nextPageId: string | null = null;
-        if (route?.view === "recent" || route?.view === "favorites") {
-          nextView = route.view;
-        } else if (routeWs && route?.view === "workspace") {
-          nextView = "workspace";
-        } else if (routeWs && route?.view === "document") {
-          // 恢复文档视图前校验目标仍存在且未进回收站，防止打开已删除文档。
-          const doc = pageList.find(
-            (p) =>
-              p.id === route.pageId &&
-              p.kind === "document" &&
-              p.deletedAt === null,
-          );
-          if (doc) {
-            nextView = "document";
-            nextPageId = doc.id;
-          } else {
-            // 路由指向的文档已不存在：回到该知识库首页。
-            nextView = "workspace";
-          }
-        }
-        // 导航状态由 NavigationProvider 持有，经命令桥恢复（不写回路由）。
-        navBridge.commands?.restoreRoute(nextView, nextPageId);
-        // 恢复的知识库记为最近使用。
-        // fire-and-forget：不阻塞 ready，回写完成后再把 lastOpenedAt 合并进内存镜像。
-        void workspaceCommands.setLastOpened(target.id, Date.now()).then(() => {
-          setWorkspaces((prev) =>
-            prev.map((w) =>
-              w.id === target.id ? { ...w, lastOpenedAt: Date.now() } : w,
-            ),
-          );
-        });
-        setReady(true);
-      } catch {
-        // 任何仓储异常统一降级为可重试的错误页，而不是让应用白屏。
-        if (!cancelled) setError("本地数据加载失败，请重试。");
-      }
-    })();
+      })
+      .catch(() => {
+        // 导航恢复/置位阶段的异常同样降级为可重试的错误页，
+        // 且不留下未处理的 Promise rejection（控制器内部异常已归一为 failed）。
+        if (!cancelled) setError(INITIAL_LOAD_ERROR);
+      });
     return () => {
       cancelled = true;
     };
-  }, [
-    loadSession,
-    loadKey,
-    whenLoaded,
-    navBridge,
-    workspaceQueries,
-    workspaceCommands,
-  ]);
+  }, [controller, loadKey, whenLoaded, navBridge]);
 
   const workspace = workspaces.find((w) => w.id === workspaceId) ?? null;
 
@@ -272,13 +231,12 @@ export function WorkspaceProvider({
   /**
    * 刷新当前知识库的页面/标签镜像（R006-C3 FR-26）：重读页面、标签与
    * 页面-标签关联，供 Desktop「重新扫描知识库」在扫描缓存失效后刷新
-   * 树与标签；无会话时为 no-op。
+   * 树与标签；无会话时为 no-op（判定与编排都在控制器内）。
    */
-  const refreshCurrentWorkspace = useCallback(async () => {
-    const wsId = sessionRef.current.workspaceId;
-    if (!wsId) return;
-    await Promise.all([loadPages(wsId), loadTags(wsId)]);
-  }, [loadPages, loadTags]);
+  const refreshCurrentWorkspace = useCallback(
+    () => controller.refreshCurrentWorkspace(),
+    [controller],
+  );
 
   // —— 以下命令回调统一经 sessionRef/workspacesRef 读取最新数据，
   //    依赖只剩稳定引用（命令/查询服务/桥），回调身份恒定（R004 §4.6）——
@@ -331,18 +289,12 @@ export function WorkspaceProvider({
       } else {
         await loadPages(wsId);
       }
-      void workspaceCommands.setLastOpened(wsId, Date.now()).then(() => {
-        setWorkspaces((prev) =>
-          prev.map((w) =>
-            w.id === wsId ? { ...w, lastOpenedAt: Date.now() } : w,
-          ),
-        );
-      });
+      controller.touchLastOpened(wsId);
       // 新文档标题为空占位，请求 TitleEditor 自动聚焦便于立即改名。
       navBridge.commands?.openDocumentView(wsId, page.id, true);
       return page;
     },
-    [loadSession, loadPages, navBridge, pageCommands, workspaceCommands],
+    [controller, loadSession, loadPages, navBridge, pageCommands],
   );
 
   const createPage = useCallback(
@@ -517,15 +469,9 @@ export function WorkspaceProvider({
       const data = await loadSession(ws.id);
       if (!data) return;
       navBridge.commands?.showWorkspaceHome(ws.id);
-      void workspaceCommands.setLastOpened(ws.id, Date.now()).then(() => {
-        setWorkspaces((prev) =>
-          prev.map((w) =>
-            w.id === ws.id ? { ...w, lastOpenedAt: Date.now() } : w,
-          ),
-        );
-      });
+      controller.touchLastOpened(ws.id);
     },
-    [loadSession, navBridge, workspaceCommands],
+    [controller, loadSession, navBridge, workspaceCommands],
   );
 
   // 导入 Portable Vault（R005 阶段 7B）：编排下沉到 application 层服务，
@@ -548,20 +494,11 @@ export function WorkspaceProvider({
       const sessionData = await loadSession(report.workspaceId);
       if (!sessionData) return report;
       navBridge.commands?.showWorkspaceHome(report.workspaceId);
-      void workspaceCommands
-        .setLastOpened(report.workspaceId, Date.now())
-        .then(() => {
-          setWorkspaces((prev) =>
-            prev.map((w) =>
-              w.id === report.workspaceId
-                ? { ...w, lastOpenedAt: Date.now() }
-                : w,
-            ),
-          );
-        });
+      controller.touchLastOpened(report.workspaceId);
       return report;
     },
     [
+      controller,
       workspaceQueries,
       workspaceCommands,
       pageCommands,
@@ -580,17 +517,11 @@ export function WorkspaceProvider({
       if (!data) return;
       // 进入知识库首页，目录结构在侧栏与首页中呈现。
       navBridge.commands?.showWorkspaceHome(id);
-      void workspaceCommands.setLastOpened(id, Date.now()).then(() => {
-        setWorkspaces((prev) =>
-          prev.map((w) =>
-            w.id === id ? { ...w, lastOpenedAt: Date.now() } : w,
-          ),
-        );
-      });
+      controller.touchLastOpened(id);
       // 「我切换了知识库」的跨标签页通知属于会话层编排，留在状态层发送。
       syncChannel.publish({ type: "workspace-changed", workspaceId: id });
     },
-    [loadSession, navBridge, workspaceCommands, syncChannel],
+    [controller, loadSession, navBridge, syncChannel],
   );
 
   // 其他标签页的页面/工作区变更（R004 §7.2）：属于当前会话工作区时

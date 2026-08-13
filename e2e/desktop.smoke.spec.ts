@@ -9,11 +9,10 @@
 // .e1/vault.json 与 recent-vaults.json，经 vault.openRecent + vault.scan
 // 验证（原生目录选择器无法被 Playwright 驱动，选择链路见单元/组件测试）。
 import { test, expect, _electron as electron } from "@playwright/test";
-import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { requireDesktopArtifacts } from "./desktopArtifacts";
 
 /** 以隔离的临时 userData 启动应用（返回 app 与清理函数）。 */
 async function launchIsolated() {
@@ -33,16 +32,7 @@ async function launchIsolated() {
 
 test.describe("桌面冒烟", () => {
   test.beforeAll(() => {
-    const root = fileURLToPath(new URL("..", import.meta.url));
-    const artifacts = [
-      "dist/desktop.html",
-      "dist-electron/main.mjs",
-      "dist-electron/preload.cjs",
-    ];
-    test.skip(
-      artifacts.some((p) => !existsSync(path.join(root, p))),
-      "缺少 dist/ 或 dist-electron/ 产物，请先运行 npm run build:desktop",
-    );
+    requireDesktopArtifacts();
   });
 
   test("桌面冒烟：desktop 入口渲染应用 UI + IPC 桥存在", async () => {
@@ -93,7 +83,7 @@ test.describe("桌面冒烟", () => {
     await cleanup();
   });
 
-  test("桌面冒烟：打开本地 Vault 全链路（openRecent+scan+重开自动进入，US-01/06）", async () => {
+  test("桌面冒烟 @golden：打开本地 Vault 全链路（openRecent+scan+重开自动进入，US-01/06）", async () => {
     // 临时 Vault：52 个 Markdown + 5 个嵌套中文目录（其中一篇带 Frontmatter）。
     const vaultDir = await mkdtemp(path.join(os.tmpdir(), "e1-vault-"));
     const vaultName = path.basename(vaultDir);

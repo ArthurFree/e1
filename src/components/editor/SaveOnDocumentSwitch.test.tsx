@@ -12,12 +12,12 @@ import { cleanup, render, waitFor } from "@testing-library/react";
 import type { Editor } from "@tiptap/core";
 import { useApp } from "../../state/AppState";
 import { TestApp } from "../../test/TestApp";
-import { resetDB } from "../../infrastructure/db";
+import { resetDB } from "../../platform/web/persistence/db";
 import {
   contentRepository,
   pageRepository,
   workspaceRepository,
-} from "../../infrastructure/repositories";
+} from "../../platform/web/persistence/repositories";
 import { DocumentEditor } from "./DocumentEditor";
 
 /** beforeEach 中创建的两个测试文档 ID（种子数据另有预置文档，需显式区分）。 */

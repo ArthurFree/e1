@@ -7,7 +7,7 @@
 | Provider    | 文件                      | 拥有                                                                                                          | 公开 Context                                            |
 | ----------- | ------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
 | Preferences | `PreferencesProvider.tsx` | preferences、routePersistenceStatus、`PreferencesService` 实例（卸载时 `dispose()`：清防抖定时器 + 队列排空） | `PreferencesContext.tsx`                                |
-| Workspace   | `WorkspaceProvider.tsx`   | ready/error/retryLoad、workspaces、会话（pages/tags/pageTags/status）、页面/标签 CRUD、搜索索引准备           | `WorkspaceSessionContext.tsx`（细分 Data/Command 双片） |
+| Workspace   | `WorkspaceProvider.tsx`   | ready/error/retryLoad、workspaces、会话（pages/tags/pageTags/status）、页面/标签 CRUD（生命周期编排见下文控制器） | `WorkspaceSessionContext.tsx`（细分 Data/Command 双片） |
 | Navigation  | `NavigationProvider.tsx`  | view、selectedPageId、titleFocusPageId、导航动作                                                              | `NavigationContext.tsx`（细分 State/Command 双片）      |
 | Overlay     | `OverlayContext.tsx`      | settings/search/trash/treeDrawer 开关（自包含 Provider）                                                      | 同左                                                    |
 
@@ -28,6 +28,16 @@ Workspace 与 Navigation 两个状态域各自的公开 Context 进一步拆为�
 命令切片引用恒定的前提是所有命令回调不依赖会变的闭包数据：WorkspaceProvider 的命令统一经 `sessionRef`/`workspacesRef` 读取最新会话与知识库列表，useCallback 依赖只剩仓储/服务/桥等稳定引用。纯命令消费者（如 AIDraftModal、CreateWorkspaceModal、SearchPanel 的导航侧）因此完全不随数据/路由变化重渲染；命令引用稳定也让 memo 子树（PageTreeBody 等）的 props 不再因回调身份漂移失效。
 
 聚合 hook（`useWorkspaceSession()`/`useNavigation()`）仍导出且形状不变，但仅供既有测试过渡；生产组件使用聚合 hook 会触发 `src/test/architecture.test.ts` 失败。粒度隔离由 `src/state/contextGranularity.test.tsx` 强制（renamePage 不动命令消费者、showRecent 不动导航命令消费者、命令引用跨变化稳定）。
+
+## 会话生命周期控制器（PR4）
+
+`WorkspaceProvider` 只做 React 状态容器：`useReducer`（会话）+ `useState`（workspaces/ready/error）+ Context 装配 + `navigationBridge` 调用。业务生命周期下沉到 `application/services/WorkspaceSessionController`：
+
+- **初始加载与路由恢复决策**：`bootstrap({ preferences, isActive })` 并行取知识库列表与偏好、选定目标知识库、原子加载会话，返回 `empty | aborted | failed | restored{workspaceId,view,pageId}`；文档路由指向已删除页面时降级为知识库首页。状态层只据结果置 ready/error 并调用 `restoreRoute`；
+- **会话加载过期保护**：`requestId` 计数器由控制器持有（不再是 Provider 的 ref），`loadSession` 过期或失败返回 `null`，调用方中止导航；
+- **镜像刷新与打点**：`loadPages` / `loadTags` / `refreshCurrentWorkspace`（FR-26）/ `touchLastOpened`（fire-and-forget，内联 catch 吞掉 rejection，落库成功才回填 `lastOpenedAt`）。
+
+控制器不认识 React，经 `WorkspaceSessionSink`（由 Provider 用 dispatch/setState 实现，成员引用恒定）写回状态；`application` 因此不反向依赖 `state`（含 `ignoreRejection`）。控制器实例经 `useState` 惰性初始化持有一份，requestId 计数不因重渲染归零。公开 Context 形状与消费者订阅方式完全不变，直接单测见 `WorkspaceSessionController.test.ts`。
 
 ## 知识库会话原子加载（R003 阶段 2）
 

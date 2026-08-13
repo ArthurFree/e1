@@ -4,11 +4,12 @@
  * store（DB v5），与普通偏好记录分离。只存本机，不进入日志、同步或
  * 上报（AGENTS.md 安全约定）。
  *
- * 放在 infrastructure 而非 platform/web：实现依赖 db.ts 的连接管理
- * （getDB），与既有仓储同层；platform/web → infrastructure 的 import
- * 方向保持不变（反向会造成循环依赖）。
+ * PR6 起与 db.ts / repositories.ts / seed.ts 一起位于
+ * platform/web/persistence/：Web 持久化实现是平台适配器，与
+ * platform/desktop 的文件系统实现对称；上层只见 application 层的
+ * SecretStore port。
  */
-import type { SecretStore } from "../application/services/SecretStore";
+import type { SecretStore } from "../../../application/services/SecretStore";
 import { getDB, STORE_SECRETS } from "./db";
 
 interface SecretRecord {

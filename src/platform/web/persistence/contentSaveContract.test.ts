@@ -3,7 +3,7 @@
  * 契约断言见 src/test/contentSaveContract.ts（与内存实现共用）。
  */
 import { beforeEach } from "vitest";
-import { describeContentSaveContract } from "../test/contentSaveContract";
+import { describeContentSaveContract } from "../../../test/contentSaveContract";
 import { getDB, resetDB, STORE_CONTENTS } from "./db";
 import {
   contentRepository,

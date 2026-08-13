@@ -2,12 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useApp } from "../state/AppState";
 import { TestApp } from "../test/TestApp";
-import { resetDB } from "../infrastructure/db";
+import { resetDB } from "../platform/web/persistence/db";
 import {
   preferencesRepository,
   workspaceRepository,
-} from "../infrastructure/repositories";
-import { secretStore } from "../infrastructure/secretStore";
+} from "../platform/web/persistence/repositories";
+import { secretStore } from "../platform/web/persistence/secretStore";
 import { AI_API_KEY_SECRET } from "../application/services/SecretStore";
 import { WebAssetPicker } from "../platform/web/webAssetPicker";
 import { SettingsPanel } from "./SettingsPanel";
@@ -184,7 +184,7 @@ describe("SettingsPanel 知识库导出（R005 阶段 7A）", () => {
     );
     // 让导出失败：知识库查询抛错（构造服务后立即调用，波及面仅限本测试）。
     const { workspaceRepository } =
-      await import("../infrastructure/repositories");
+      await import("../platform/web/persistence/repositories");
     const listSpy = vi
       .spyOn(workspaceRepository, "list")
       .mockRejectedValueOnce(new Error("磁盘炸了"));

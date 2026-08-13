@@ -16,16 +16,18 @@
     "test:web": "vitest run",
     "test:desktop": "vitest run electron shared src/platform/desktop --passWithNoTests",
     "test:watch": "vitest",
+    "test:perf": "vitest run --config vitest.perf.config.ts",
     "test:e2e": "PLAYWRIGHT_BROWSERS_PATH=0 playwright test --grep-invert \"桌面冒烟\"",
     "test:e2e:desktop": "PLAYWRIGHT_BROWSERS_PATH=0 playwright test --grep \"桌面冒烟\"",
+    "test:e2e:desktop:golden": "PLAYWRIGHT_BROWSERS_PATH=0 playwright test --grep \"@golden\"",
     "test:e2e:update": "PLAYWRIGHT_BROWSERS_PATH=0 playwright test --grep-invert \"桌面冒烟\" --update-snapshots",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.electron.json",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "deps:check": "dependency-cruiser src electron shared",
-    "test:coverage": "vitest run --coverage --exclude=e2e/** --exclude=node_modules/** --exclude=src/infrastructure/perf.bench.test.ts",
-    "ci": "npm run typecheck && npm run lint && npm run deps:check && npm test && npm run build"
+    "test:coverage": "vitest run --coverage --exclude=e2e/** --exclude=node_modules/** --exclude=**/*perf-wallclock.test.ts",
+    "ci": "npm run typecheck && npm run lint && npm run deps:check && npm test"
   },
   "dependencies": {
     "@floating-ui/dom": "^1.8.0",

@@ -5,7 +5,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDB, resetDB, STORE_SECRETS } from "./db";
 import { secretStore } from "./secretStore";
-import { describeSecretStoreContract } from "../test/secretStoreContract";
+import { describeSecretStoreContract } from "../../../test/secretStoreContract";
 
 beforeEach(async () => {
   await resetDB();

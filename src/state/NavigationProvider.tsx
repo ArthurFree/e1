@@ -28,6 +28,7 @@ import {
 } from "./NavigationContext";
 import { usePreferencesRoute } from "./PreferencesProvider";
 import { useWorkspaceInternals } from "./WorkspaceProvider";
+import { ignoreRejection } from "./ignoreRejection";
 import type { NavigationBridge, NavigationCommands } from "./navigationBridge";
 
 interface NavigationProviderProps {
@@ -108,7 +109,7 @@ export function NavigationProvider({
         wsId = target.workspaceId;
         const data = await workspaceInternals.loadSession(wsId);
         if (!data) return;
-        void workspaceCommands.setLastOpened(wsId, Date.now());
+        ignoreRejection(workspaceCommands.setLastOpened(wsId, Date.now()));
       } else if (!inState && wsId) {
         // 页面由命令服务直接创建（模板/AI 流程），当前列表未包含时同步刷新。
         await workspaceInternals.loadPages(wsId);
@@ -136,7 +137,7 @@ export function NavigationProvider({
         wsId = target.workspaceId;
         const data = await workspaceInternals.loadSession(wsId);
         if (!data) return;
-        void workspaceCommands.setLastOpened(wsId, Date.now());
+        ignoreRejection(workspaceCommands.setLastOpened(wsId, Date.now()));
       }
       if (!wsId) return;
       // 与 openDocument 的区别：主区域停在知识库首页，由页面树高亮目标。

@@ -26,29 +26,31 @@ npm run preview      # 预览生产构建
 ## 测试
 
 ```bash
-npm test                 # 单元与组件测试（Vitest + Testing Library）
-npm run typecheck        # TypeScript 检查
+npm test                 # 单元与组件测试（Vitest + Testing Library；不含 wall-clock）
+npm run typecheck        # TypeScript 检查（Web + Electron）
 npm run lint             # ESLint（flat config，0 error 门禁）
 npm run format:check     # Prettier 格式检查
 npm run deps:check       # dependency-cruiser 分层与循环依赖检查
 npm run test:coverage    # 覆盖率（@vitest/coverage-v8）
-npm run ci               # 统一门禁：typecheck + lint + deps:check + test + build
-npm run test:e2e         # Playwright 端到端 + 1440×900 截图回归 + 响应式冒烟
+npm run ci               # 统一门禁：typecheck + lint + deps:check + test（不含 build / E2E / perf）
+npm run test:perf        # wall-clock 性能基准（不进 CI）
+npm run test:e2e         # Web Playwright 功能 + 响应式（排除桌面冒烟）
 npm run test:e2e:update  # 更新截图基线（界面变更后执行并审查 diff）
 ```
 
-Desktop（R006 技术验证版，Electron）：
+Desktop（R006，Electron）：
 
 ```bash
-npm run dev:desktop      # 桌面开发（vite dev + esbuild watch + Electron 窗口）
-npm run build:desktop    # Web 构建 + Electron 主进程/预加载打包（dist-electron/）
+npm run dev:desktop      # 桌面开发（vite + esbuild watch + Electron）
+npm run build:desktop    # Web 构建 + Electron 主进程/预加载（dist-electron/）
 npm run test:desktop     # 桌面侧单元测试（IPC 契约/preload/平台适配）
-npm run test:e2e:desktop # Electron 冒烟（需先 build:desktop，不进 CI）
+npm run test:e2e:desktop # Electron 全套冒烟（需先 build:desktop）
+npm run test:e2e:desktop:golden # 黄金路径子集（打开 Vault / 保存重启 / 附件重启；进 CI）
 ```
 
 Playwright 浏览器二进制安装在项目内（`PLAYWRIGHT_BROWSERS_PATH=0`），首次运行 `test:e2e` 前如缺浏览器，执行 `PLAYWRIGHT_BROWSERS_PATH=0 npx playwright install chromium`。
 
-CI（`.github/workflows/ci.yml`）：quality job 跑 `npm run ci` + 覆盖率；e2e job 跑功能与响应式（视觉截图基线为 macOS 生成，不纳入 CI，基线变化须人工审查）。
+CI（`.github/workflows/ci.yml`）：`quality`（`npm run ci` + 覆盖率）、`build-web`、`build-desktop`、`e2e-web`（Chromium 功能/响应式）、`e2e-desktop`（xvfb + `@golden` 黄金路径）。视觉截图基线为 macOS 生成，不纳入 CI。
 
 ## 架构
 
@@ -73,11 +75,13 @@ src/
 ├── application/         # 应用服务：保存协调器、会话加载、搜索索引、偏好写入、
 │                        #   恢复缓冲、损坏诊断、AppServices 容器接口
 ├── domain/              # 纯逻辑：实体类型、页面树、搜索、AI、校验与错误码、仓储接口
-└── infrastructure/      # IndexedDB 实现（DB v4）、种子数据、OpenAI 兼容 AI provider、
-                         #   浏览器服务装配根、内存仓储
+├── infrastructure/      # 平台无关基础设施：OpenAI 兼容 AI provider、内存仓储、id 生成
+├── platform/web/        # Web 运行时与服务装配根 + 浏览器适配（Blob / BroadcastChannel）
+│   └── persistence/     #   IndexedDB 实现（DB v5，含 secrets store）与种子数据
+└── platform/desktop/    # Desktop 运行时装配与 IPC 适配（本地 Vault / Markdown 文件）
 ```
 
-界面只依赖仓储接口和领域状态，生产代码不直接 import infrastructure：应用能力经 `AppServices` 容器注入（装配根 `browserServices.ts`，测试可换内存仓储）。Tiptap 仅通过编辑器适配层（`DocumentEditor`）与页面内容交互。基础设施层（IndexedDB、Markdown 转换、AI provider）可整体替换而不重写界面。
+界面只依赖仓储接口和领域状态，生产代码不直接 import 持久化实现：应用能力经 `AppServices` 容器注入（Web 装配根 `platform/web/createWebRuntime` → `platform/web/createBrowserServices`，Desktop 装配根 `platform/desktop/createDesktopRuntime`；测试可换内存仓储）。Tiptap 仅通过编辑器适配层（`DocumentEditor`）与页面内容交互。基础设施层（IndexedDB、Markdown 转换、AI provider、桌面 IPC）可整体替换而不重写界面。双运行时共享 application/domain，差异只经 `RuntimeCapabilities` 与 platform 适配。
 
 ### 数据模型
 
@@ -90,10 +94,10 @@ src/
 | `Attachment`       | `id`, `pageId`, `name`, `mimeType`, `size`, `createdAt`                                                                                   | 附件元数据；二进制经 `AssetStore` 以 `Uint8Array` 读写，文档节点只存 ID   |
 | `Tag`              | `id`, `workspaceId`, `name`, `color`                                                                                                      | 工作区标签定义                                                            |
 | `PageTag`          | `pageId`, `tagId`, `workspaceId`                                                                                                          | 页面与标签的关联                                                          |
-| `Preferences`      | `theme`, `sidebarWidth`, `aiConfig`                                                                                                       | 浏览器本地偏好                                                            |
+| `Preferences`      | `theme`, `sidebarWidth`, `aiEndpoint`, `aiModel`                                                                                          | 浏览器本地偏好（非机密）；AI `apiKey` 在 IndexedDB `secrets` store（SecretStore） |
 | `TrashRecord`      | `pageId`, `deletedAt`, `originalParentId`                                                                                                 | 用于恢复原始位置                                                          |
 
-文档内容 JSON 是唯一编辑真相（读入前经白名单运行时校验）；`textSnapshot` 仅用于搜索与 Markdown 导出。仓储读取含损坏数据降级（字段缺失/形状不符时跳过或回退默认值）。数据库当前版本 v4，迁移按 oldVersion 分支在 upgrade 事务内完成（v1→v2 将 `folder` 原地改写为 `group` 并补齐新字段；v2→v3 新增复合索引；v3→v4 为 contents/pageTags 回写 workspaceId 并新增工作区索引）；搜索经 `SearchIndexPort`（Web 实现为工作区级内存索引 `BrowserMemorySearchIndex`）：会话加载不再携带全部正文，索引经 `prepareWorkspace` 自行按工作区索引读取页面与正文快照；正文写入经 `DocumentCommitService` 单点完成落盘 + 索引同步，保存携带 expectedVersion（不透明 `ContentVersionToken`，`idb:N` 编码）乐观锁。
+文档内容 JSON 是唯一编辑真相（读入前经白名单运行时校验）；`textSnapshot` 仅用于搜索与 Markdown 导出。仓储读取含损坏数据降级（字段缺失/形状不符时跳过或回退默认值）。数据库当前版本 **v5**（10 个 object store，含 `secrets`），迁移按 oldVersion 分支在 upgrade 事务内完成（v1→v2 将 `folder` 原地改写为 `group` 并补齐新字段；v2→v3 新增复合索引；v3→v4 为 contents/pageTags 回写 workspaceId 并新增工作区索引；v4→v5 新增 secrets store，并把旧版 `aiConfig.apiKey` 迁入 `"ai.apiKey"` secret、偏好记录剥离为 `aiEndpoint`/`aiModel`）；搜索经 `SearchIndexPort`（Web 实现为工作区级内存索引 `BrowserMemorySearchIndex`）：会话加载不再携带全部正文，索引经 `prepareWorkspace` 自行按工作区索引读取页面与正文快照；正文写入经 `DocumentCommitService` 单点完成落盘 + 索引同步，保存携带 expectedVersion（不透明 `ContentVersionToken`，`idb:N` 编码）乐观锁。Web 以 IndexedDB 为真相；Desktop（R006）以本地 Vault 的 Markdown 文件为真相，经同一套 application 命令/查询与能力矩阵门控。
 
 ### 编辑器组合
 

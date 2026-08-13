@@ -10,13 +10,13 @@ import { cleanup, render, waitFor } from "@testing-library/react";
 import type { Editor } from "@tiptap/core";
 import { useApp } from "../../state/AppState";
 import { TestApp } from "../../test/TestApp";
-import { resetDB } from "../../infrastructure/db";
+import { resetDB } from "../../platform/web/persistence/db";
 import {
   assetStore,
   contentRepository,
   pageRepository,
   workspaceRepository,
-} from "../../infrastructure/repositories";
+} from "../../platform/web/persistence/repositories";
 import { insertAttachmentFile } from "../../editor/attachment";
 import { createDeferred, sleep, type Deferred } from "../../test/fixtures";
 import { DocumentEditor, type SaveState } from "./DocumentEditor";

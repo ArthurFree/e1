@@ -71,6 +71,7 @@
 | Markdown 创建与安全保存（R006-C4）                | 共用 `SaveCoordinator → DocumentCommitService → ContentRepository.save`；Desktop 经 `DesktopContentRepository` + `MarkdownCodec.serialize` + `note.save` + `AtomicFileWriter`（同目录 temp、双 SHA、sync、BOM 跟随）；lossy 门闸抛 `MARKDOWN_LOSSY_OUTPUT`→`errorKind:"lossy"`；Stable ID Adoption 显式确认后首次写盘写入 Frontmatter id；`note.create` exclusive `wx` + 文件名清理/递增；`documentPersistence=true`；共享层无平台分支 | 真实 Markdown 写盘不得静默覆盖外部修改；有损/无稳定 id 须用户确认；应用层不引入 `if (desktop)` |
 | 写入链路加固与身份一致性（R006-C4.1）              | `DesktopMarkdownWriteService` 为 Desktop Markdown 内容写唯一实现（save / replaceContent 共用 Gate）；`DesktopIdentityAliasRegistry` 仅内存：Adoption 后同 Session `Page.id` 保持 path:*，重启后磁盘 stable id 生效；Scan Cache 路径索引按 Vault 隔离；`ensureFrontmatterId` 保证 `note.create` 的 noteId 等于磁盘 Frontmatter id；AtomicFileWriter 第二次 SHA 经测试 hook 覆盖真竞态 | C4 验收缺口：replaceContent 曾绕过 Gate；Adoption + 重扫会切身份；第二次 SHA 测试未真正覆盖 rename 前窗口 |
 | Desktop 本地附件闭环（R006-C5）                    | 新资源只写 `vault.json` 的 `assetsDirectory`；Markdown 只写相对路径；Renderer 不见绝对路径（`pickToken` / `authorized-ref`）；`DesktopAssetStore` + `e1-asset://` 协议；Hydration 把受管相对图/整段附件链升级为节点；删除节点不 `unlink`；`persistentAssetPaths=true`；zip 导入仍走 Renderer 字节通道 | C4 后图片/附件仍是桩，第三方工具看不到真实文件；Web Object URL 不能作为 Desktop 持久化真相 |
+| R006 功能冻结 / 复杂度收敛（fix_001）              | 本轮只做收敛与债务收口（文档事实同步、能力矩阵锁定、unowned async、层内拆分等），**不开 R007**、不新增大产品能力；Desktop 技术验证版以 C5 为功能冻结边界 | 代码能力已超架构文档；继续加功能会放大层内巨石与文档漂移；先把现状锁死再谈产品化 |
 
 重大架构决策另有 ADR 详述（背景/替代方案），见 [adr/](./adr/)。
 

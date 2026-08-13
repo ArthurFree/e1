@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { TestApp } from "../test/TestApp";
-import { resetDB } from "../infrastructure/db";
+import { resetDB } from "../platform/web/persistence/db";
 import { SearchPanel } from "./SearchPanel";
 
 describe("SearchPanel", () => {

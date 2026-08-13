@@ -21,6 +21,9 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
-    exclude: ["e2e/**", "node_modules/**"],
+    // wall-clock 基准（*perf-wallclock.test.ts）由 npm run test:perf 单独跑，
+    // 不进 npm test / ci——fake-indexeddb 耗时在 CI runner 上会抖动失败。
+    // 不用 *.bench.*：Vitest 会把含 .bench. 的文件当成 benchmark 模式跳过。
+    exclude: ["e2e/**", "node_modules/**", "**/*perf-wallclock.test.ts"],
   },
 });

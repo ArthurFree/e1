@@ -6,7 +6,7 @@
  */
 import type { AppServices } from "../../application/AppServices";
 import type { RuntimeCapabilities } from "../../runtime/RuntimeCapabilities";
-import { createBrowserAppServices } from "../../infrastructure/browserServices";
+import { createBrowserAppServices } from "./createBrowserServices";
 import { webCapabilities } from "./webCapabilities";
 
 export interface WebRuntime {

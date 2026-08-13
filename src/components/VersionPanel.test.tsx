@@ -7,12 +7,12 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { Editor } from "@tiptap/core";
-import { resetDB, getDB, STORE_PAGES } from "../infrastructure/db";
+import { resetDB, getDB, STORE_PAGES } from "../platform/web/persistence/db";
 import {
   contentRepository,
   revisionRepository,
-} from "../infrastructure/repositories";
-import { createBrowserAppServices } from "../infrastructure/browserServices";
+} from "../platform/web/persistence/repositories";
+import { createBrowserAppServices } from "../platform/web/createBrowserServices";
 import type { AppServices } from "../application/AppServices";
 import type { DocumentEditorController } from "../application/services/DocumentEditorController";
 import { AppServicesProvider } from "../state/AppServicesProvider";

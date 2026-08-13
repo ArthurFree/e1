@@ -11,7 +11,7 @@ import type {
   WorkspaceRepository,
   ContentRepository,
 } from "../../domain/repositories";
-import { resetDB } from "../../infrastructure/db";
+import { resetDB } from "../../platform/web/persistence/db";
 import {
   contentRepository as idbContent,
   documentWriteRepository as idbDocumentWrite,
@@ -19,7 +19,7 @@ import {
   revisionRepository as idbRevision,
   tagRepository as idbTag,
   workspaceRepository as idbWorkspace,
-} from "../../infrastructure/repositories";
+} from "../../platform/web/persistence/repositories";
 import { createInMemoryAppServices } from "../../infrastructure/memory/createInMemoryAppServices";
 import { BrowserMemorySearchIndex } from "../../platform/web/search/BrowserMemorySearchIndex";
 import { DocumentCommitService } from "../services/DocumentCommitService";

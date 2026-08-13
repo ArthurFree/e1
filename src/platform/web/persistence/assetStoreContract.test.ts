@@ -3,7 +3,7 @@
  * 契约断言见 src/test/assetStoreContract.ts（与内存实现共用）。
  */
 import { beforeEach } from "vitest";
-import { describeAssetStoreContract } from "../test/assetStoreContract";
+import { describeAssetStoreContract } from "../../../test/assetStoreContract";
 import { resetDB } from "./db";
 import { assetStore } from "./repositories";
 

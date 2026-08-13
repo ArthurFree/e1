@@ -18,7 +18,7 @@ IndexedDB 索引会排除键为 `null` 的记录：`parentId: null` 的顶层页
 
 ## 原子性
 
-迁移全部在 versionchange 事务内完成：任一步失败，整个 upgrade 回滚，数据库保持旧版本，不会留下半升级状态。迁移测试：`src/infrastructure/dbV3Migration.test.ts`（v2→v3 索引就位 + 数据完整、v1 跳级叠加生效）。
+迁移全部在 versionchange 事务内完成：任一步失败，整个 upgrade 回滚，数据库保持旧版本，不会留下半升级状态。迁移测试：`src/platform/web/persistence/dbV3Migration.test.ts`（v2→v3 索引就位 + 数据完整、v1 跳级叠加生效）。
 
 ## 回滚
 

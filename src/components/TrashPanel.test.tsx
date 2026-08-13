@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { TestApp } from "../test/TestApp";
-import { resetDB } from "../infrastructure/db";
+import { resetDB } from "../platform/web/persistence/db";
 import {
   pageRepository,
   workspaceRepository,
-} from "../infrastructure/repositories";
+} from "../platform/web/persistence/repositories";
 import { TrashPanel } from "./TrashPanel";
 
 describe("TrashPanel", () => {

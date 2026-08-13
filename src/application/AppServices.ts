@@ -7,7 +7,7 @@
  * 由装配根持有（决策见 docs/decisions.md 与 docs/architecture/runtime-boundaries.md）。
  *
  * 实现：
- * - 生产：src/infrastructure/browserServices.ts（IndexedDB + AI HTTP +
+ * - 生产：src/platform/web/createBrowserServices.ts（IndexedDB + AI HTTP +
  *   localStorage 恢复缓冲（R005 阶段 8 起经 RecoveryStore port 注入））；
  * - 测试/可替换性证明：src/infrastructure/memory/（纯内存仓储）。
  * 本文件不依赖任何具体实现。
@@ -33,6 +33,28 @@ import type { SecretStore } from "./services/SecretStore";
 import type { AIConfigService } from "./services/AIConfigService";
 import type { StorageHealthService } from "./services/StorageHealthService";
 import type { RuntimeCapabilities } from "../runtime/RuntimeCapabilities";
+
+/**
+ * 知识库维护 port（PR5）：主动重新扫描知识库（只读，不修改任何文件）。
+ * 只有「以本地目录为真相」的运行时才会装配（能力字段 localDirectory）。
+ */
+export interface VaultMaintenancePort {
+  /** 使指定知识库的扫描缓存失效并重新扫描（只读，不修改任何文件）。 */
+  rescan(vaultId: string): Promise<void>;
+}
+
+/**
+ * 文档安全门闸 port（PR5）：会话级批准，保存前的确认门槛。
+ * 三个动作均只在当前会话内生效，不落盘、不跨会话保留。
+ */
+export interface DocumentSafetyPort {
+  /** 批准有损来源编辑（lossy-source，R006-C4/FR-20）。 */
+  approveLossySource(pageId: string): void;
+  /** 批准有损输出保存（lossy-output，R006-C4）。 */
+  approveLossyOutput(pageId: string): void;
+  /** 批准稳定 ID 采纳（identity adoption，R006-C4-F）。 */
+  approveIdentityAdoption(pageId: string): void;
+}
 
 /** 应用服务容器：命令/查询服务 + 跨领域应用服务工厂。 */
 export interface AppServices {
@@ -78,7 +100,7 @@ export interface AppServices {
   /**
    * 机密存储（R005 阶段 8 §8.2 SecretStore port）：AI API Key 等机密值
    * 与普通偏好模型分离。Web 实现为 IndexedDB secrets store
-   * （infrastructure/secretStore.ts，DB v5），内存实现随内存容器存活。
+   * （platform/web/persistence/secretStore.ts，DB v5），内存实现随内存容器存活。
    */
   secretStore: SecretStore;
   /**
@@ -102,22 +124,20 @@ export interface AppServices {
    */
   capabilities: RuntimeCapabilities;
   /**
-   * Desktop 过渡通道（R006-C3 FR-26，PoC）：仅 Desktop 装配提供——
-   * 「重新扫描知识库」使扫描缓存失效并以新快照预热。Web/内存容器不含
-   * 本字段；UI 一律以 `services.desktopExtras && capabilities.localDirectory`
-   * 门控渲染入口。后续若引入文件监听/多窗口，本字段应演进为正式 port，
-   * 不长期保留平台特例。
+   * 知识库维护 port（可选，PR5：替代原 `desktopExtras` PoC 过渡通道）：
+   * 由能提供「主动重新扫描」语义的运行时装配（本地目录型后端），
+   * 与平台名称无关——Web/内存容器不装配本字段。UI 一律以
+   * `capabilities.localDirectory && services.vaultMaintenance` 门控入口
+   * （DUAL-01：只判断能力与 port 是否存在，不判断平台名称）。
    */
-  desktopExtras?: {
-    /** 使指定 Vault 的扫描缓存失效并重新扫描（只读，不修改任何文件）。 */
-    rescanVault(vaultId: string): Promise<void>;
-    /** R006-C4：会话内批准有损来源编辑（lossy-source）。 */
-    approveSourceLossy?(pageId: string): void;
-    /** R006-C4：会话内批准有损输出保存（lossy-output）。 */
-    approveOutputLossy?(pageId: string): void;
-    /** R006-C4：会话内批准 Stable ID Adoption。 */
-    approveIdentityAdoption?(pageId: string): void;
-  };
+  vaultMaintenance?: VaultMaintenancePort;
+  /**
+   * 文档安全门闸 port（可选，PR5：替代原 `desktopExtras` PoC 过渡通道）：
+   * 承载会话级的有损/身份采纳批准（R006-C4），由需要「保存前确认」的
+   * 运行时装配；无此门闸的运行时（Web）不装配本字段，UI 侧确认动作降级为
+   * 纯本地状态切换。
+   */
+  documentSafety?: DocumentSafetyPort;
   /**
    * 命令服务（R005 批次 1）：业务写编排入口，状态层经此触发仓储写、
    * 搜索索引同步与跨标签页广播。

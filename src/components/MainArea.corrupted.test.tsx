@@ -13,13 +13,13 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { TestApp } from "../test/TestApp";
-import { resetDB } from "../infrastructure/db";
+import { resetDB } from "../platform/web/persistence/db";
 import {
   contentRepository,
   pageRepository,
   preferencesRepository,
   workspaceRepository,
-} from "../infrastructure/repositories";
+} from "../platform/web/persistence/repositories";
 import { serializeRoute } from "../domain/route";
 import { parseDocumentContent } from "../domain/validation/documentContent";
 import { readCorruptedDiagnostic } from "../application/services/corruptedDiagnostics";

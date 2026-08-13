@@ -11,14 +11,14 @@ import {
   pageRepository,
   workspaceRepository,
 } from "./repositories";
-import { parseDocumentContent } from "../domain/validation/documentContent";
-import { isDomainError } from "../domain/errors";
-import { WebRecoveryStore } from "../platform/web/webRecoveryStore";
+import { parseDocumentContent } from "../../../domain/validation/documentContent";
+import { isDomainError } from "../../../domain/errors";
+import { WebRecoveryStore } from "../webRecoveryStore";
 import {
   clearCorruptedDiagnostic,
   readCorruptedDiagnostic,
   writeCorruptedDiagnostic,
-} from "../application/services/corruptedDiagnostics";
+} from "../../../application/services/corruptedDiagnostics";
 
 describe("损坏正文", () => {
   beforeEach(async () => {

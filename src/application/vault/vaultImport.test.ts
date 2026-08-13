@@ -17,15 +17,15 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { INITIAL_CONTENT_VERSION_TOKEN } from "../../domain/types";
 import type { Page } from "../../domain/types";
-import { resetDB } from "../../infrastructure/db";
-import { createBrowserAppServices } from "../../infrastructure/browserServices";
+import { resetDB } from "../../platform/web/persistence/db";
+import { createBrowserAppServices } from "../../platform/web/createBrowserServices";
 import {
   assetStore,
   contentRepository,
   pageRepository,
   tagRepository,
   workspaceRepository,
-} from "../../infrastructure/repositories";
+} from "../../platform/web/persistence/repositories";
 import { createZip } from "../services/zip";
 import { VaultExportService, type VaultExportDeps } from "./VaultExportService";
 import {

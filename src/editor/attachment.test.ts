@@ -7,8 +7,8 @@ import {
   formatBytes,
   insertAttachmentFile,
 } from "./attachment";
-import { assetStore } from "../infrastructure/repositories";
-import { resetDB } from "../infrastructure/db";
+import { assetStore } from "../platform/web/persistence/repositories";
+import { resetDB } from "../platform/web/persistence/db";
 import { createTestAssetServices } from "../test/assetTestServices";
 
 function createEditor(content?: unknown) {

@@ -8,9 +8,9 @@ import {
 } from "@testing-library/react";
 import { Editor } from "@tiptap/core";
 import { TestApp } from "../../test/TestApp";
-import { resetDB } from "../../infrastructure/db";
-import { preferencesRepository } from "../../infrastructure/repositories";
-import { secretStore } from "../../infrastructure/secretStore";
+import { resetDB } from "../../platform/web/persistence/db";
+import { preferencesRepository } from "../../platform/web/persistence/repositories";
+import { secretStore } from "../../platform/web/persistence/secretStore";
 import { AI_API_KEY_SECRET } from "../../application/services/SecretStore";
 import { buildEditorExtensions } from "../../editor/extensions";
 import { openAIAssistant } from "../../editor/aiBridge";

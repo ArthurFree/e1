@@ -10,21 +10,21 @@ import type {
   TagRepository,
   UpdateWorkspaceInput,
   WorkspaceRepository,
-} from "../domain/repositories";
-import { requireAttachmentBytes } from "../domain/repositories";
+} from "../../../domain/repositories";
+import { requireAttachmentBytes } from "../../../domain/repositories";
 import {
   childrenOf,
   collectSubtreeIds,
   movePage,
   nextPosition,
   wouldCreateCycle,
-} from "../domain/pageTree";
-import { DomainError } from "../domain/errors";
+} from "../../../domain/pageTree";
+import { DomainError } from "../../../domain/errors";
 import {
   revisionContentBytes,
   selectRevisionsToPrune,
-} from "../domain/revisions";
-import { parseDocumentContent } from "../domain/validation/documentContent";
+} from "../../../domain/revisions";
+import { parseDocumentContent } from "../../../domain/validation/documentContent";
 import {
   DEFAULT_PREFERENCES,
   INITIAL_CONTENT_VERSION_TOKEN,
@@ -38,7 +38,7 @@ import {
   type RevisionReason,
   type Tag,
   type Workspace,
-} from "../domain/types";
+} from "../../../domain/types";
 import {
   getDB,
   STORE_ATTACHMENTS,
@@ -53,7 +53,18 @@ import {
 } from "./db";
 import type { IDBPDatabase, IDBPTransaction } from "idb";
 import { ensureSeeded } from "./seed";
-import { createId } from "./id";
+import { createId } from "../../../infrastructure/id";
+
+/**
+ * IndexedDB 连接已关闭（测试 teardown / versionchange）时的错误。
+ * setLastOpened 等打点路径应静默吞掉，不得冒泡为 unhandled rejection。
+ */
+function isClosedConnectionError(err: unknown): boolean {
+  return (
+    err instanceof DOMException &&
+    (err.name === "InvalidStateError" || err.name === "AbortError")
+  );
+}
 
 /**
  * repositories.ts —— 领域仓储接口的 IndexedDB 实现。
@@ -233,10 +244,17 @@ export const workspaceRepository: WorkspaceRepository = {
   },
 
   async setLastOpened(id, at) {
-    const db = await getDB();
-    const workspace = normalizeWorkspace(await db.get(STORE_WORKSPACES, id));
-    if (!workspace) return;
-    await db.put(STORE_WORKSPACES, { ...workspace, lastOpenedAt: at });
+    // 打点不得干扰导航：连接已关闭（测试 teardown / 多标签页 versionchange）
+    // 时静默返回，与「目标不存在则跳过」同一语义。
+    try {
+      const db = await getDB();
+      const workspace = normalizeWorkspace(await db.get(STORE_WORKSPACES, id));
+      if (!workspace) return;
+      await db.put(STORE_WORKSPACES, { ...workspace, lastOpenedAt: at });
+    } catch (err) {
+      if (isClosedConnectionError(err)) return;
+      throw err;
+    }
   },
 };
 
@@ -392,9 +410,15 @@ export const pageRepository: PageRepository = {
   },
 
   async setLastOpened(id, at) {
-    const page = await getRequiredPage(id);
-    const db = await getDB();
-    await db.put(STORE_PAGES, { ...page, lastOpenedAt: at });
+    try {
+      const page = await getRequiredPage(id);
+      const db = await getDB();
+      await db.put(STORE_PAGES, { ...page, lastOpenedAt: at });
+    } catch (err) {
+      // 页面不存在仍抛（调用方应保证 id 有效）；仅吞连接关闭。
+      if (isClosedConnectionError(err)) return;
+      throw err;
+    }
   },
 
   async move(id, newParentId, index) {

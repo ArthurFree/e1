@@ -11,13 +11,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import type { Editor } from "@tiptap/core";
 import { useApp } from "../../state/AppState";
-import { resetDB } from "../../infrastructure/db";
+import { resetDB } from "../../platform/web/persistence/db";
 import { TestApp } from "../../test/TestApp";
 import {
   contentRepository,
   pageRepository,
   workspaceRepository,
-} from "../../infrastructure/repositories";
+} from "../../platform/web/persistence/repositories";
 import { createDeferred, sleep, type Deferred } from "../../test/fixtures";
 import { DocumentEditor, type SaveState } from "./DocumentEditor";
 

@@ -9,8 +9,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { useApp } from "./AppState";
 import { TestApp } from "../test/TestApp";
-import { resetDB } from "../infrastructure/db";
-import { preferencesRepository } from "../infrastructure/repositories";
+import { resetDB } from "../platform/web/persistence/db";
+import { preferencesRepository } from "../platform/web/persistence/repositories";
 
 let host: { app: ReturnType<typeof useApp> | null };
 

@@ -21,10 +21,11 @@ Application（src/application/：保存协调器、会话加载、搜索索引�
         ↓ domain port
 Domain（src/domain/：实体、页面树、搜索、校验、错误码、仓储接口）
         ↑ 实现 port
-Infrastructure（src/infrastructure/：IndexedDB、AI HTTP、内存仓储、浏览器 API）
+Platform（src/platform/web/：IndexedDB 持久化、浏览器 API；src/platform/desktop/：本地 Vault + IPC）
+Infrastructure（src/infrastructure/：AI HTTP、内存仓储、id 生成）
 ```
 
-依赖方向只能向下（infrastructure 实现 domain 的 port，是被注入方）。规则全文与强制方式见 [dependency-rules.md](./dependency-rules.md)。
+依赖方向只能向下（platform / infrastructure 实现 domain 的 port，是被注入方）。规则全文与强制方式见 [dependency-rules.md](./dependency-rules.md)。
 
 ## 数据模型
 

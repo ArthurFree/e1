@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDB, resetDB, STORE_ATTACHMENTS, STORE_REVISIONS } from "./db";
-import { sleep } from "../test/fixtures";
+import { sleep } from "../../../test/fixtures";
 import {
   assetStore,
   contentRepository,

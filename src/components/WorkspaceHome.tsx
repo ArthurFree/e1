@@ -40,11 +40,11 @@ export function WorkspaceHome() {
   const [now] = useState(() => Date.now());
   // 「重新扫描知识库」进行中（R006-C3 FR-26，仅 Desktop 入口渲染）。
   const [rescanning, setRescanning] = useState(false);
-  // FR-26/§36.4：仅 Desktop（有 desktopExtras 过渡通道且具备本地目录能力）
+  // FR-26/§36.4：具备本地目录能力且装配了知识库维护 port 的运行时才
   // 提供主动刷新；§34.1 明确不做文件监听，只支持用户主动刷新。
   const canRescan =
-    services.desktopExtras !== undefined &&
-    services.capabilities.localDirectory;
+    services.capabilities.localDirectory &&
+    services.vaultMaintenance !== undefined;
 
   // 总字数统计需要正文快照，页面元数据里没有，只能额外取内容行
   useEffect(() => {
@@ -145,12 +145,12 @@ export function WorkspaceHome() {
   const topLevel = liveChildren(null);
   const favorite = workspace.favoriteAt !== null;
 
-  // FR-26：扫描缓存失效 + 重新扫描（desktopExtras）→ 刷新页面树/标签镜像。
+  // FR-26：扫描缓存失效 + 重新扫描（vaultMaintenance）→ 刷新页面树/标签镜像。
   const rescanVault = async () => {
-    if (!services.desktopExtras || rescanning) return;
+    if (!services.vaultMaintenance || rescanning) return;
     setRescanning(true);
     try {
-      await services.desktopExtras.rescanVault(workspace.id);
+      await services.vaultMaintenance.rescan(workspace.id);
       await refreshCurrentWorkspace();
     } finally {
       setRescanning(false);

@@ -8,12 +8,12 @@ import {
 } from "@testing-library/react";
 import { useApp } from "../state/AppState";
 import { TestApp } from "../test/TestApp";
-import { resetDB } from "../infrastructure/db";
+import { resetDB } from "../platform/web/persistence/db";
 import {
   contentRepository,
   pageRepository,
   workspaceRepository,
-} from "../infrastructure/repositories";
+} from "../platform/web/persistence/repositories";
 import { TemplateCenter } from "./TemplateCenter";
 
 function Harness() {

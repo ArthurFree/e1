@@ -8,14 +8,14 @@ import {
 } from "@testing-library/react";
 import { useApp } from "../state/AppState";
 import { TestApp } from "../test/TestApp";
-import { resetDB } from "../infrastructure/db";
+import { resetDB } from "../platform/web/persistence/db";
 import {
   contentRepository,
   pageRepository,
   preferencesRepository,
   workspaceRepository,
-} from "../infrastructure/repositories";
-import { secretStore } from "../infrastructure/secretStore";
+} from "../platform/web/persistence/repositories";
+import { secretStore } from "../platform/web/persistence/secretStore";
 import { AI_API_KEY_SECRET } from "../application/services/SecretStore";
 import { AIDraftModal } from "./AIDraftModal";
 

@@ -12,13 +12,13 @@ import { cleanup, render, waitFor } from "@testing-library/react";
 import type { Editor } from "@tiptap/core";
 import { useApp } from "../../state/AppState";
 import { TestApp } from "../../test/TestApp";
-import { resetDB } from "../../infrastructure/db";
+import { resetDB } from "../../platform/web/persistence/db";
 import {
   contentRepository,
   pageRepository,
   revisionRepository,
   workspaceRepository,
-} from "../../infrastructure/repositories";
+} from "../../platform/web/persistence/repositories";
 import { createDeferred, type Deferred } from "../../test/fixtures";
 import type { DocumentEditorController } from "../../application/services/DocumentEditorController";
 import { DocumentEditor } from "./DocumentEditor";

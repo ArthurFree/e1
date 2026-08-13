@@ -56,7 +56,12 @@ function mockApi(
       scan: vi.fn(async () => SCAN),
     },
     note: { read: vi.fn(), create: vi.fn(), save: vi.fn() },
-    asset: { pick: vi.fn(), import: vi.fn(), read: vi.fn(), resolveUrl: vi.fn() },
+    asset: {
+      pick: vi.fn(),
+      import: vi.fn(),
+      read: vi.fn(),
+      resolveUrl: vi.fn(),
+    },
   } as unknown as E1DesktopAPI;
 }
 
@@ -123,13 +128,12 @@ describe("createDesktopRuntime（IPC-backed）", () => {
 
   it("写路径：page.create / document.createWithContent 接通 note.create；未扫描正文仍 PAGE_NOT_FOUND", async () => {
     const api = mockApi();
-    (api.note as unknown as { create: ReturnType<typeof vi.fn> }).create = vi.fn(
-      async () => ({
+    (api.note as unknown as { create: ReturnType<typeof vi.fn> }).create =
+      vi.fn(async () => ({
         noteId: "01NEW",
         relativePath: "x.md",
         versionToken: `sha256:${"a".repeat(64)}`,
-      }),
-    );
+      }));
     // 创建后扫描需能返回新页面。
     let created = false;
     (api.vault.scan as ReturnType<typeof vi.fn>).mockImplementation(
@@ -173,18 +177,27 @@ describe("createDesktopRuntime（IPC-backed）", () => {
     );
   });
 
-  it("desktopExtras.rescanVault：扫描缓存失效并重新扫描（FR-26）", async () => {
+  it("vaultMaintenance.rescan：扫描缓存失效并重新扫描（FR-26）", async () => {
     const api = mockApi();
     const { services } = createDesktopRuntime(api);
-    expect(services.desktopExtras).toBeDefined();
+    expect(services.vaultMaintenance).toBeDefined();
     // 会话加载建立缓存快照（扫描一次）。
     await services.queries.workspace.loadSession("v1");
     expect(api.vault.scan).toHaveBeenCalledTimes(1);
     // 重新扫描：缓存失效 + 新快照预热。
-    await services.desktopExtras!.rescanVault("v1");
+    await services.vaultMaintenance!.rescan("v1");
     expect(api.vault.scan).toHaveBeenCalledTimes(2);
     // 预热快照被后续页面刷新复用，不触发第三次扫描。
     await services.queries.workspace.loadPages("v1");
     expect(api.vault.scan).toHaveBeenCalledTimes(2);
+  });
+
+  it("documentSafety：三个会话级批准门闸齐备（PR5）", () => {
+    const { services } = createDesktopRuntime(mockApi());
+    expect(Object.keys(services.documentSafety ?? {}).sort()).toEqual([
+      "approveIdentityAdoption",
+      "approveLossyOutput",
+      "approveLossySource",
+    ]);
   });
 });

@@ -6,7 +6,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { requireDesktopArtifacts } from "./desktopArtifacts";
 
 const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
@@ -107,19 +107,10 @@ async function writeTempAsset(name: string, content: Buffer): Promise<string> {
 
 test.describe("桌面冒烟：本地附件与资源闭环（R006-C5）", () => {
   test.beforeAll(() => {
-    const root = fileURLToPath(new URL("..", import.meta.url));
-    const artifacts = [
-      "dist/desktop.html",
-      "dist-electron/main.mjs",
-      "dist-electron/preload.cjs",
-    ];
-    test.skip(
-      artifacts.some((p) => !existsSync(path.join(root, p))),
-      "缺少 dist/ 或 dist-electron/ 产物，请先运行 npm run build:desktop",
-    );
+    requireDesktopArtifacts();
   });
 
-  test("E2E-01：插入图片 → 保存 → 重启后仍显示，Markdown 为相对路径", async () => {
+  test("@golden E2E-01：插入图片 → 保存 → 重启后仍显示，Markdown 为相对路径", async () => {
     const rel = "笔记.md";
     const fixture = await createVaultFixture([
       [

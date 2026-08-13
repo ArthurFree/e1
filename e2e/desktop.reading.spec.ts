@@ -12,7 +12,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { requireDesktopArtifacts } from "./desktopArtifacts";
 
 interface VaultFixture {
   vaultDir: string;
@@ -90,16 +90,7 @@ async function sha256Of(file: string): Promise<string> {
 
 test.describe("桌面冒烟：Markdown 安全阅读（R006-C3 §43）", () => {
   test.beforeAll(() => {
-    const root = fileURLToPath(new URL("..", import.meta.url));
-    const artifacts = [
-      "dist/desktop.html",
-      "dist-electron/main.mjs",
-      "dist-electron/preload.cjs",
-    ];
-    test.skip(
-      artifacts.some((p) => !existsSync(path.join(root, p))),
-      "缺少 dist/ 或 dist-electron/ 产物，请先运行 npm run build:desktop",
-    );
+    requireDesktopArtifacts();
   });
 
   test("E2E-01 正常 Markdown 阅读：打开 Vault → 点击文档 → 正文可见", async () => {

@@ -1,7 +1,7 @@
 /**
  * 仓储接口：UI 与状态层访问持久化数据的唯一入口。
  * 架构约束：界面只依赖仓储接口和领域状态，不直接触碰 IndexedDB；
- * 当前实现为 src/infrastructure/repositories.ts（IndexedDB），
+ * 当前实现为 src/platform/web/persistence/repositories.ts（IndexedDB），
  * 未来接入云同步或协作时可整体替换实现而不重写界面（见 docs/architecture.md）。
  */
 

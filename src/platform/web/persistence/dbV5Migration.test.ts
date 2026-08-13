@@ -26,7 +26,7 @@ import {
 } from "./db";
 import { preferencesRepository } from "./repositories";
 import { secretStore } from "./secretStore";
-import { AI_API_KEY_SECRET } from "../application/services/SecretStore";
+import { AI_API_KEY_SECRET } from "../../../application/services/SecretStore";
 
 const NOW = 1_700_000_000_000;
 

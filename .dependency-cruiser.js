@@ -1,6 +1,9 @@
 /**
- * 分层依赖约束（R004 §7.5），与 src/test/architecture.test.ts 的源码扫描互补：
- * 这里基于真实模块解析，能识别循环依赖与经深层路径的越层引用。
+ * 分层依赖约束（R004 §7.5；PR6 起为分层规则的唯一来源）：基于真实模块
+ * 解析，能识别循环依赖与经深层路径的越层引用。
+ *
+ * src/test/architecture.test.ts 不再重复声明分层规则，只保留模块解析
+ * 看不见的行为不变量（禁用标识符、装配根白名单、AppServices 已删字段等）。
  *
  * 测试文件（*.test.*、src/test/）豁免生产分层规则。
  */
@@ -37,15 +40,34 @@ export default {
       to: { path: "^src/(components|state|infrastructure)" },
     },
     {
+      name: "domain-no-react",
+      comment:
+        "domain 为纯逻辑层，不得依赖 react（原由 architecture.test.ts 强制，PR6 迁入）",
+      severity: "error",
+      from: { path: "^src/domain", pathNot: TEST_LIKE },
+      to: { path: "node_modules/(@types/)?react(-dom)?/" },
+    },
+    {
       name: "ui-no-infrastructure",
       comment:
-        "components/state/editor 不直接依赖 infrastructure（含深层路径）；infrastructure 只能由装配根（main.web.tsx / platform/web / infrastructure 自身 / 测试）引用",
+        "components/state/editor 不直接依赖 infrastructure（含深层路径）；infrastructure（内存仓储 / AI provider / id）只能由装配根（platform/** / 测试）引用",
       severity: "error",
       from: {
         path: "^src/(components|state|editor)",
         pathNot: TEST_LIKE,
       },
       to: { path: "^src/infrastructure" },
+    },
+    {
+      name: "ui-no-web-persistence",
+      comment:
+        "PR6：components/state/editor/application/domain 不直接依赖 Web 持久化实现（src/platform/web/persistence，IndexedDB）——只经 AppServices 容器注入的 domain port 访问",
+      severity: "error",
+      from: {
+        path: "^src/(components|state|editor|application|domain)",
+        pathNot: TEST_LIKE,
+      },
+      to: { path: "^src/platform/web/persistence" },
     },
     {
       name: "electron-no-src",

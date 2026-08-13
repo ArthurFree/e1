@@ -5,7 +5,7 @@
  *
  * 实现：
  * - Web：IndexedDB 独立 secrets object store（DB v5，
- *   src/infrastructure/secretStore.ts）；
+ *   src/platform/web/persistence/secretStore.ts）；
  * - 内存：src/infrastructure/memory/secretStore.ts（随内存容器存活）；
  * - 未来 Desktop：系统安全存储（见 docs/requirements/r005.md §十三）。
  *

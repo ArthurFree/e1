@@ -10,7 +10,7 @@ import {
   pageRepository,
   workspaceRepository,
 } from "./repositories";
-import { describeDocumentWriteContract } from "../test/documentWriteContract";
+import { describeDocumentWriteContract } from "../../../test/documentWriteContract";
 
 beforeEach(async () => {
   await resetDB();

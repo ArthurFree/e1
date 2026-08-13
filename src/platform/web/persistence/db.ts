@@ -1,10 +1,12 @@
 import { openDB, type IDBPDatabase } from "idb";
-import { increment } from "../application/devDiagnostics";
+import { increment } from "../../../application/devDiagnostics";
 
 /**
  * db.ts —— IndexedDB 连接与 schema 定义。
  *
- * 基础设施层的存储入口：整个应用只有一个数据库，全部实体各用一个 object store。
+ * Web 平台的持久化适配器（PR6 起位于 platform/web/persistence/，与
+ * platform/desktop 的文件系统实现对称）：整个应用只有一个数据库，
+ * 全部实体各用一个 object store。
  * 上层（repositories.ts）只通过 `getDB()` 拿连接，不直接关心版本与迁移。
  *
  * 版本策略（对应 R001 §6.2 的升级要求）：schema 变更通过提升 `DB_VERSION`，

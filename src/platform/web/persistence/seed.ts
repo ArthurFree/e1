@@ -1,6 +1,6 @@
 import type { IDBPDatabase } from "idb";
-import type { DocumentContent, Page, Workspace } from "../domain/types";
-import { createId } from "./id";
+import type { DocumentContent, Page, Workspace } from "../../../domain/types";
+import { createId } from "../../../infrastructure/id";
 import { STORE_CONTENTS, STORE_PAGES, STORE_WORKSPACES } from "./db";
 
 /**

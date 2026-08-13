@@ -11,7 +11,7 @@ import type {
 } from "../application/assets/assetServices";
 import { WebAssetAccessService } from "../platform/web/webAssetAccess";
 import { WebNotificationService } from "../platform/web/webNotification";
-import { assetStore } from "../infrastructure/repositories";
+import { assetStore } from "../platform/web/persistence/repositories";
 
 export function createTestAssetServices(
   overrides: Partial<AssetServices> = {},

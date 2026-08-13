@@ -3,13 +3,13 @@
  * load 只读页面/标签/关联三类数据，类型与运行时双重保证不触碰正文仓储。
  */
 import { describe, expect, it, vi } from "vitest";
-import { resetDB } from "../../infrastructure/db";
+import { resetDB } from "../../platform/web/persistence/db";
 import {
   contentRepository,
   pageRepository,
   tagRepository,
   workspaceRepository,
-} from "../../infrastructure/repositories";
+} from "../../platform/web/persistence/repositories";
 import { WorkspaceSessionService } from "./WorkspaceSessionService";
 
 describe("WorkspaceSessionService", () => {

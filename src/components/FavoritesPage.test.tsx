@@ -8,11 +8,11 @@ import {
 } from "@testing-library/react";
 import { useApp } from "../state/AppState";
 import { TestApp } from "../test/TestApp";
-import { resetDB } from "../infrastructure/db";
+import { resetDB } from "../platform/web/persistence/db";
 import {
   pageRepository,
   workspaceRepository,
-} from "../infrastructure/repositories";
+} from "../platform/web/persistence/repositories";
 import { FavoritesPage } from "./FavoritesPage";
 
 function Harness() {

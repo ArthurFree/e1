@@ -1,10 +1,20 @@
 /**
- * 架构约束测试（R003 阶段 5/§8.2）：用源码扫描代替 ESLint 强制分层规则。
+ * 架构约束测试（R003 阶段 5/§8.2）：源码扫描强制「模块解析看不见」的约束。
  *
- * 规则：
- * - components / state / editor / application / domain 不得 import infrastructure；
- * - domain 不得 import react；
- * - application 不得 import components。
+ * 分工（PR6）：**纯分层依赖规则一律由 `.dependency-cruiser.js` 强制**
+ * （真实模块解析，能识别深层路径与循环依赖），本文件不再重复声明。
+ * 原先在此的以下规则已迁走，见 `.dependency-cruiser.js`：
+ * - components / state / editor / application / domain 不得依赖
+ *   infrastructure → `ui-no-infrastructure` / `application-no-ui-no-infra` /
+ *   `domain-isolated`；
+ * - components / state / editor / application / domain 不得依赖 Web 持久化
+ *   实现（platform/web/persistence）→ `ui-no-web-persistence`；
+ * - domain 不得依赖 react → `domain-no-react`；
+ * - application 不得依赖 components → `application-no-ui-no-infra`。
+ *
+ * 本文件只保留 dependency-cruiser 表达不了的行为不变量：禁用标识符
+ * （desktopExtras / window.e1 / 平台字面量 / localStorage 等）、装配根
+ * 白名单、AppServices 已删字段、Desktop 写入路径单点等。
  *
  * 扫描经 import.meta.glob（Vite 原生，无需 node:fs）实现；
  * 排除测试文件（*.test.*）与测试基建（src/test/）；违规即失败并附文件与行号。
@@ -53,27 +63,6 @@ function format(violations: Violation[]): string {
 }
 
 describe("架构分层约束", () => {
-  it("components/state/editor/application/domain 不得 import infrastructure", () => {
-    const violations = scan(
-      ["components", "state", "editor", "application", "domain"],
-      /infrastructure\//,
-    );
-    expect(format(violations)).toBe("");
-    expect(violations).toEqual([]);
-  });
-
-  it("domain 不得 import react", () => {
-    const violations = scan(["domain"], /from\s+["']react["']/);
-    expect(format(violations)).toBe("");
-    expect(violations).toEqual([]);
-  });
-
-  it("application 不得 import components", () => {
-    const violations = scan(["application"], /components\//);
-    expect(format(violations)).toBe("");
-    expect(violations).toEqual([]);
-  });
-
   /**
    * R004 §4.6：components 不得使用聚合 hook（useWorkspaceSession /
    * useNavigation），一律按需订阅数据/命令细粒度 hook，避免无关
@@ -236,12 +225,13 @@ describe("架构分层约束", () => {
   });
 
   /**
-   * R005 阶段 2（Bootstrap 拆分）：仅 Web 装配根（main.web.tsx）与
-   * platform/web 允许 import infrastructure/browserServices，防止
-   * UI/状态层回流直接装配；测试基建（src/test/，glob 下为 ./ 前缀）
-   * 与 *.test.* 豁免——TestApp 经 fake-indexeddb 用生产容器属既有惯例。
+   * R005 阶段 2（Bootstrap 拆分）；PR6 起装配根文件位于
+   * platform/web/createBrowserServices.ts：仅 Web 装配根（main.web.tsx）
+   * 与 platform/web 允许 import 它，防止 UI/状态层回流直接装配；测试基建
+   * （src/test/，glob 下为 ./ 前缀）与 *.test.* 豁免——TestApp 经
+   * fake-indexeddb 用生产容器属既有惯例。
    */
-  it("仅 main.web.tsx 与 platform/web 允许 import infrastructure/browserServices（R005 阶段 2）", () => {
+  it("仅 main.web.tsx 与 platform/web 允许 import createBrowserServices（R005 阶段 2 / PR6）", () => {
     const violations: Violation[] = [];
     for (const [path, content] of entries) {
       if (
@@ -251,7 +241,7 @@ describe("架构分层约束", () => {
       )
         continue;
       violations.push(
-        ...findImports(path, content, /infrastructure\/browserServices/),
+        ...findImports(path, content, /platform\/web\/createBrowserServices/),
       );
     }
     expect(format(violations)).toBe("");
@@ -259,11 +249,15 @@ describe("架构分层约束", () => {
   });
 
   /**
-   * R005 阶段 2：bootstrap 为平台无关的共享挂载入口，不得 import
-   * infrastructure；平台差异只经 AppServices 容器注入。
+   * R005 阶段 2：bootstrap 为平台无关的共享挂载入口，不得 import 任何
+   * 平台实现（infrastructure / platform/web / platform/desktop）；
+   * 平台差异只经 AppServices 容器注入。
    */
-  it("bootstrap 不得 import infrastructure（R005 阶段 2）", () => {
-    const violations = scan(["bootstrap"], /infrastructure\//);
+  it("bootstrap 不得 import 平台实现（R005 阶段 2 / PR6）", () => {
+    const violations = scan(
+      ["bootstrap"],
+      /infrastructure\/|platform\/(web|desktop)\//,
+    );
     expect(format(violations)).toBe("");
     expect(violations).toEqual([]);
   });
@@ -344,12 +338,15 @@ describe("架构分层约束", () => {
   it("Desktop Content/DocumentWrite 必须依赖 DesktopMarkdownWriteService（R006-C4.1）", () => {
     const repos = sources["../platform/desktop/repositories.ts"] ?? "";
     expect(repos).toContain("DesktopMarkdownWriteService");
-    expect(repos).toMatch(/class DesktopContentRepository[\s\S]*this\.writer\.save/);
+    expect(repos).toMatch(
+      /class DesktopContentRepository[\s\S]*this\.writer\.save/,
+    );
     expect(repos).toMatch(
       /class DesktopDocumentWriteRepository[\s\S]*this\.writer\.save/,
     );
     expect(repos.match(/\bnote\.save\b/g) ?? []).toEqual([]);
-    const runtime = sources["../platform/desktop/createDesktopRuntime.ts"] ?? "";
+    const runtime =
+      sources["../platform/desktop/createDesktopRuntime.ts"] ?? "";
     expect(runtime).toContain("DesktopMarkdownWriteService");
     expect(runtime).toContain("DesktopIdentityAliasRegistry");
     expect(runtime).toContain("DesktopAssetStore");
@@ -365,6 +362,26 @@ describe("架构分层约束", () => {
         if (trimmed.startsWith("*") || trimmed.startsWith("//")) return;
         if (/\bpickToken\b/.test(text)) {
           violations.push({ file: path, line: index + 1, text: trimmed });
+        }
+      });
+    }
+    expect(format(violations)).toBe("");
+    expect(violations).toEqual([]);
+  });
+
+  /**
+   * PR5：`desktopExtras` PoC 逃生口已删除——平台专属能力一律以
+   * 平台无关的可选 port（vaultMaintenance / documentSafety）注入，
+   * 生产代码不得再出现该标识符（注释中的历史说明不计违规）。
+   */
+  it("src 不得出现 desktopExtras 标识符（PR5）", () => {
+    const violations: Violation[] = [];
+    for (const [path, content] of entries) {
+      content.split("\n").forEach((text, index) => {
+        const trimmed = text.trim();
+        if (trimmed.startsWith("*") || trimmed.startsWith("//")) return;
+        if (/\bdesktopExtras\b/.test(text)) {
+          violations.push({ file: path, line: index + 1, text: text.trim() });
         }
       });
     }

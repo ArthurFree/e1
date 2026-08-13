@@ -15,14 +15,14 @@
  */
 import { beforeEach, describe, expect, it } from "vitest";
 import { INITIAL_CONTENT_VERSION_TOKEN } from "../../domain/types";
-import { resetDB } from "../../infrastructure/db";
+import { resetDB } from "../../platform/web/persistence/db";
 import {
   assetStore,
   contentRepository,
   pageRepository,
   tagRepository,
   workspaceRepository,
-} from "../../infrastructure/repositories";
+} from "../../platform/web/persistence/repositories";
 import {
   VaultExportService,
   relativePath,

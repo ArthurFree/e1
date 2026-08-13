@@ -13,9 +13,9 @@ import { Slice } from "@tiptap/pm/model";
 import { buildDocumentExtensions } from "./extensions";
 import { collectAttachmentIds, MAX_ATTACHMENT_BYTES } from "./attachment";
 import { insertLocalImageFile, localImageFilesPluginKey } from "./localImage";
-import { assetStore } from "../infrastructure/repositories";
+import { assetStore } from "../platform/web/persistence/repositories";
 import { createTestAssetServices } from "../test/assetTestServices";
-import { resetDB } from "../infrastructure/db";
+import { resetDB } from "../platform/web/persistence/db";
 
 function createEditor(content?: unknown) {
   // 先以空文档创建并注入 storage，再 setContent：NodeView 首渲染同步发生，

@@ -8,11 +8,11 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { TestApp } from "../test/TestApp";
 import { createRenderProbe, type RenderProbe } from "../test/renderProbe";
-import { resetDB } from "../infrastructure/db";
+import { resetDB } from "../platform/web/persistence/db";
 import {
   pageRepository,
   workspaceRepository,
-} from "../infrastructure/repositories";
+} from "../platform/web/persistence/repositories";
 import { useApp } from "./AppState";
 import { useWorkspaceSession } from "./WorkspaceSessionContext";
 import { usePreferences } from "./PreferencesContext";

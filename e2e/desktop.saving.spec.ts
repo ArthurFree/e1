@@ -7,7 +7,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { requireDesktopArtifacts } from "./desktopArtifacts";
 
 interface VaultFixture {
   vaultDir: string;
@@ -83,16 +83,7 @@ async function sha256Of(file: string): Promise<string> {
 
 test.describe("桌面冒烟：Markdown 创建与安全保存（R006-C4）", () => {
   test.beforeAll(() => {
-    const root = fileURLToPath(new URL("..", import.meta.url));
-    const artifacts = [
-      "dist/desktop.html",
-      "dist-electron/main.mjs",
-      "dist-electron/preload.cjs",
-    ];
-    test.skip(
-      artifacts.some((p) => !existsSync(path.join(root, p))),
-      "缺少 dist/ 或 dist-electron/ 产物，请先运行 npm run build:desktop",
-    );
+    requireDesktopArtifacts();
   });
 
   test("自动保存：编辑后 800ms 内写盘，内容与 hash 更新", async () => {
@@ -261,7 +252,7 @@ test.describe("桌面冒烟：Markdown 创建与安全保存（R006-C4）", () =
     }
   });
 
-  test("重启后页面树身份升级为磁盘 stable id，仍一篇（C4.1 E2E-02）", async () => {
+  test("@golden 重启后页面树身份升级为磁盘 stable id，仍一篇（C4.1 E2E-02）", async () => {
     const rel = "随笔.md";
     const fixture = await createVaultFixture([
       [rel, "# 随笔\n\n无稳定 id 的正文。\n"],

@@ -1,7 +1,7 @@
 /**
  * R006 阶段 2（C2）+ C4：Desktop 运行时装配——IPC-backed 真实适配。
  *
- * 与 Web 装配根（infrastructure/browserServices.ts）同构，仓储换成
+ * 与 Web 装配根（platform/web/createBrowserServices.ts）同构，仓储换成
  * platform/desktop 的 IPC-backed 实现：知识库/页面/标签读路径经
  * E1DesktopAPI 走 Main 文件系统；正文经 note.read/save/create
  *（R006-C3/C4，DesktopContentRepository + DocumentWriteRepository）。
@@ -14,7 +14,11 @@
  * secretStore/storageHealth 用内存实现（nativeSecrets=false，
  * DesktopSecretStore 接系统安全存储属阶段 6+/R007，见 r006 §21）。
  */
-import type { AppServices } from "../../application/AppServices";
+import type {
+  AppServices,
+  DocumentSafetyPort,
+  VaultMaintenancePort,
+} from "../../application/AppServices";
 import { increment } from "../../application/devDiagnostics";
 import { DocumentCommitService } from "../../application/services/DocumentCommitService";
 import { DocumentSaveCoordinator } from "../../application/services/SaveCoordinator";
@@ -179,46 +183,51 @@ export function createDesktopRuntime(api: E1DesktopAPI): DesktopRuntime {
     picker: new DesktopAssetPicker(api, new WebAssetPicker()),
     notify: new WebNotificationService(),
   };
+  const vaultMaintenance: VaultMaintenancePort = {
+    rescan: async (vaultId) => {
+      await scans.rescan(vaultId);
+    },
+  };
+  const documentSafety: DocumentSafetyPort = {
+    approveLossySource: (pageId) => {
+      contentRepository.getSourceCache().approveSourceLossy(pageId);
+    },
+    approveLossyOutput: (pageId) => {
+      contentRepository.getSourceCache().approveOutputLossy(pageId);
+    },
+    approveIdentityAdoption: (pageId) => {
+      const cache = contentRepository.getSourceCache();
+      const existing = cache.get(pageId);
+      // C4-F / C4.1-B：启用编辑时预生成 stableNoteId（会话 pageId 仍为
+      // path:*）；首次 note.save 才把 id 写入 Frontmatter。同时登记
+      // Session Alias，重新扫描不得把 Page.id 切到磁盘 stable id。
+      if (existing && !existing.stableNoteId) {
+        const id =
+          typeof crypto !== "undefined" && "randomUUID" in crypto
+            ? crypto.randomUUID()
+            : `id-${Date.now().toString(36)}`;
+        cache.updateStableNoteId(pageId, id);
+      }
+      cache.approveIdentityAdoption(pageId);
+      const latest = cache.get(pageId);
+      if (latest?.stableNoteId) {
+        aliases.register({
+          vaultId: latest.vaultId,
+          sessionPageId: pageId,
+          stableNoteId: latest.stableNoteId,
+          relativePath: latest.relativePath,
+        });
+      }
+    },
+  };
   const services: AppServices = {
     assets: assetsServices,
     capabilities: desktopCapabilities,
-    // FR-26「重新扫描知识库」过渡通道（PoC）：缓存失效 + 新快照预热；
-    // 页面树/标签镜像刷新由 UI 经 refreshCurrentWorkspace 命令完成。
-    desktopExtras: {
-      rescanVault: async (vaultId) => {
-        await scans.rescan(vaultId);
-      },
-      approveSourceLossy: (pageId) => {
-        contentRepository.getSourceCache().approveSourceLossy(pageId);
-      },
-      approveOutputLossy: (pageId) => {
-        contentRepository.getSourceCache().approveOutputLossy(pageId);
-      },
-      approveIdentityAdoption: (pageId) => {
-        const cache = contentRepository.getSourceCache();
-        const existing = cache.get(pageId);
-        // C4-F / C4.1-B：启用编辑时预生成 stableNoteId（会话 pageId 仍为
-        // path:*）；首次 note.save 才把 id 写入 Frontmatter。同时登记
-        // Session Alias，重新扫描不得把 Page.id 切到磁盘 stable id。
-        if (existing && !existing.stableNoteId) {
-          const id =
-            typeof crypto !== "undefined" && "randomUUID" in crypto
-              ? crypto.randomUUID()
-              : `id-${Date.now().toString(36)}`;
-          cache.updateStableNoteId(pageId, id);
-        }
-        cache.approveIdentityAdoption(pageId);
-        const latest = cache.get(pageId);
-        if (latest?.stableNoteId) {
-          aliases.register({
-            vaultId: latest.vaultId,
-            sessionPageId: pageId,
-            stableNoteId: latest.stableNoteId,
-            relativePath: latest.relativePath,
-          });
-        }
-      },
-    },
+    // FR-26「重新扫描知识库」（PR5：VaultMaintenancePort）：缓存失效 +
+    // 新快照预热；页面树/标签镜像刷新由 UI 经 refreshCurrentWorkspace 完成。
+    vaultMaintenance,
+    // 会话级保存门闸（PR5：DocumentSafetyPort）。
+    documentSafety,
     preferencesService,
     syncChannel,
     recoveryStore,

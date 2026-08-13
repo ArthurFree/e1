@@ -17,7 +17,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      # 统一门禁：typecheck + lint + deps:check + 单元/组件测试 + 生产构建
+      # 质量门禁：typecheck + lint + deps:check + 单元/组件测试
+      # （不含 wall-clock perf、不含生产构建、不含 E2E）
       - run: npm run ci
       - run: npm run test:coverage
       - uses: actions/upload-artifact@v4
@@ -26,7 +27,36 @@ jobs:
           path: coverage/
           if-no-files-found: ignore
 
-  e2e:
+  build-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build:web
+
+  build-desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build:desktop
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-dist
+          path: |
+            dist
+            dist-electron
+          if-no-files-found: error
+
+  e2e-web:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,13 +70,46 @@ jobs:
       # 只跑功能与响应式用例；视觉截图基线（visual*.spec.ts）在 macOS 生成，
       # Linux 渲染差异必然失败，不纳入 CI。
       # 注意：视觉截图基线变化必须人工审查，不在 CI 自动更新。
+      # Playwright webServer 走 vite dev，不依赖 build-web 产物。
       - run: >
           npx playwright test e2e/app.spec.ts e2e/responsive.spec.ts
           --reporter=list,html
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: playwright-results
+          name: playwright-web-results
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore
+
+  e2e-desktop:
+    runs-on: ubuntu-latest
+    needs: build-desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-dist
+          path: .
+      # 缺产物在 CI 必须失败（requireDesktopArtifacts），不做 test.skip
+      - run: |
+          test -f dist/desktop.html
+          test -f dist-electron/main.mjs
+          test -f dist-electron/preload.cjs
+      - run: sudo apt-get update && sudo apt-get install -y xvfb
+      - run: npx playwright install --with-deps chromium
+      # Electron 无头 Linux 经 xvfb；只跑黄金路径（打开 Vault / 保存重启 / 附件重启）
+      - run: xvfb-run -a npm run test:e2e:desktop:golden -- --reporter=list,html
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-desktop-results
           path: |
             test-results/
             playwright-report/

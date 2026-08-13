@@ -6,7 +6,7 @@
 import type { ReactNode } from "react";
 import { AppProvider } from "../state/AppState";
 import { AppServicesProvider } from "../state/AppServicesProvider";
-import { createBrowserAppServices } from "../infrastructure/browserServices";
+import { createBrowserAppServices } from "../platform/web/createBrowserServices";
 
 export function TestApp({ children }: { children: ReactNode }) {
   return (

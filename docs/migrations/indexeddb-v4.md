@@ -31,7 +31,7 @@
 
 ## 测试
 
-`src/infrastructure/dbV4Migration.test.ts`：空库→v4、v3→v4（索引 + 回写 + 新查询）、v2→v4、v1→v4 跳级、含孤立正文/孤立 pageTag 的 v3→v4（孤立记录原样保留、不进工作区查询）。多工作区基准（20 库 × 500 页面）见 `perf.bench.test.ts`：会话加载只读目标库正文、不再调用 `listAll`。
+`src/platform/web/persistence/dbV4Migration.test.ts`：空库→v4、v3→v4（索引 + 回写 + 新查询）、v2→v4、v1→v4 跳级、含孤立正文/孤立 pageTag 的 v3→v4（孤立记录原样保留、不进工作区查询）。多工作区基准（20 库 × 500 页面）见 `perf.bench.test.ts`：会话加载只读目标库正文、不再调用 `listAll`。
 
 ## 回滚
 

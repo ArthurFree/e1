@@ -242,11 +242,11 @@ test.describe("模板与 AI", () => {
       .first()
       .click();
     await page.locator(".editor__content").click();
-    await page.keyboard.press("Meta+A");
-    await page
-      .getByRole("toolbar", { name: "文本格式" })
-      .getByLabel("AI")
-      .click();
+    await expect(page.locator(".editor__content")).toBeVisible();
+    await page.keyboard.press("ControlOrMeta+A");
+    const bubble = page.getByRole("toolbar", { name: "文本格式" });
+    await expect(bubble).toBeVisible();
+    await bubble.getByLabel("AI").click();
     await page.getByRole("menuitem", { name: "润色选区" }).click();
 
     // 结果先预览，未确认前文档不变

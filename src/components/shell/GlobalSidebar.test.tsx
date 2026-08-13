@@ -10,7 +10,7 @@ import type { ReactNode } from "react";
 import { useApp } from "../../state/AppState";
 import { AppProvider } from "../../state/AppState";
 import { AppServicesProvider } from "../../state/AppServicesProvider";
-import { resetDB } from "../../infrastructure/db";
+import { resetDB } from "../../platform/web/persistence/db";
 import { TestApp } from "../../test/TestApp";
 import { createDesktopRuntime } from "../../platform/desktop/createDesktopRuntime";
 import { discardPendingVaultSelection } from "../../platform/desktop/vaultOpenConfirmation";

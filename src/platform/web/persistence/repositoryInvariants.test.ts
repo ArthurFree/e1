@@ -9,7 +9,7 @@ import {
   tagRepository,
   workspaceRepository,
 } from "./repositories";
-import { isDomainError, type DomainErrorCode } from "../domain/errors";
+import { isDomainError, type DomainErrorCode } from "../../../domain/errors";
 
 /** 断言 promise 以指定领域错误码失败。 */
 async function expectDomainError(
