@@ -2,7 +2,7 @@
 
 一个独立的 Web 笔记应用：以 Tiptap 的 Notion-like 模板为交互和视觉参考，提供本地优先（离线可用）的知识库、页面树和块编辑能力。面向简体中文个人用户。
 
-**当前状态：R003 与 R004 架构整改全部完成——保存协调器（串行 + 代次 + 恢复缓冲 + 乐观锁）、统一文档写入边界（原子创建 + 提交单点）、四状态域 Provider、IndexedDB v4 工作区索引、图片附件化与存储配额治理、多标签页同步与冲突处理、ESLint/Prettier/dependency-cruiser 与 GitHub Actions 工程门禁。R005（Web 优先与 Electron 双端准备）阶段 0–7 已完成——命令/查询服务下沉与 AppServices 收紧、不透明 `ContentVersionToken` 乐观锁、持久化级 MarkdownCodec、Asset 服务抽象（AssetStore + `Uint8Array`）、`SearchIndexPort` 与会话去正文、Portable Vault（.e1.zip）导入导出；阶段 8+（平台服务抽象/Electron）未做。**
+**当前状态：R003 与 R004 架构整改全部完成——保存协调器（串行 + 代次 + 恢复缓冲 + 乐观锁）、统一文档写入边界（原子创建 + 提交单点）、四状态域 Provider、IndexedDB v5（secrets store）、图片附件化与存储配额治理、多标签页同步与冲突处理、ESLint/Prettier/dependency-cruiser 与 GitHub Actions 工程门禁。R005（Web 优先与 Electron 双端准备）阶段 0–8 已完成——命令/查询服务下沉与 AppServices 收紧、不透明 `ContentVersionToken` 乐观锁、持久化级 MarkdownCodec、Asset 服务抽象（AssetStore + `Uint8Array`）、`SearchIndexPort` 与会话去正文、Portable Vault（.e1.zip）导入导出、RecoveryStore / ChangeChannel / SecretStore / StorageHealthService。R006 Electron Desktop 技术验证版阶段 0–C4 已完成（Shell、IPC 契约、Vault 扫描、安全阅读、Markdown 创建与安全保存）；C4.1 写入链路加固与身份一致性收口已完成；C5（本地附件）待开始。**
 
 ## 功能
 

@@ -12,6 +12,7 @@ import {
   mapScanEntriesToPages,
   mapScanEntriesToTags,
 } from "./vaultMapping";
+import { DesktopIdentityAliasRegistry } from "./DesktopIdentityAliasRegistry";
 
 const ENTRIES: VaultScanEntry[] = [
   {
@@ -119,6 +120,23 @@ describe("mapScanEntriesToTags", () => {
         workspaceId: "vault-1",
       },
     ]);
+  });
+
+  it("Alias 存在时 pageTags.pageId 跟随 sessionPageId", () => {
+    const aliases = new DesktopIdentityAliasRegistry();
+    aliases.register({
+      vaultId: "vault-1",
+      sessionPageId: "path:学习/React.md",
+      stableNoteId: "01JABC",
+      relativePath: "学习/React.md",
+    });
+    const pages = mapScanEntriesToPages("vault-1", ENTRIES, 1000, aliases);
+    expect(pages.find((p) => p.title === "React 笔记")?.id).toBe(
+      "path:学习/React.md",
+    );
+    const { pageTags } = mapScanEntriesToTags("vault-1", ENTRIES, aliases);
+    expect(pageTags.some((t) => t.pageId === "path:学习/React.md")).toBe(true);
+    expect(pageTags.some((t) => t.pageId === "01JABC")).toBe(false);
   });
 });
 

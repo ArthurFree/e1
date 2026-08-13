@@ -336,4 +336,21 @@ describe("架构分层约束", () => {
     expect(format(violations)).toBe("");
     expect(violations).toEqual([]);
   });
+
+  /**
+   * R006-C4.1：Desktop Markdown 写入只经 DesktopMarkdownWriteService；
+   * repositories.ts 不得再有第二套 note.save pipeline。
+   */
+  it("Desktop Content/DocumentWrite 必须依赖 DesktopMarkdownWriteService（R006-C4.1）", () => {
+    const repos = sources["../platform/desktop/repositories.ts"] ?? "";
+    expect(repos).toContain("DesktopMarkdownWriteService");
+    expect(repos).toMatch(/class DesktopContentRepository[\s\S]*this\.writer\.save/);
+    expect(repos).toMatch(
+      /class DesktopDocumentWriteRepository[\s\S]*this\.writer\.save/,
+    );
+    expect(repos.match(/\bnote\.save\b/g) ?? []).toEqual([]);
+    const runtime = sources["../platform/desktop/createDesktopRuntime.ts"] ?? "";
+    expect(runtime).toContain("DesktopMarkdownWriteService");
+    expect(runtime).toContain("DesktopIdentityAliasRegistry");
+  });
 });

@@ -40,6 +40,7 @@ import {
   DesktopWorkspaceRepository,
 } from "./repositories";
 import { DesktopDocumentSourceCache } from "./DesktopDocumentSourceCache";
+import { DesktopIdentityAliasRegistry } from "./DesktopIdentityAliasRegistry";
 import { DesktopPreferencesRepository } from "./preferencesRepository";
 import {
   DesktopAssetStore,
@@ -719,11 +720,16 @@ describe("DesktopContentRepository", () => {
     await expect(asPort.listByWorkspace("v1")).resolves.toEqual([]);
   });
 
-  it("save：无 SourceCache → PAGE_NOT_FOUND", async () => {
+  it("save：无 SourceCache → DOCUMENT_SOURCE_CONTEXT_REQUIRED", async () => {
     const { repo } = await setup({});
-    await expect(repo.save("missing", {}, "", "sha256:x")).rejects.toMatchObject(
-      { code: "PAGE_NOT_FOUND" },
-    );
+    await expect(
+      repo.save(
+        "missing",
+        { type: "doc", content: [] },
+        "",
+        "sha256:x",
+      ),
+    ).rejects.toMatchObject({ code: "DOCUMENT_SOURCE_CONTEXT_REQUIRED" });
   });
 });
 
@@ -864,7 +870,111 @@ describe("维护桩与 DocumentWrite（C4-E/G）", () => {
         contentJson: { type: "doc", content: [] },
         textSnapshot: "",
       }),
-    ).rejects.toMatchObject({ code: "NOT_IMPLEMENTED" });
+    ).rejects.toMatchObject({ code: "DOCUMENT_SOURCE_CONTEXT_REQUIRED" });
+  });
+});
+
+describe("DesktopVaultScanCache 路径索引（R006-C4.1-C）", () => {
+  it("按 Vault 隔离；invalidate 清理路径；rescan 整体替换", async () => {
+    const scan = vi.fn(async (vaultId: string) => ({
+      vault: { vaultId, name: vaultId },
+      entries: [
+        {
+          noteId: "01JABC",
+          relativePath: vaultId === "v1" ? "a.md" : "b.md",
+          kind: "document" as const,
+          title: "n",
+          parentPath: null,
+          tags: [],
+        },
+      ],
+    }));
+    const api = mockApi({ scan });
+    const cache = new DesktopVaultScanCache(api);
+    await cache.scan("v1");
+    await cache.scan("v2");
+    expect(cache.getRelativePathSync("v1", "01JABC")).toBe("a.md");
+    expect(cache.getRelativePathSync("v2", "01JABC")).toBe("b.md");
+    cache.invalidate("v1");
+    expect(cache.getRelativePathSync("v1", "01JABC")).toBeNull();
+    expect(cache.getRelativePathSync("v2", "01JABC")).toBe("b.md");
+    await cache.rescan("v1");
+    expect(cache.getRelativePathSync("v1", "01JABC")).toBe("a.md");
+  });
+
+  it("删除文件后旧 relativePath / pageId 不再可解析", async () => {
+    let entries = [
+      {
+        noteId: "keep",
+        relativePath: "keep.md",
+        kind: "document" as const,
+        title: "留",
+        parentPath: null,
+        tags: [] as string[],
+      },
+      {
+        noteId: "gone",
+        relativePath: "gone.md",
+        kind: "document" as const,
+        title: "删",
+        parentPath: null,
+        tags: [] as string[],
+      },
+    ];
+    const api = mockApi({
+      scan: vi.fn(async () => ({
+        vault: { vaultId: "v1", name: "n" },
+        entries,
+      })),
+    });
+    const cache = new DesktopVaultScanCache(api);
+    await cache.scan("v1");
+    expect(cache.getRelativePathSync("v1", "gone")).toBe("gone.md");
+    entries = [entries[0]!];
+    await cache.rescan("v1");
+    expect(cache.getRelativePathSync("v1", "gone")).toBeNull();
+    expect(cache.getRelativePathSync("v1", "keep")).toBe("keep.md");
+  });
+});
+
+describe("Session Alias 与扫描映射（R006-C4.1-B）", () => {
+  it("Adoption 后 rescan Page.id 仍为 path:*；清空 alias 后为 stable id", async () => {
+    const aliases = new DesktopIdentityAliasRegistry();
+    const api = mockApi({
+      scan: vi.fn(async () => ({
+        vault: { vaultId: "v1", name: "n" },
+        entries: [
+          {
+            noteId: "abc-stable",
+            relativePath: "React.md",
+            kind: "document" as const,
+            title: "React",
+            parentPath: null,
+            tags: [],
+          },
+        ],
+      })),
+    });
+    const cache = new DesktopVaultScanCache(api, aliases);
+    const pages: PageRepository = new DesktopPageRepository(api, cache);
+    aliases.register({
+      vaultId: "v1",
+      sessionPageId: "path:React.md",
+      stableNoteId: "abc-stable",
+      relativePath: "React.md",
+    });
+    expect((await pages.listByWorkspace("v1")).map((p) => p.id)).toEqual([
+      "path:React.md",
+    ]);
+    await cache.rescan("v1");
+    expect((await pages.listByWorkspace("v1")).map((p) => p.id)).toEqual([
+      "path:React.md",
+    ]);
+    aliases.clear();
+    cache.invalidate("v1");
+    expect((await pages.listByWorkspace("v1")).map((p) => p.id)).toEqual([
+      "abc-stable",
+    ]);
   });
 });
 describe("DesktopPreferencesRepository", () => {

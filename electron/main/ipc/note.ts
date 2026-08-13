@@ -14,6 +14,7 @@ import {
 } from "../../../shared/ipc/contracts.js";
 import { IpcFailure } from "../../../shared/errors.js";
 import {
+  ensureFrontmatterId,
   generateFrontmatter,
   splitFrontmatter,
 } from "../../../shared/markdown/frontmatter.js";
@@ -150,10 +151,12 @@ export function registerNoteHandlers(
         );
       }
 
-      const noteId = randomUUID();
-      const markdown =
-        input.markdown ?? buildDefaultNewNoteMarkdown(noteId, input.title);
-      const bytes = Buffer.from(markdown, "utf8");
+      const generatedId = randomUUID();
+      const rawMarkdown =
+        input.markdown ?? buildDefaultNewNoteMarkdown(generatedId, input.title);
+      // INV-05：写盘前强制 Frontmatter id；response.noteId === 磁盘 id。
+      const ensured = ensureFrontmatterId(rawMarkdown, generatedId);
+      const bytes = Buffer.from(ensured.markdown, "utf8");
       if (bytes.byteLength > MAX_MARKDOWN_FILE_SIZE) {
         throw new IpcFailure(
           "DOCUMENT_TOO_LARGE",
@@ -165,20 +168,16 @@ export function registerNoteHandlers(
         );
       }
 
-      // 若调用方传入 markdown，以其 Frontmatter id 为准；缺省用本函数生成的 noteId。
-      const parsedId =
-        splitFrontmatter(markdown.replace(/\r\n/g, "\n")).metadata.id ?? noteId;
-
       const created = await exclusiveCreateMarkdown({
         vaultRoot: root.absolutePath,
         directory: input.directory,
         title: input.title,
-        markdown,
+        markdown: ensured.markdown,
       });
 
       const st = await stat(created.absolutePath);
       return {
-        noteId: parsedId,
+        noteId: ensured.noteId,
         relativePath: created.relativePath,
         versionToken: sha256Token(bytes),
         source: {

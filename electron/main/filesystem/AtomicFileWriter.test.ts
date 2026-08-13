@@ -188,28 +188,37 @@ describe("atomicWriteFile 失败路径", () => {
     expect(await readFile(target, "utf8")).toBe("# 磁盘\n");
   });
 
-  it("第二次 SHA 冲突（rename 前外部修改）→ DOCUMENT_CONFLICT + temp 清理", async () => {
+  it("第一次 SHA 通过后、rename 前改盘 → 第二次 SHA 冲突，磁盘仍为 B", async () => {
     const expected = await seed("# A\n");
-    // 劫持：在第一次读之后、rename 之前改文件——通过先写一次拿到 token，
-    // 再在原子写期间用极短窗口很难稳定模拟。改用手动注入：
-    // 用 expected 对应内容启动，但在 atomicWrite 内部第二次读前改盘。
-    // 这里用 spy 风格：先验证「错误 expected」走第一次冲突；第二次冲突
-    // 用独立小流程——写 temp 前把目标改掉需要 hook。
-    // 简化：直接改盘后用旧 token 写 → 第一次冲突已覆盖；
-    // 第二次冲突用「读后立刻改」难测，改为断言 classify + 无 temp 残留即可。
-    await writeFile(target, "# B\n", "utf8");
-    await expectCode(
+    const renameCalls: string[] = [];
+    const err = await expectCode(
       () =>
-        atomicWriteFile({
-          targetPath: target,
-          bytes: new TextEncoder().encode("# C\n"),
-          expectedVersionToken: expected,
-        }),
+        atomicWriteFile(
+          {
+            targetPath: target,
+            bytes: new TextEncoder().encode("# C\n"),
+            expectedVersionToken: expected,
+          },
+          {
+            afterTempSynced: async () => {
+              await writeFile(target, "# B\n", "utf8");
+            },
+            rename: async (from, to) => {
+              renameCalls.push(`${from}->${to}`);
+              await writeFile(to, await readFile(from));
+            },
+          },
+        ),
       "DOCUMENT_CONFLICT",
     );
     expect(await readFile(target, "utf8")).toBe("# B\n");
     const leftovers = (await readdir(root)).filter((n) => n.includes("e1-tmp"));
     expect(leftovers).toEqual([]);
+    expect(renameCalls).toEqual([]);
+    expect(err.details).toEqual({
+      expectedVersionToken: expected,
+      currentVersionToken: sha256Token(Buffer.from("# B\n", "utf8")),
+    });
   });
 
   it("目标文件不存在 → NOTE_NOT_FOUND", async () => {

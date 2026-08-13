@@ -314,3 +314,39 @@ export function generateFrontmatter(metadata: PortableNoteMetadata): string {
   if (lines.length === 0) return "";
   return ["---", ...lines, "---"].join("\n");
 }
+
+/**
+ * R006-C4.1-D（FR-22/23/24）：保证 Markdown 含 Frontmatter `id`。
+ *
+ * - 已有 id → 沿用，不改写正文；
+ * - 无 id / 无 Frontmatter → 注入 generatedId，保留 title/tags/aliases/
+ *   created/updated/未知字段与正文。
+ * Main 只依赖本纯函数，不得 import Tiptap / MarkdownCodec。
+ */
+export function ensureFrontmatterId(
+  markdown: string,
+  generatedId: string,
+): { markdown: string; noteId: string } {
+  const crlf = markdown.includes("\r\n");
+  const normalized = markdown.replace(/\r\n/g, "\n");
+  const split = splitFrontmatter(normalized);
+  if (typeof split.metadata.id === "string" && split.metadata.id.length > 0) {
+    return { markdown, noteId: split.metadata.id };
+  }
+  const fm = generateFrontmatter({
+    id: generatedId,
+    title: split.metadata.title,
+    tags: split.metadata.tags.length > 0 ? split.metadata.tags : undefined,
+    createdAt: split.metadata.createdAt,
+    updatedAt: split.metadata.updatedAt,
+    aliases:
+      split.metadata.aliases.length > 0 ? split.metadata.aliases : undefined,
+    extra: split.metadata.extra,
+  });
+  const next =
+    split.body.length > 0 ? `${fm}\n\n${split.body}` : `${fm}\n\n`;
+  return {
+    markdown: crlf ? next.replace(/\n/g, "\r\n") : next,
+    noteId: generatedId,
+  };
+}

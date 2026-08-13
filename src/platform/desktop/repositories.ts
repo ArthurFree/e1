@@ -69,9 +69,15 @@ import {
   mapScanEntriesToPages,
   mapScanEntriesToTags,
   pageIdOfEntry,
+  resolveSessionPageId,
   tagIdOfName,
 } from "./vaultMapping";
 import { DesktopDocumentSourceCache } from "./DesktopDocumentSourceCache";
+import { DesktopIdentityAliasRegistry } from "./DesktopIdentityAliasRegistry";
+import {
+  DesktopMarkdownWriteService,
+  mapNoteWriteError,
+} from "./DesktopMarkdownWriteService";
 import type { PortableNoteMetadata } from "../../editor/markdown/types";
 
 /** 一次扫描的快照：条目 + 扫描时刻（页面 createdAt/updatedAt 取它）。 */
@@ -88,39 +94,67 @@ export interface VaultScanSnapshot {
  */
 export class DesktopVaultScanCache {
   private readonly snapshots = new Map<string, Promise<VaultScanSnapshot>>();
-  /** 同步 pageId → relativePath（供 mention 解析；随 scan 结果更新）。 */
-  private readonly pageRelativePaths = new Map<string, string>();
+  /** Vault 隔离的 pageId → relativePath（FR-13；scan 整体替换，FR-14）。 */
+  private readonly pageRelativePathsByVault = new Map<
+    string,
+    Map<string, string>
+  >();
+  readonly aliases: DesktopIdentityAliasRegistry;
 
-  constructor(private readonly api: E1DesktopAPI) {}
+  constructor(
+    private readonly api: E1DesktopAPI,
+    aliases?: DesktopIdentityAliasRegistry,
+  ) {
+    this.aliases = aliases ?? new DesktopIdentityAliasRegistry();
+  }
 
   /** 扫描（或取缓存）指定 Vault；并发调用共享同一 Promise。 */
   scan(vaultId: string): Promise<VaultScanSnapshot> {
     let pending = this.snapshots.get(vaultId);
     if (!pending) {
       pending = this.api.vault.scan(vaultId).then((result) => {
+        const nextIndex = new Map<string, string>();
         for (const entry of result.entries) {
-          if (entry.kind === "document") {
-            this.pageRelativePaths.set(pageIdOfEntry(entry), entry.relativePath);
+          if (entry.kind !== "document") continue;
+          nextIndex.set(pageIdOfEntry(entry), entry.relativePath);
+          const sessionId = resolveSessionPageId(
+            vaultId,
+            entry,
+            this.aliases,
+          );
+          nextIndex.set(sessionId, entry.relativePath);
+          const alias =
+            this.aliases.getByRelativePath(vaultId, entry.relativePath) ??
+            (entry.noteId
+              ? this.aliases.getByStableNoteId(entry.noteId)
+              : null);
+          if (alias?.vaultId === vaultId) {
+            nextIndex.set(alias.sessionPageId, entry.relativePath);
+            nextIndex.set(alias.stableNoteId, entry.relativePath);
           }
         }
+        this.pageRelativePathsByVault.set(vaultId, nextIndex);
         return { result, scannedAt: Date.now() };
       });
       this.snapshots.set(vaultId, pending);
-      // 扫描失败（如目录中途被移走）不缓存拒绝态，下次调用重试。
-      pending.catch(() => this.snapshots.delete(vaultId));
+      pending.catch(() => {
+        this.snapshots.delete(vaultId);
+        this.pageRelativePathsByVault.delete(vaultId);
+      });
     }
     return pending;
   }
 
-  /** 使指定 Vault 的缓存失效（FR-14；重新扫描与 C4 写路径用）。 */
+  /** 使指定 Vault 的缓存失效（FR-15：同时清理路径索引）。 */
   invalidate(vaultId: string): void {
     this.snapshots.delete(vaultId);
+    this.pageRelativePathsByVault.delete(vaultId);
   }
 
-  /** 全部缓存失效（如 Vault 列表整体刷新）。 */
+  /** 全部缓存失效（如 Vault 列表整体刷新）。不清理 Alias（FR-11）。 */
   invalidateAll(): void {
     this.snapshots.clear();
-    this.pageRelativePaths.clear();
+    this.pageRelativePathsByVault.clear();
   }
 
   /** 强制重新扫描（跳过缓存并以新快照替换；失败时保留语义同 scan）。 */
@@ -131,18 +165,29 @@ export class DesktopVaultScanCache {
 
   /**
    * 按页面 id 在已缓存的扫描快照中反查所属 Vault 与条目（FR-14）。
-   * id 派生规则与 vaultMapping 共用同一 pageIdOfEntry（Frontmatter noteId
-   * 优先，否则 "path:" + relativePath），两处不会漂移。
+   * 同时识别 Session Alias（Adoption 后仍可用 path:* 打开）。
    */
   async findDocument(
     pageId: string,
   ): Promise<{ vaultId: string; entry: VaultScanEntry } | null> {
+    const alias =
+      this.aliases.getBySessionPageId(pageId) ??
+      this.aliases.getByStableNoteId(pageId);
     for (const [vaultId, pending] of this.snapshots) {
       const snapshot = await pending.catch(() => null);
       if (!snapshot) continue;
-      const entry = snapshot.result.entries.find(
-        (e) => e.kind === "document" && pageIdOfEntry(e) === pageId,
-      );
+      const entry = snapshot.result.entries.find((e) => {
+        if (e.kind !== "document") return false;
+        if (pageIdOfEntry(e) === pageId) return true;
+        if (resolveSessionPageId(vaultId, e, this.aliases) === pageId) {
+          return true;
+        }
+        if (alias && alias.vaultId === vaultId) {
+          if (e.relativePath === alias.relativePath) return true;
+          if (e.noteId && e.noteId === alias.stableNoteId) return true;
+        }
+        return false;
+      });
       if (entry) return { vaultId, entry };
     }
     return null;
@@ -154,9 +199,9 @@ export class DesktopVaultScanCache {
     return found?.entry ?? null;
   }
 
-  /** 同步取页面相对路径（mention 解析；未扫描到返回 null）。 */
-  getRelativePathSync(pageId: string): string | null {
-    return this.pageRelativePaths.get(pageId) ?? null;
+  /** 同步取页面相对路径（mention 解析；未扫描到返回 null）。Vault 隔离。 */
+  getRelativePathSync(vaultId: string, pageId: string): string | null {
+    return this.pageRelativePathsByVault.get(vaultId)?.get(pageId) ?? null;
   }
 }
 
@@ -279,6 +324,7 @@ export class DesktopPageRepository implements PageRepository {
       vaultId,
       snapshot.result.entries,
       snapshot.scannedAt,
+      this.scans.aliases,
     );
   }
 
@@ -310,7 +356,10 @@ export class DesktopPageRepository implements PageRepository {
         "当前知识库处于仅预览模式，E1 不会在这个文件夹中创建文件。",
       );
     }
-    const directory = this.resolveCreateDirectory(input.parentId);
+    const directory = this.resolveCreateDirectory(
+      input.workspaceId,
+      input.parentId,
+    );
     let created;
     try {
       created = await this.api.note.create({
@@ -344,13 +393,16 @@ export class DesktopPageRepository implements PageRepository {
   }
 
   /** parentId → note.create 的 directory（根=""；path:学习 → 学习）。 */
-  private resolveCreateDirectory(parentId: string | null): string {
+  private resolveCreateDirectory(
+    vaultId: string,
+    parentId: string | null,
+  ): string {
     if (!parentId) return "";
     if (parentId.startsWith("path:")) {
       return parentId.slice("path:".length);
     }
     // 父级是带稳定 id 的文档：新建为其同级（父文件所在目录）。
-    const rel = this.scans.getRelativePathSync(parentId);
+    const rel = this.scans.getRelativePathSync(vaultId, parentId);
     if (!rel) return "";
     const slash = rel.lastIndexOf("/");
     return slash === -1 ? "" : rel.slice(0, slash);
@@ -453,12 +505,19 @@ function mapNoteReadError(err: unknown): never {
 export class DesktopContentRepository
   implements ContentRepository, DocumentOpenCapable
 {
+  private readonly writer: DesktopMarkdownWriteService;
+
   constructor(
     private readonly api: E1DesktopAPI,
     private readonly scans: DesktopVaultScanCache,
     private readonly sources: DesktopDocumentSourceCache = new DesktopDocumentSourceCache(),
     private readonly codec: MarkdownCodec = createMarkdownCodec(),
-  ) {}
+    writer?: DesktopMarkdownWriteService,
+  ) {
+    this.writer =
+      writer ??
+      new DesktopMarkdownWriteService(api, this.sources, scans, this.codec);
+  }
 
   /** 供装配层 / 保存链路读取来源缓存。 */
   getSourceCache(): DesktopDocumentSourceCache {
@@ -581,8 +640,7 @@ export class DesktopContentRepository
   }
 
   /**
-   * ContentRepository.save（R006-C4-E FR-30）：
-   * SourceCache → serialize → lossy gate → note.save → 更新 versionToken。
+   * ContentRepository.save（R006-C4.1 FR-03）：校验后委托统一写入服务。
    */
   async save(
     pageId: string,
@@ -590,102 +648,20 @@ export class DesktopContentRepository
     _textSnapshot: string,
     expectedVersion: string,
   ): Promise<{ version: string; updatedAt: number }> {
-    const ctx = this.sources.get(pageId);
-    if (!ctx) {
+    const parsed = parseDocumentContent(contentJson);
+    if (!parsed.ok) {
       throw new DomainError(
-        "PAGE_NOT_FOUND",
-        "文档来源上下文已失效，请重新打开该笔记后再保存。",
+        "CORRUPTED_DOCUMENT",
+        "正文 JSON 未通过白名单校验",
       );
     }
-    // 有损来源未确认 / 身份未 Adoption：拒绝自动保存。
-    if (
-      ctx.compatibility.lossy &&
-      !ctx.writeSession.sourceLossyApproved
-    ) {
-      throw new DomainError(
-        "MARKDOWN_LOSSY_OUTPUT",
-        "当前 Markdown 包含 E1 暂不完全支持的格式，请先确认了解风险后再保存。",
-        { phase: "source", unsupported: ctx.compatibility.unsupported },
-      );
-    }
-    if (
-      !ctx.stableNoteId &&
-      !ctx.writeSession.identityAdoptionApproved
-    ) {
-      throw new DomainError(
-        "MARKDOWN_LOSSY_OUTPUT",
-        "这篇 Markdown 尚未建立稳定笔记身份，请先启用编辑后再保存。",
-        { phase: "identity-adoption" },
-      );
-    }
-
-    const metadata: PortableNoteMetadata = {
-      ...ctx.metadata,
-      id: ctx.stableNoteId ?? ctx.metadata.id,
-      // FR-20：只更新 updated；title/tags/created/aliases/extra 保留。
-      updatedAt: new Date().toISOString(),
-      extra: ctx.frontmatterExtra,
-    };
-
-    const serialized = await this.codec.serialize({
-      document: contentJson,
-      metadata,
-      assetResolver: {
-        resolveAssetPath: ({ name, kind }) =>
-          // C4 无真实 AssetStore：生成相对占位；localImage/attachment 节点
-          // 会在 transform 中记 unsupported → lossy gate。
-          `assets/${kind}-${name || "file"}`,
-      },
-      mode: "portable",
-      lineEnding: ctx.lineEnding,
-      resolveMentionPath: (targetPageId) =>
-        this.resolveMentionRelativePath(ctx.relativePath, targetPageId),
+    const result = await this.writer.save({
+      pageId,
+      contentJson: parsed.value,
+      expectedVersionToken: expectedVersion,
+      mode: "autosave",
     });
-
-    if (serialized.lossy && !ctx.writeSession.outputLossyApproved) {
-      throw new DomainError(
-        "MARKDOWN_LOSSY_OUTPUT",
-        "当前内容包含 Markdown 无法完整表达的格式，自动保存已暂停。",
-        { phase: "output", unsupported: serialized.unsupported },
-      );
-    }
-
-    let saved;
-    try {
-      saved = await this.api.note.save({
-        vaultId: ctx.vaultId,
-        relativePath: ctx.relativePath,
-        markdown: serialized.markdown,
-        expectedVersionToken: expectedVersion,
-      });
-    } catch (err) {
-      throw mapNoteWriteError(err);
-    }
-
-    this.sources.updateVersion(pageId, saved.versionToken);
-    // 同步 metadata.updatedAt 到缓存，供下次 serialize。
-    const latest = this.sources.get(pageId);
-    if (latest) {
-      this.sources.set(pageId, {
-        ...latest,
-        metadata: { ...latest.metadata, updatedAt: metadata.updatedAt },
-        versionToken: saved.versionToken,
-      });
-    }
-    return {
-      version: saved.versionToken,
-      updatedAt: saved.source?.modifiedAt ?? Date.now(),
-    };
-  }
-
-  /** 当前文档相对路径 → 目标页相对路径（同 Vault）；无法解析返回 null。 */
-  private resolveMentionRelativePath(
-    fromRelativePath: string,
-    targetPageId: string,
-  ): string | null {
-    const target = this.scans.getRelativePathSync(targetPageId);
-    if (!target) return null;
-    return relativeMarkdownPath(fromRelativePath, target);
+    return { version: result.versionToken, updatedAt: result.updatedAt };
   }
 
   async listAll(): Promise<DocumentContent[]> {
@@ -697,87 +673,26 @@ export class DesktopContentRepository
   }
 }
 
-/**
- * note.save 的 IPC 错误 → DomainError（R006-C4 FR-10/11/15）。
- */
-function mapNoteWriteError(err: unknown): never {
-  if (err instanceof DesktopIpcError) {
-    switch (err.code) {
-      case "DOCUMENT_CONFLICT":
-        throw new DomainError(
-          "DOCUMENT_CONFLICT",
-          "这篇笔记已在 E1 之外发生修改，为了避免覆盖外部修改，自动保存已暂停。",
-          err.details,
-        );
-      case "VAULT_READ_ONLY":
-        throw new DomainError(
-          "VAULT_READ_ONLY",
-          "当前知识库处于仅预览模式，E1 不会修改这个文件夹中的任何内容。",
-        );
-      case "NOTE_WRITE_PERMISSION_DENIED":
-        throw new DomainError(
-          "NOTE_WRITE_PERMISSION_DENIED",
-          "无法保存 Markdown，当前系统用户没有该文件的写入权限。你的编辑内容仍保留在当前应用中。",
-        );
-      case "NOTE_WRITE_IO_ERROR":
-        throw new DomainError(
-          "NOTE_WRITE_IO_ERROR",
-          "保存 Markdown 时发生系统错误，原文件没有被主动清空。",
-        );
-      case "DOCUMENT_TOO_LARGE":
-        throw new DomainError(
-          "DOCUMENT_TOO_LARGE",
-          "这篇 Markdown 序列化结果过大，当前版本暂不支持保存。",
-          err.details,
-        );
-      case "NOTE_NOT_FOUND":
-        throw new DomainError(
-          "PAGE_NOT_FOUND",
-          "这篇笔记已经不存在。它可能已经被其他程序移动或删除。",
-        );
-      case "PATH_ESCAPE":
-      case "INVALID_INPUT":
-        throw new DomainError("INVALID_INPUT", err.message);
-      default:
-        throw err;
-    }
-  }
-  throw err;
-}
-
-/**
- * 从 from 文件到 to 文件的相对 Markdown 链接路径（posix 风格）。
- * 例：学习/a.md → 学习/b.md => b.md；学习/a.md → 根/c.md => ../c.md。
- */
-export function relativeMarkdownPath(fromFile: string, toFile: string): string {
-  const fromParts = fromFile.split("/").slice(0, -1);
-  const toParts = toFile.split("/");
-  let i = 0;
-  while (
-    i < fromParts.length &&
-    i < toParts.length - 1 &&
-    fromParts[i] === toParts[i]
-  ) {
-    i += 1;
-  }
-  const ups = fromParts.length - i;
-  const down = toParts.slice(i);
-  const rel = [...Array(ups).fill(".."), ...down].join("/");
-  return rel || toParts[toParts.length - 1]!;
-}
-
 /** 标签仓储：从扫描条目的 Frontmatter tags 聚合；写操作抛错。 */
 export class DesktopTagRepository implements TagRepository {
   constructor(private readonly scans: DesktopVaultScanCache) {}
 
   async listByWorkspace(vaultId: string): Promise<Tag[]> {
     const snapshot = await this.scans.scan(vaultId);
-    return mapScanEntriesToTags(vaultId, snapshot.result.entries).tags;
+    return mapScanEntriesToTags(
+      vaultId,
+      snapshot.result.entries,
+      this.scans.aliases,
+    ).tags;
   }
 
   async listWorkspacePageTags(vaultId: string): Promise<PageTag[]> {
     const snapshot = await this.scans.scan(vaultId);
-    return mapScanEntriesToTags(vaultId, snapshot.result.entries).pageTags;
+    return mapScanEntriesToTags(
+      vaultId,
+      snapshot.result.entries,
+      this.scans.aliases,
+    ).pageTags;
   }
 
   /** 单页标签 id：在已缓存的扫描快照中按页面 id 反查（TagPicker 用）。 */
@@ -803,19 +718,24 @@ export class DesktopTagRepository implements TagRepository {
 }
 
 /**
- * 原子文档写（R006-C4-G）：createWithContent → note.create；
- * replaceContent 对已打开文档走 note.save，未验证路径仍 NOT_IMPLEMENTED。
+ * 原子文档写（R006-C4-G / C4.1）：createWithContent → note.create；
+ * replaceContent 经 DesktopMarkdownWriteService（不得绕过 Gate）。
  */
 export class DesktopDocumentWriteRepository implements DocumentWriteRepository {
   private readonly codec: MarkdownCodec;
+  private readonly writer: DesktopMarkdownWriteService;
 
   constructor(
     private readonly api: E1DesktopAPI,
     private readonly scans: DesktopVaultScanCache,
     private readonly sources: DesktopDocumentSourceCache,
     codec?: MarkdownCodec,
+    writer?: DesktopMarkdownWriteService,
   ) {
     this.codec = codec ?? createMarkdownCodec();
+    this.writer =
+      writer ??
+      new DesktopMarkdownWriteService(api, sources, scans, this.codec);
   }
 
   async createWithContent(input: CreateDocumentWithContentInput): Promise<Page> {
@@ -855,7 +775,10 @@ export class DesktopDocumentWriteRepository implements DocumentWriteRepository {
       lineEnding: "lf",
     });
 
-    const directory = this.resolveCreateDirectory(input.parentId);
+    const directory = this.resolveCreateDirectory(
+      input.workspaceId,
+      input.parentId,
+    );
     let created;
     try {
       created = await this.api.note.create({
@@ -874,6 +797,7 @@ export class DesktopDocumentWriteRepository implements DocumentWriteRepository {
         input.workspaceId,
         snap.result.entries,
         snap.scannedAt,
+        this.scans.aliases,
       ),
     );
     const found = pages.find((p) => p.id === created.noteId);
@@ -898,13 +822,6 @@ export class DesktopDocumentWriteRepository implements DocumentWriteRepository {
   async replaceContent(
     input: ReplaceDocumentContentInput,
   ): Promise<DocumentContent> {
-    const ctx = this.sources.get(input.pageId);
-    if (!ctx) {
-      throw notImplemented(
-        "覆盖文档内容（模板/导入等未验证路径）",
-        "阶段 4（仅已打开文档可经 note.save 覆盖）",
-      );
-    }
     const parsed = parseDocumentContent(input.contentJson);
     if (!parsed.ok) {
       throw new DomainError(
@@ -912,52 +829,33 @@ export class DesktopDocumentWriteRepository implements DocumentWriteRepository {
         "正文 JSON 未通过白名单校验",
       );
     }
-    // 复用 ContentRepository.save 语义：经 serialize + note.save。
-    // 此处直接 IPC，避免循环依赖 ContentRepository。
-    const metadata: PortableNoteMetadata = {
-      ...ctx.metadata,
-      id: ctx.stableNoteId ?? ctx.metadata.id,
-      updatedAt: new Date().toISOString(),
-      extra: ctx.frontmatterExtra,
-    };
-    const serialized = await this.codec.serialize({
-      document: parsed.value,
-      metadata,
-      assetResolver: {
-        resolveAssetPath: ({ name, kind }) =>
-          `assets/${kind}-${name || "file"}`,
-      },
-      mode: "portable",
-      lineEnding: ctx.lineEnding,
+    const ctx = this.sources.get(input.pageId);
+    const result = await this.writer.save({
+      pageId: input.pageId,
+      contentJson: parsed.value,
+      expectedVersionToken: ctx?.versionToken ?? "",
+      mode: "replace-content",
     });
-    let saved;
-    try {
-      saved = await this.api.note.save({
-        vaultId: ctx.vaultId,
-        relativePath: ctx.relativePath,
-        markdown: serialized.markdown,
-        expectedVersionToken: ctx.versionToken,
-      });
-    } catch (err) {
-      mapNoteWriteError(err);
-    }
-    this.sources.updateVersion(input.pageId, saved.versionToken);
+    const latest = this.sources.get(input.pageId);
     return {
       pageId: input.pageId,
-      workspaceId: ctx.vaultId,
+      workspaceId: latest?.vaultId ?? ctx?.vaultId ?? "",
       contentJson: parsed.value,
       textSnapshot: input.textSnapshot,
-      version: saved.versionToken,
-      updatedAt: saved.source?.modifiedAt ?? Date.now(),
+      version: result.versionToken,
+      updatedAt: result.updatedAt,
     };
   }
 
-  private resolveCreateDirectory(parentId: string | null): string {
+  private resolveCreateDirectory(
+    vaultId: string,
+    parentId: string | null,
+  ): string {
     if (!parentId) return "";
     if (parentId.startsWith("path:")) {
       return parentId.slice("path:".length);
     }
-    const rel = this.scans.getRelativePathSync(parentId);
+    const rel = this.scans.getRelativePathSync(vaultId, parentId);
     if (!rel) return "";
     const slash = rel.lastIndexOf("/");
     return slash === -1 ? "" : rel.slice(0, slash);

@@ -2,7 +2,11 @@
  * Frontmatter 最小 YAML 子集解析/生成单元测试（R005 阶段 4，批次 4A）。
  */
 import { describe, expect, it } from "vitest";
-import { generateFrontmatter, splitFrontmatter } from "./frontmatter";
+import {
+  ensureFrontmatterId,
+  generateFrontmatter,
+  splitFrontmatter,
+} from "./frontmatter";
 
 describe("splitFrontmatter", () => {
   it("无 Frontmatter 时原样返回正文", () => {
@@ -138,5 +142,58 @@ describe("generateFrontmatter", () => {
       `${generateFrontmatter(metadata)}\n\n正文`,
     );
     expect(roundtripped.metadata).toEqual({ ...metadata, extra: [] });
+  });
+});
+
+describe("ensureFrontmatterId（R006-C4.1-D）", () => {
+  it("已有 id：沿用且不改写原文", () => {
+    const markdown = [
+      "---",
+      "id: existing-id",
+      "title: 已有",
+      "---",
+      "",
+      "正文",
+      "",
+    ].join("\n");
+    const result = ensureFrontmatterId(markdown, "generated-id");
+    expect(result.noteId).toBe("existing-id");
+    expect(result.markdown).toBe(markdown);
+  });
+
+  it("无 Frontmatter：注入 generatedId，正文保留", () => {
+    const result = ensureFrontmatterId("# 标题\n\n正文\n", "new-id");
+    expect(result.noteId).toBe("new-id");
+    const split = splitFrontmatter(result.markdown);
+    expect(split.metadata.id).toBe("new-id");
+    expect(split.body).toBe("# 标题\n\n正文\n");
+  });
+
+  it("有 Frontmatter 无 id：注入 id，保留未知字段/tags/aliases/created/updated/title/正文", () => {
+    const markdown = [
+      "---",
+      "title: 随笔",
+      "tags: [a, b]",
+      "aliases: [旧名]",
+      "created: 2026-01-01T00:00:00.000Z",
+      "updated: 2026-01-02T00:00:00.000Z",
+      "custom_field: keep-me",
+      "---",
+      "",
+      "保留正文",
+    ].join("\n");
+    const result = ensureFrontmatterId(markdown, "injected-id");
+    expect(result.noteId).toBe("injected-id");
+    const split = splitFrontmatter(result.markdown.replace(/\r\n/g, "\n"));
+    expect(split.metadata.id).toBe("injected-id");
+    expect(split.metadata.title).toBe("随笔");
+    expect(split.metadata.tags).toEqual(["a", "b"]);
+    expect(split.metadata.aliases).toEqual(["旧名"]);
+    expect(split.metadata.createdAt).toBe("2026-01-01T00:00:00.000Z");
+    expect(split.metadata.updatedAt).toBe("2026-01-02T00:00:00.000Z");
+    expect(split.metadata.extra.some((f) => f.rawLines.join("\n").includes("keep-me"))).toBe(
+      true,
+    );
+    expect(split.body).toBe("保留正文");
   });
 });

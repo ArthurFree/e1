@@ -225,6 +225,81 @@ test.describe("桌面冒烟：Markdown 创建与安全保存（R006-C4）", () =
     }
   });
 
+  test("Adoption 后重新扫描：当前文档仍打开且树仍选中（C4.1 E2E-01）", async () => {
+    const rel = "随笔.md";
+    const fixture = await createVaultFixture([
+      [rel, "# 随笔\n\n无稳定 id 的正文。\n"],
+    ]);
+    const app = await launch(fixture.userDataDir);
+    try {
+      const window = await app.firstWindow();
+      const treeItem = window.getByRole("treeitem", { name: /随笔/ });
+      await treeItem.click();
+      await window.getByRole("button", { name: "启用编辑" }).click();
+      const editor = window.locator(".editor__content .ProseMirror");
+      await expect(editor).toHaveAttribute("contenteditable", "true");
+      await editor.click();
+      await window.keyboard.type(" 扫描前编辑。");
+      await expect(window.getByText(/已保存/)).toBeVisible({ timeout: 5000 });
+
+      await window.getByRole("button", { name: "首页" }).click();
+      await window.getByRole("button", { name: "重新扫描" }).click();
+      await expect(treeItem).toHaveAttribute("aria-selected", "true");
+      await treeItem.click();
+      await expect(editor).toHaveAttribute("contenteditable", "true");
+      await expect(window.getByRole("button", { name: "启用编辑" })).toHaveCount(
+        0,
+      );
+      await editor.click();
+      await window.keyboard.type(" 扫描后继续。");
+      await expect(window.getByText(/已保存/)).toBeVisible({ timeout: 5000 });
+      const abs = path.join(fixture.vaultDir, rel);
+      await expect.poll(async () => readFile(abs, "utf8")).toContain("扫描后继续。");
+    } finally {
+      await app.close();
+      await fixture.cleanup();
+    }
+  });
+
+  test("重启后页面树身份升级为磁盘 stable id，仍一篇（C4.1 E2E-02）", async () => {
+    const rel = "随笔.md";
+    const fixture = await createVaultFixture([
+      [rel, "# 随笔\n\n无稳定 id 的正文。\n"],
+    ]);
+    const abs = path.join(fixture.vaultDir, rel);
+    const app1 = await launch(fixture.userDataDir);
+    try {
+      const window = await app1.firstWindow();
+      await window.getByRole("treeitem", { name: /随笔/ }).click();
+      await window.getByRole("button", { name: "启用编辑" }).click();
+      const editor = window.locator(".editor__content .ProseMirror");
+      await editor.click();
+      await window.keyboard.type(" 首次保存。");
+      await expect(window.getByText(/已保存/)).toBeVisible({ timeout: 5000 });
+      const disk = await readFile(abs, "utf8");
+      expect(disk).toMatch(/^---\n[\s\S]*id: /m);
+    } finally {
+      await app1.close();
+    }
+
+    const app2 = await launch(fixture.userDataDir);
+    try {
+      const window = await app2.firstWindow();
+      const items = window.getByRole("treeitem", { name: /随笔/ });
+      await expect(items).toHaveCount(1);
+      await items.click();
+      await expect(window.getByRole("button", { name: "启用编辑" })).toHaveCount(
+        0,
+      );
+      const editor = window.locator(".editor__content .ProseMirror");
+      await expect(editor).toHaveAttribute("contenteditable", "true");
+      await expect(editor).toContainText("首次保存。");
+    } finally {
+      await app2.close();
+      await fixture.cleanup();
+    }
+  });
+
   test("新建文档：生成带 id 的 Markdown 文件", async () => {
     const fixture = await createVaultFixture([
       [

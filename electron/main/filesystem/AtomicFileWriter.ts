@@ -13,7 +13,7 @@
  * 原文件无 BOM 则不加。失败路径绝不 truncate 原文件，并清理 temp。
  */
 import { createHash, randomBytes } from "node:crypto";
-import { open, readFile, rename, rm, stat } from "node:fs/promises";
+import { open, readFile, rename as fsRename, rm, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { IpcFailure } from "../../../shared/errors.js";
 import { MAX_MARKDOWN_FILE_SIZE } from "./NoteFileSystem.js";
@@ -33,6 +33,17 @@ export interface AtomicWriteResult {
   versionToken: string;
   modifiedAt: number;
   sizeBytes: number;
+}
+
+/**
+ * 仅供单元测试注入的竞态挂钩（R006-C4.1 FR-25）。
+ * 不进入 IPC、不暴露给 Renderer；生产调用不传。
+ */
+export interface AtomicWriteHooks {
+  /** temp 写完并 sync 之后、第二次 SHA 之前。 */
+  afterTempSynced?(): Promise<void>;
+  /** 可注入 rename spy（断言冲突路径未替换目标）。 */
+  rename?(from: string, to: string): Promise<void>;
 }
 
 /** 对任意字节计算 sha256:<hex> 版本令牌。 */
@@ -61,6 +72,7 @@ export function classifyNoteWriteError(error: unknown): IpcFailure {
  */
 export async function atomicWriteFile(
   input: AtomicWriteInput,
+  hooks: AtomicWriteHooks = {},
 ): Promise<AtomicWriteResult> {
   const { targetPath, expectedVersionToken } = input;
   if (input.bytes.byteLength > MAX_MARKDOWN_FILE_SIZE) {
@@ -121,6 +133,10 @@ export async function atomicWriteFile(
       await handle.close();
     }
 
+    if (hooks.afterTempSynced) {
+      await hooks.afterTempSynced();
+    }
+
     // 第二次校验：rename 前再读目标 SHA（SEC-09）。
     let recheckRaw: Buffer;
     try {
@@ -144,7 +160,7 @@ export async function atomicWriteFile(
     }
 
     try {
-      await rename(tempPath, targetPath);
+      await (hooks.rename ?? fsRename)(tempPath, targetPath);
     } catch (error) {
       await safeUnlink(tempPath);
       throw classifyNoteWriteError(error);

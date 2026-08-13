@@ -22,6 +22,7 @@ import type {
   RecentVault,
   VaultScanEntry,
 } from "../../../shared/ipc/contracts";
+import type { DesktopIdentityAliasRegistry } from "./DesktopIdentityAliasRegistry";
 
 /** 路径派生 id 前缀：与 Frontmatter noteId（ULID）不可能冲突。 */
 const PATH_ID_PREFIX = "path:";
@@ -35,6 +36,26 @@ export const DESKTOP_TAG_COLOR = "#8A8F98";
 export function pageIdOfEntry(entry: VaultScanEntry): string {
   if (entry.kind === "document" && entry.noteId) return entry.noteId;
   return `${PATH_ID_PREFIX}${entry.relativePath}`;
+}
+
+/**
+ * Session 内页面 id：若 Alias Registry 记录了 Adoption，继续使用 sessionPageId
+ *（INV-C4.1-02/03）；否则退回 pageIdOfEntry。
+ */
+export function resolveSessionPageId(
+  vaultId: string,
+  entry: VaultScanEntry,
+  aliases?: DesktopIdentityAliasRegistry | null,
+): string {
+  if (entry.kind === "document" && aliases) {
+    const byPath = aliases.getByRelativePath(vaultId, entry.relativePath);
+    if (byPath) return byPath.sessionPageId;
+    if (entry.noteId) {
+      const byStable = aliases.getByStableNoteId(entry.noteId);
+      if (byStable?.vaultId === vaultId) return byStable.sessionPageId;
+    }
+  }
+  return pageIdOfEntry(entry);
 }
 
 /** 标签名 → 标签 id（同名标签在同一库内共享一个 id）。 */
@@ -102,6 +123,7 @@ export function mapScanEntriesToPages(
   vaultId: string,
   entries: VaultScanEntry[],
   scannedAt: number,
+  aliases?: DesktopIdentityAliasRegistry | null,
 ): Page[] {
   // 同级序号计数器：key 为 parentPath（根级为 null）。
   const siblingCount = new Map<string | null, number>();
@@ -109,7 +131,7 @@ export function mapScanEntriesToPages(
     const position = siblingCount.get(entry.parentPath) ?? 0;
     siblingCount.set(entry.parentPath, position + 1);
     return {
-      id: pageIdOfEntry(entry),
+      id: resolveSessionPageId(vaultId, entry, aliases),
       workspaceId: vaultId,
       parentId:
         entry.parentPath === null
@@ -136,6 +158,7 @@ export function mapScanEntriesToPages(
 export function mapScanEntriesToTags(
   vaultId: string,
   entries: VaultScanEntry[],
+  aliases?: DesktopIdentityAliasRegistry | null,
 ): { tags: Tag[]; pageTags: PageTag[] } {
   const tags: Tag[] = [];
   const seen = new Set<string>();
@@ -154,7 +177,7 @@ export function mapScanEntriesToTags(
         });
       }
       pageTags.push({
-        pageId: pageIdOfEntry(entry),
+        pageId: resolveSessionPageId(vaultId, entry, aliases),
         tagId,
         workspaceId: vaultId,
       });

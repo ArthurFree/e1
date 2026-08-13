@@ -7,6 +7,7 @@
  * 语义注释（最小 YAML 子集、未知字段 rawLines 保留策略等）见 shared 侧文件头。
  */
 export {
+  ensureFrontmatterId,
   generateFrontmatter,
   splitFrontmatter,
 } from "../../../shared/markdown/frontmatter";

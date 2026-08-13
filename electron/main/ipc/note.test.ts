@@ -240,6 +240,52 @@ describe("note.create / note.save 真实实现（R006-C4）", () => {
     ).toBe("React (2).md");
   });
 
+  it("note.create：自定义 markdown 已有 id → 沿用，response.noteId === 磁盘 id", async () => {
+    const vaultId = await registerVault();
+    const create = await call(IPC_CHANNELS.noteCreate, {
+      vaultId,
+      directory: "",
+      title: "导入",
+      markdown: [
+        "---",
+        "id: existing-from-caller",
+        "title: 导入",
+        "custom_field: keep-me",
+        "---",
+        "",
+        "自定义正文",
+        "",
+      ].join("\n"),
+    });
+    expect(create.ok).toBe(true);
+    if (!create.ok) return;
+    const created = create.value as { noteId: string; relativePath: string };
+    expect(created.noteId).toBe("existing-from-caller");
+    const { readFile } = await import("node:fs/promises");
+    const disk = await readFile(join(vaultRoot, created.relativePath), "utf8");
+    expect(disk).toContain("id: existing-from-caller");
+    expect(disk).toContain("custom_field: keep-me");
+    expect(disk).toContain("自定义正文");
+  });
+
+  it("note.create：自定义 markdown 无 id → 注入 generatedId，与磁盘一致", async () => {
+    const vaultId = await registerVault();
+    const create = await call(IPC_CHANNELS.noteCreate, {
+      vaultId,
+      directory: "",
+      title: "无 id",
+      markdown: "# 只有正文\n",
+    });
+    expect(create.ok).toBe(true);
+    if (!create.ok) return;
+    const created = create.value as { noteId: string; relativePath: string };
+    expect(created.noteId.length).toBeGreaterThan(0);
+    const { readFile } = await import("node:fs/promises");
+    const disk = await readFile(join(vaultRoot, created.relativePath), "utf8");
+    expect(disk).toContain(`id: ${created.noteId}`);
+    expect(disk).toContain("# 只有正文");
+  });
+
   it("note.create：transient Vault → VAULT_READ_ONLY", async () => {
     const transientId = transients.add(vaultRoot, "预览库");
     const create = await call(IPC_CHANNELS.noteCreate, {

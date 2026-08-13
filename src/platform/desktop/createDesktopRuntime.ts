@@ -40,8 +40,12 @@ import { WebNotificationService } from "../web/webNotification";
 import { InMemorySecretStore } from "../../infrastructure/memory/secretStore";
 import { InMemoryStorageHealthService } from "../../infrastructure/memory/storageHealth";
 import { createOpenAICompatibleProvider } from "../../infrastructure/aiProvider";
+import { createMarkdownCodec } from "../../editor/markdown/codec";
 import { desktopCapabilities } from "./desktopCapabilities";
 import type { E1DesktopAPI } from "./desktopApi";
+import { DesktopDocumentSourceCache } from "./DesktopDocumentSourceCache";
+import { DesktopIdentityAliasRegistry } from "./DesktopIdentityAliasRegistry";
+import { DesktopMarkdownWriteService } from "./DesktopMarkdownWriteService";
 import {
   DesktopContentRepository,
   DesktopDocumentWriteRepository,
@@ -65,18 +69,31 @@ export interface DesktopRuntime {
 /** 基于桌面桥装配完整 AppServices 容器（读路径真实、写路径诚实失败）。 */
 export function createDesktopRuntime(api: E1DesktopAPI): DesktopRuntime {
   // IPC-backed 仓储（扫描缓存跨仓储共享：会话加载的页面/标签读取
-  // 与搜索索引准备只触发一次真实扫描）。
-  const scans = new DesktopVaultScanCache(api);
+  // 与搜索索引准备只触发一次真实扫描）。Alias / Source / WriteService
+  // 三份单例：Adoption 后 Session 身份稳定，save 与 replaceContent 共用 Gate。
+  const aliases = new DesktopIdentityAliasRegistry();
+  const scans = new DesktopVaultScanCache(api, aliases);
+  const sources = new DesktopDocumentSourceCache();
+  const codec = createMarkdownCodec();
+  const writer = new DesktopMarkdownWriteService(api, sources, scans, codec);
   const workspaceRepository = new DesktopWorkspaceRepository(api);
   const pageRepository = new DesktopPageRepository(api, scans);
-  const contentRepository = new DesktopContentRepository(api, scans);
+  const contentRepository = new DesktopContentRepository(
+    api,
+    scans,
+    sources,
+    codec,
+    writer,
+  );
   const tagRepository = new DesktopTagRepository(scans);
   const revisionRepository = new DesktopRevisionRepository();
   const assetStore = new DesktopAssetStore();
   const documentWriteRepository = new DesktopDocumentWriteRepository(
     api,
     scans,
-    contentRepository.getSourceCache(),
+    sources,
+    codec,
+    writer,
   );
   // 偏好：localStorage（lastRoute 持久化支撑 US-06 重开自动进入最近 Vault）。
   const preferencesRepository = new DesktopPreferencesRepository();
@@ -174,8 +191,9 @@ export function createDesktopRuntime(api: E1DesktopAPI): DesktopRuntime {
       approveIdentityAdoption: (pageId) => {
         const cache = contentRepository.getSourceCache();
         const existing = cache.get(pageId);
-        // C4-F：启用编辑时预生成 stableNoteId（会话 pageId 仍为 path:*）；
-        // 首次 note.save 才把 id 写入 Frontmatter。
+        // C4-F / C4.1-B：启用编辑时预生成 stableNoteId（会话 pageId 仍为
+        // path:*）；首次 note.save 才把 id 写入 Frontmatter。同时登记
+        // Session Alias，重新扫描不得把 Page.id 切到磁盘 stable id。
         if (existing && !existing.stableNoteId) {
           const id =
             typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -184,6 +202,15 @@ export function createDesktopRuntime(api: E1DesktopAPI): DesktopRuntime {
           cache.updateStableNoteId(pageId, id);
         }
         cache.approveIdentityAdoption(pageId);
+        const latest = cache.get(pageId);
+        if (latest?.stableNoteId) {
+          aliases.register({
+            vaultId: latest.vaultId,
+            sessionPageId: pageId,
+            stableNoteId: latest.stableNoteId,
+            relativePath: latest.relativePath,
+          });
+        }
       },
     },
     preferencesService,

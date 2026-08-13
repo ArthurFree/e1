@@ -65,6 +65,10 @@ export type DomainErrorCode =
    */
   | "MARKDOWN_LOSSY_OUTPUT"
   /**
+   * R006-C4.1：Desktop 来源上下文缺失（未打开或已失效），不得猜测路径/Frontmatter。
+   */
+  | "DOCUMENT_SOURCE_CONTEXT_REQUIRED"
+  /**
    * R006-C2.1（FR-03）：选中的文件夹尚未初始化，等待用户在确认框中选择
    * 「仅预览 / 初始化并打开 / 取消」——仅 Desktop 打开本地知识库链路使用，
    * 不跨 IPC；UI 接住后调 platform/desktop 的确认握手模块再继续。
