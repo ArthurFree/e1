@@ -33,6 +33,12 @@ export type IpcErrorCode =
   | "NOTE_PERMISSION_DENIED"
   /** R006-C3（FR-25）：读取 Markdown 的其他系统 I/O 错误。 */
   | "NOTE_IO_ERROR"
+  /** R006-C4（FR-10）：写入 Markdown 被拒绝（EACCES/EPERM）。 */
+  | "NOTE_WRITE_PERMISSION_DENIED"
+  /** R006-C4（FR-10）：写入 Markdown 的其他系统 I/O 错误。 */
+  | "NOTE_WRITE_IO_ERROR"
+  /** R006-C4（FR-15）：仅预览（transient）Vault 拒绝任何写操作。 */
+  | "VAULT_READ_ONLY"
   /** R006-C3（FR-09）：Markdown 超过单文件大小上限（10 MiB）。 */
   | "DOCUMENT_TOO_LARGE"
   /** R006-C3（FR-10）：文件无法作为 UTF-8 安全解码（不猜测/不转码）。 */
@@ -136,6 +142,10 @@ const DOMAIN_TO_IPC: Record<string, IpcErrorCode> = {
   NOTE_IO_ERROR: "NOTE_IO_ERROR",
   DOCUMENT_TOO_LARGE: "DOCUMENT_TOO_LARGE",
   UNSUPPORTED_ENCODING: "UNSUPPORTED_ENCODING",
+  // R006-C4：写路径错误码（与 domain 同名，双向透传）。
+  NOTE_WRITE_PERMISSION_DENIED: "NOTE_WRITE_PERMISSION_DENIED",
+  NOTE_WRITE_IO_ERROR: "NOTE_WRITE_IO_ERROR",
+  VAULT_READ_ONLY: "VAULT_READ_ONLY",
 };
 
 /** IPC 错误码 → domain 错误码（可反向映射的子集；无对应 domain 语义时为 null）。 */
@@ -152,6 +162,9 @@ const IPC_TO_DOMAIN: Partial<Record<IpcErrorCode, string>> = {
   NOTE_IO_ERROR: "NOTE_IO_ERROR",
   DOCUMENT_TOO_LARGE: "DOCUMENT_TOO_LARGE",
   UNSUPPORTED_ENCODING: "UNSUPPORTED_ENCODING",
+  NOTE_WRITE_PERMISSION_DENIED: "NOTE_WRITE_PERMISSION_DENIED",
+  NOTE_WRITE_IO_ERROR: "NOTE_WRITE_IO_ERROR",
+  VAULT_READ_ONLY: "VAULT_READ_ONLY",
 };
 
 /** DomainError → IPC 错误载荷；未识别的 domain code 归一为 INTERNAL。 */

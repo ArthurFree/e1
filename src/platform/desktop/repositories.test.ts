@@ -33,15 +33,16 @@ import {
 } from "./vaultOpenConfirmation";
 import {
   DesktopContentRepository,
+  DesktopDocumentWriteRepository,
   DesktopPageRepository,
   DesktopTagRepository,
   DesktopVaultScanCache,
   DesktopWorkspaceRepository,
 } from "./repositories";
+import { DesktopDocumentSourceCache } from "./DesktopDocumentSourceCache";
 import { DesktopPreferencesRepository } from "./preferencesRepository";
 import {
   DesktopAssetStore,
-  DesktopDocumentWriteRepository,
   DesktopRevisionRepository,
 } from "./stubRepositories";
 
@@ -371,18 +372,49 @@ describe("DesktopPageRepository", () => {
     expect(scan).not.toHaveBeenCalledWith("gone");
   });
 
-  it("写操作全部抛 DomainError(NOT_IMPLEMENTED) 且含中文文案", async () => {
-    const api = mockApi({});
-    const repo: PageRepository = new DesktopPageRepository(
-      api,
-      new DesktopVaultScanCache(api),
-    );
-    const cases: Array<() => Promise<unknown>> = [
+  it("create 文档走 note.create 并刷新扫描；其余写操作仍 NOT_IMPLEMENTED", async () => {
+    const create = vi.fn(async () => ({
+      noteId: "01NEW",
+      relativePath: "无标题.md",
+      versionToken: `sha256:${"e".repeat(64)}`,
+    }));
+    const scan = vi.fn(async () => ({
+      vault: { vaultId: "v1", name: "我的笔记" },
+      entries: [
+        {
+          noteId: "01NEW",
+          relativePath: "无标题.md",
+          kind: "document" as const,
+          title: "无标题",
+          parentPath: null,
+          tags: [],
+        },
+      ],
+    }));
+    const api = mockApi({ scan });
+    (api.note as unknown as { create: typeof create }).create = create;
+    const cache = new DesktopVaultScanCache(api);
+    const repo: PageRepository = new DesktopPageRepository(api, cache);
+    const page = await repo.create({
+      workspaceId: "v1",
+      parentId: null,
+      kind: "document",
+      title: "无标题",
+    });
+    expect(page.id).toBe("01NEW");
+    expect(create).toHaveBeenCalledWith({
+      vaultId: "v1",
+      directory: "",
+      title: "无标题",
+    });
+    expect(scan).toHaveBeenCalled();
+
+    const remaining: Array<() => Promise<unknown>> = [
       () =>
         repo.create({
           workspaceId: "v1",
           parentId: null,
-          kind: "document",
+          kind: "group",
           title: "x",
         }),
       () => repo.rename("p", "x"),
@@ -393,14 +425,29 @@ describe("DesktopPageRepository", () => {
       () => repo.purge("p"),
       () => repo.purgeTrashed("v1"),
     ];
-    for (const run of cases) {
+    for (const run of remaining) {
       const err = await run().catch((e: unknown) => e);
       expect(err).toBeInstanceOf(DomainError);
       expect((err as DomainError).code).toBe("NOT_IMPLEMENTED");
-      expect((err as DomainError).message).toMatch(/桌面端暂不支持/);
     }
   });
 
+  it("transient Vault 上 create 抛 VAULT_READ_ONLY", async () => {
+    const api = mockApi({});
+    const repo: PageRepository = new DesktopPageRepository(
+      api,
+      new DesktopVaultScanCache(api),
+    );
+    await expect(
+      repo.create({
+        workspaceId: "transient:t-1",
+        parentId: null,
+        kind: "document",
+        title: "x",
+      }),
+    ).rejects.toMatchObject({ code: "VAULT_READ_ONLY" });
+    expect(api.note.create).not.toHaveBeenCalled();
+  });
   it("setLastOpened 为 no-op（R006-C3：最近排序由 vault.openRecent 的注册表 touch 承担）", async () => {
     const api = mockApi({});
     const repo: PageRepository = new DesktopPageRepository(
@@ -440,9 +487,13 @@ describe("DesktopContentRepository", () => {
     ],
   };
 
-  function noteResult(markdown: string, relativePath: string): ReadNoteResult {
+  function noteResult(
+    markdown: string,
+    relativePath: string,
+    stableNoteId: string | null = null,
+  ): ReadNoteResult {
     return {
-      stableNoteId: null,
+      stableNoteId,
       relativePath,
       markdown,
       versionToken: `sha256:${"a".repeat(64)}`,
@@ -458,24 +509,41 @@ describe("DesktopContentRepository", () => {
     scan?: E1DesktopAPI["vault"]["scan"];
     noteRead?: E1DesktopAPI["note"]["read"];
     markdown?: string;
+    /** note.read 返回的 stableNoteId；缺省按路径：学习/React.md → 01JABC。 */
+    stableNoteId?: string | null;
+    vaultId?: string;
   }) {
+    const vaultId = overrides.vaultId ?? "v1";
     const noteRead =
       overrides.noteRead ??
-      vi.fn(async (input: { vaultId: string; relativePath: string }) =>
-        noteResult(
+      vi.fn(async (input: { vaultId: string; relativePath: string }) => {
+        const id =
+          overrides.stableNoteId !== undefined
+            ? overrides.stableNoteId
+            : input.relativePath === "学习/React.md"
+              ? "01JABC"
+              : null;
+        return noteResult(
           overrides.markdown ?? "# 标题\n\n正文内容",
           input.relativePath,
-        ),
-      );
+          id,
+        );
+      });
+    const scanResult =
+      overrides.scan ??
+      vi.fn(async () => ({
+        ...SCAN_WITH_DOCS,
+        vault: { ...SCAN_WITH_DOCS.vault, vaultId },
+      }));
     const api = mockApi({
-      scan: overrides.scan ?? vi.fn(async () => SCAN_WITH_DOCS),
+      scan: scanResult,
       noteRead,
     });
     const cache = new DesktopVaultScanCache(api);
     const repo = new DesktopContentRepository(api, cache);
     // 扫描失败（Vault 不可访问）也照常走完预热：缓存不缓存拒绝态，
     // findDocument 反查落空 → PAGE_NOT_FOUND。
-    await cache.scan("v1").catch(() => {});
+    await cache.scan(vaultId).catch(() => {});
     return { api, cache, repo, noteRead };
   }
 
@@ -566,10 +634,11 @@ describe("DesktopContentRepository", () => {
     }
   });
 
-  it("openDocument：兼容 Markdown → editable / lossy:false + 来源信息", async () => {
+  it("openDocument：兼容 Markdown → editable / read-write + 来源信息", async () => {
     const { repo } = await setup({ markdown: "# 标题\n\n普通段落" });
     const opened = await repo.openDocument("01JABC");
     expect(opened.access).toBe("editable");
+    expect(opened.writePolicy).toEqual({ mode: "read-write" });
     expect(opened.compatibility).toEqual({ lossy: false, unsupported: [] });
     expect(opened.source).toMatchObject({
       relativePath: "学习/React.md",
@@ -579,26 +648,82 @@ describe("DesktopContentRepository", () => {
     expect(opened.source.sizeBytes).toBeGreaterThan(0);
   });
 
-  it("openDocument：lossy Markdown → read-only / lossy:true + unsupported 明细", async () => {
+  it("openDocument：lossy Markdown → read-only / confirmation lossy-source", async () => {
     const { repo } = await setup({
       markdown: '[[Wiki Link]]\n\n<div class="custom">\nHTML\n</div>',
     });
     const opened = await repo.openDocument("01JABC");
     expect(opened.access).toBe("read-only");
+    expect(opened.writePolicy).toEqual({
+      mode: "confirmation-required",
+      reason: "lossy-source",
+    });
     expect(opened.compatibility.lossy).toBe(true);
     const kinds = opened.compatibility.unsupported.map((f) => f.kind);
     expect(kinds).toContain("wiki-link");
     expect(kinds).toContain("raw-html");
   });
 
-  it("save 抛 NOT_IMPLEMENTED（C4）；listAll/listByWorkspace 返回空（§35 不扩大搜索）", async () => {
-    const { repo } = await setup({});
-    const asPort: ContentRepository = repo;
-    await expect(asPort.save("p", {}, "", "")).rejects.toMatchObject({
-      code: "NOT_IMPLEMENTED",
+  it("openDocument：无 Frontmatter id（path:*）→ identity-adoption", async () => {
+    const { repo } = await setup({
+      markdown: "# 随笔\n\n正文",
+      stableNoteId: null,
     });
+    const opened = await repo.openDocument("path:随笔.md");
+    expect(opened.access).toBe("read-only");
+    expect(opened.writePolicy).toEqual({
+      mode: "confirmation-required",
+      reason: "identity-adoption",
+    });
+  });
+
+  it("openDocument：transient Vault → read-only / transient-vault", async () => {
+    const vaultId = "transient:preview-1";
+    const { repo } = await setup({
+      markdown: "# 标题\n\n普通段落",
+      vaultId,
+    });
+    const opened = await repo.openDocument("01JABC");
+    expect(opened.access).toBe("read-only");
+    expect(opened.writePolicy).toEqual({
+      mode: "read-only",
+      reason: "transient-vault",
+    });
+  });
+
+  it("save：经 SourceCache serialize → note.save；listAll/listByWorkspace 仍空（§35）", async () => {
+    const save = vi.fn(async () => ({
+      versionToken: `sha256:${"d".repeat(64)}`,
+      source: { modifiedAt: 1722580001000, sizeBytes: 42 },
+    }));
+    const { repo, api } = await setup({});
+    (api.note as unknown as { save: typeof save }).save = save;
+    const opened = await repo.openDocument("01JABC");
+    expect(opened.content).toBeDefined();
+    const asPort: ContentRepository = repo;
+    const result = await asPort.save(
+      "01JABC",
+      opened.content!.contentJson,
+      "正文",
+      opened.content!.version,
+    );
+    expect(result.version).toBe(`sha256:${"d".repeat(64)}`);
+    expect(save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        vaultId: "v1",
+        relativePath: "学习/React.md",
+        expectedVersionToken: opened.content!.version,
+      }),
+    );
     await expect(asPort.listAll()).resolves.toEqual([]);
     await expect(asPort.listByWorkspace("v1")).resolves.toEqual([]);
+  });
+
+  it("save：无 SourceCache → PAGE_NOT_FOUND", async () => {
+    const { repo } = await setup({});
+    await expect(repo.save("missing", {}, "", "sha256:x")).rejects.toMatchObject(
+      { code: "PAGE_NOT_FOUND" },
+    );
   });
 });
 
@@ -665,23 +790,20 @@ describe("DesktopTagRepository", () => {
   });
 });
 
-describe("桩仓储（阶段 3/4/5 前）", () => {
-  it("RevisionRepository：列表空、写入抛错", async () => {
+describe("维护桩与 DocumentWrite（C4-E/G）", () => {
+  it("RevisionRepository：列表空；add/prune 为空操作", async () => {
     const repo: RevisionRepository = new DesktopRevisionRepository();
     await expect(repo.listByPage("p")).resolves.toEqual([]);
-    await expect(repo.add("p", {}, "", "manual")).rejects.toMatchObject({
-      code: "NOT_IMPLEMENTED",
-    });
-    await expect(repo.pruneInterval("p", 1)).rejects.toMatchObject({
-      code: "NOT_IMPLEMENTED",
-    });
+    await expect(repo.add("p", {}, "", "manual")).resolves.toBeNull();
+    await expect(repo.pruneInterval("p", 1)).resolves.toBeUndefined();
   });
 
-  it("AssetStore：读取空、写入抛错", async () => {
+  it("AssetStore：读取空；removeOrphans 返回 0；add/remove 抛错", async () => {
     const store: AssetStore = new DesktopAssetStore();
     await expect(store.getMetadata("a")).resolves.toBeUndefined();
     await expect(store.getBinary("a")).resolves.toBeUndefined();
     await expect(store.listByDocument("p")).resolves.toEqual([]);
+    await expect(store.removeOrphans("p", [])).resolves.toBe(0);
     await expect(
       store.add({
         pageId: "p",
@@ -694,28 +816,57 @@ describe("桩仓储（阶段 3/4/5 前）", () => {
     await expect(store.remove("a")).rejects.toMatchObject({
       code: "NOT_IMPLEMENTED",
     });
-    await expect(store.removeOrphans("p", [])).rejects.toMatchObject({
-      code: "NOT_IMPLEMENTED",
-    });
   });
 
-  it("DocumentWriteRepository：原子写抛错", async () => {
-    const repo: DocumentWriteRepository = new DesktopDocumentWriteRepository();
+  it("DocumentWriteRepository：createWithContent 走 note.create", async () => {
+    const create = vi.fn(async () => ({
+      noteId: "01DOC",
+      relativePath: "模板.md",
+      versionToken: `sha256:${"f".repeat(64)}`,
+    }));
+    const scan = vi.fn(async () => ({
+      vault: { vaultId: "v1", name: "我的笔记" },
+      entries: [
+        {
+          noteId: "01DOC",
+          relativePath: "模板.md",
+          kind: "document" as const,
+          title: "模板",
+          parentPath: null,
+          tags: [],
+        },
+      ],
+    }));
+    const api = mockApi({ scan });
+    (api.note as unknown as { create: typeof create }).create = create;
+    const cache = new DesktopVaultScanCache(api);
+    const sources = new DesktopDocumentSourceCache();
+    const repo: DocumentWriteRepository = new DesktopDocumentWriteRepository(
+      api,
+      cache,
+      sources,
+    );
+    const page = await repo.createWithContent({
+      workspaceId: "v1",
+      parentId: null,
+      title: "模板",
+      contentJson: {
+        type: "doc",
+        content: [{ type: "paragraph", content: [{ type: "text", text: "hi" }] }],
+      },
+      textSnapshot: "hi",
+    });
+    expect(page.id).toBe("01DOC");
+    expect(create).toHaveBeenCalled();
     await expect(
-      repo.createWithContent({
-        workspaceId: "v1",
-        parentId: null,
-        title: "x",
-        contentJson: {},
+      repo.replaceContent({
+        pageId: "missing",
+        contentJson: { type: "doc", content: [] },
         textSnapshot: "",
       }),
     ).rejects.toMatchObject({ code: "NOT_IMPLEMENTED" });
-    await expect(
-      repo.replaceContent({ pageId: "p", contentJson: {}, textSnapshot: "" }),
-    ).rejects.toMatchObject({ code: "NOT_IMPLEMENTED" });
   });
 });
-
 describe("DesktopPreferencesRepository", () => {
   beforeEach(() => {
     localStorage.clear();

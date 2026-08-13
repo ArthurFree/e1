@@ -104,13 +104,14 @@ describe("契约桩 NOT_IMPLEMENTED 归一", () => {
     registerIpcHandlers({ ipc: bus });
   });
 
-  it("note.create/save 合法入参 → NOT_IMPLEMENTED（R006-C4 实现）", async () => {
+  it("note.create / note.save 已真实实现（未登记 → VAULT_NOT_FOUND）", async () => {
     const create = await call(IPC_CHANNELS.noteCreate, {
       vaultId: "v1",
       directory: "",
       title: "t",
     });
-    if (!create.ok) expect(create.error.code).toBe("NOT_IMPLEMENTED");
+    expect(create.ok).toBe(false);
+    if (!create.ok) expect(create.error.code).toBe("VAULT_NOT_FOUND");
 
     const save = await call(IPC_CHANNELS.noteSave, {
       vaultId: "v1",
@@ -118,9 +119,9 @@ describe("契约桩 NOT_IMPLEMENTED 归一", () => {
       markdown: "m",
       expectedVersionToken: "",
     });
-    if (!save.ok) expect(save.error.code).toBe("NOT_IMPLEMENTED");
+    expect(save.ok).toBe(false);
+    if (!save.ok) expect(save.error.code).toBe("VAULT_NOT_FOUND");
   });
-
   it("note.read 已是真实实现（R006-C3-A）：未登记 vaultId → VAULT_NOT_FOUND", async () => {
     // 行为测试（正常读取/transient/拦截链）见 ./note.test.ts；
     // 此处只验证 registerIpcHandlers 接线后不再是 NOT_IMPLEMENTED 桩。

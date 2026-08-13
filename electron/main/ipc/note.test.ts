@@ -199,23 +199,140 @@ describe("note.read 拦截链（SEC-02/03）", () => {
   });
 });
 
-describe("note.create / note.save 仍为契约桩", () => {
-  it("合法入参 → NOT_IMPLEMENTED", async () => {
+describe("note.create / note.save 真实实现（R006-C4）", () => {
+  it("note.create：默认 Frontmatter + exclusive 文件名；冲突递增", async () => {
+    const vaultId = await registerVault();
+    await writeFile(join(vaultRoot, "React.md"), "# taken\n", "utf8");
+
+    const first = await call(IPC_CHANNELS.noteCreate, {
+      vaultId,
+      directory: "",
+      title: "Hello",
+    });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    const created = first.value as {
+      noteId: string;
+      relativePath: string;
+      versionToken: string;
+      source?: { modifiedAt: number; sizeBytes: number };
+    };
+    expect(created.relativePath).toBe("Hello.md");
+    expect(created.noteId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    );
+    expect(created.versionToken).toMatch(/^sha256:[0-9a-f]{64}$/);
+    const { readFile } = await import("node:fs/promises");
+    const disk = await readFile(join(vaultRoot, "Hello.md"), "utf8");
+    expect(disk).toContain(`id: ${created.noteId}`);
+    expect(disk).toContain("title: Hello");
+    expect(disk).toContain("tags: []");
+
+    const conflict = await call(IPC_CHANNELS.noteCreate, {
+      vaultId,
+      directory: "",
+      title: "React",
+    });
+    expect(conflict.ok).toBe(true);
+    if (!conflict.ok) return;
+    expect(
+      (conflict.value as { relativePath: string }).relativePath,
+    ).toBe("React (2).md");
+  });
+
+  it("note.create：transient Vault → VAULT_READ_ONLY", async () => {
+    const transientId = transients.add(vaultRoot, "预览库");
     const create = await call(IPC_CHANNELS.noteCreate, {
-      vaultId: "v1",
+      vaultId: transientId,
       directory: "",
       title: "t",
     });
     expect(create.ok).toBe(false);
-    if (!create.ok) expect(create.error.code).toBe("NOT_IMPLEMENTED");
+    if (!create.ok) expect(create.error.code).toBe("VAULT_READ_ONLY");
+  });
+
+  it("note.save：正常写盘 → 新 versionToken + source，磁盘内容更新", async () => {
+    const vaultId = await registerVault();
+    const original = "# 旧\n";
+    await writeFile(join(vaultRoot, "a.md"), original, "utf8");
+    const read = await readNote(vaultId, "a.md");
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    const token = (read.value as ReadNoteResult).versionToken;
 
     const save = await call(IPC_CHANNELS.noteSave, {
-      vaultId: "v1",
+      vaultId,
       relativePath: "a.md",
-      markdown: "m",
-      expectedVersionToken: "",
+      markdown: "# 新\n\n正文\n",
+      expectedVersionToken: token,
+    });
+    expect(save.ok).toBe(true);
+    if (!save.ok) return;
+    const result = save.value as {
+      versionToken: string;
+      source: { modifiedAt: number; sizeBytes: number };
+    };
+    expect(result.versionToken).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(result.versionToken).not.toBe(token);
+    expect(result.source.sizeBytes).toBeGreaterThan(0);
+    const { readFile } = await import("node:fs/promises");
+    expect(await readFile(join(vaultRoot, "a.md"), "utf8")).toBe(
+      "# 新\n\n正文\n",
+    );
+  });
+
+  it("note.save：expected 与磁盘不一致 → DOCUMENT_CONFLICT，原文件不变", async () => {
+    const vaultId = await registerVault();
+    await writeFile(join(vaultRoot, "b.md"), "# 磁盘\n", "utf8");
+    const save = await call(IPC_CHANNELS.noteSave, {
+      vaultId,
+      relativePath: "b.md",
+      markdown: "# 覆盖\n",
+      expectedVersionToken: `sha256:${"0".repeat(64)}`,
     });
     expect(save.ok).toBe(false);
-    if (!save.ok) expect(save.error.code).toBe("NOT_IMPLEMENTED");
+    if (!save.ok) expect(save.error.code).toBe("DOCUMENT_CONFLICT");
+    const { readFile } = await import("node:fs/promises");
+    expect(await readFile(join(vaultRoot, "b.md"), "utf8")).toBe("# 磁盘\n");
+  });
+
+  it("note.save：transient Vault → VAULT_READ_ONLY，hash 不变", async () => {
+    await writeFile(join(vaultRoot, "预览.md"), "# 预览\n", "utf8");
+    const transientId = transients.add(vaultRoot, "预览库");
+    const before = await readNote(transientId, "预览.md");
+    expect(before.ok).toBe(true);
+    if (!before.ok) return;
+    const token = (before.value as ReadNoteResult).versionToken;
+
+    const save = await call(IPC_CHANNELS.noteSave, {
+      vaultId: transientId,
+      relativePath: "预览.md",
+      markdown: "# 试图写入\n",
+      expectedVersionToken: token,
+    });
+    expect(save.ok).toBe(false);
+    if (!save.ok) expect(save.error.code).toBe("VAULT_READ_ONLY");
+
+    const after = await readNote(transientId, "预览.md");
+    expect(after.ok).toBe(true);
+    if (!after.ok) return;
+    expect((after.value as ReadNoteResult).versionToken).toBe(token);
+    expect((after.value as ReadNoteResult).markdown).toBe("# 预览\n");
+  });
+
+  it("note.save：超大 markdown → DOCUMENT_TOO_LARGE", async () => {
+    const vaultId = await registerVault();
+    await writeFile(join(vaultRoot, "c.md"), "# c\n", "utf8");
+    const read = await readNote(vaultId, "c.md");
+    if (!read.ok) return;
+    const huge = "a".repeat(10 * 1024 * 1024 + 1);
+    const save = await call(IPC_CHANNELS.noteSave, {
+      vaultId,
+      relativePath: "c.md",
+      markdown: huge,
+      expectedVersionToken: (read.value as ReadNoteResult).versionToken,
+    });
+    expect(save.ok).toBe(false);
+    if (!save.ok) expect(save.error.code).toBe("DOCUMENT_TOO_LARGE");
   });
 });

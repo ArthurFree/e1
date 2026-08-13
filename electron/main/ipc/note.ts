@@ -1,36 +1,108 @@
 /**
- * R006 阶段 1：note 组 IPC handler（契约桩）。
- * R006-C3-A（FR-12，r006-c3 §20）：note.read 落地真实实现——
- * resolveVaultRoot 双通道解析 vaultId（注册表 / transient 仅预览会话）
- * → NoteFileSystem.readNoteFile（PathGuard + 大小/编码/SHA256）
- * → shared/markdown/frontmatter 纯字符串解析 Frontmatter id 作为
- * stableNoteId（缺失为 null，Main 不创建 id，PR-03/FR-16：Main 只经
- * shared/ 读 Frontmatter，不 import Tiptap 或 src/editor）。
- * note.create / note.save 仍为 NOT_IMPLEMENTED 契约桩（属 C4）。
+ * R006-C4-G（FR-45~52）：note.create 真实实现。
+ *
+ * PathGuard 创建语义 → 文件名清理/递增 → flag:"wx" exclusive create
+ * → 返回 noteId / relativePath / versionToken。Transient Vault 拒写。
  */
+import { randomUUID } from "node:crypto";
+import { writeFile, stat } from "node:fs/promises";
 import {
   IPC_CHANNELS,
+  type CreateNoteResult,
   type ReadNoteResult,
+  type SaveNoteResult,
 } from "../../../shared/ipc/contracts.js";
 import { IpcFailure } from "../../../shared/errors.js";
-import { splitFrontmatter } from "../../../shared/markdown/frontmatter.js";
+import {
+  generateFrontmatter,
+  splitFrontmatter,
+} from "../../../shared/markdown/frontmatter.js";
 import {
   parseCreateNoteInput,
   parseReadNoteInput,
   parseSaveNoteInput,
 } from "../../../shared/ipc/schemas.js";
-import { readNoteFile } from "../filesystem/NoteFileSystem.js";
+import { atomicWriteFile, classifyNoteWriteError, sha256Token } from "../filesystem/AtomicFileWriter.js";
+import {
+  MAX_MARKDOWN_FILE_SIZE,
+  readNoteFile,
+} from "../filesystem/NoteFileSystem.js";
+import {
+  resolveCreatablePathWithinVault,
+  resolveWithinVault,
+} from "../filesystem/PathGuard.js";
+import {
+  markdownFileNameForAttempt,
+  sanitizeMarkdownStem,
+} from "../filesystem/markdownFileName.js";
 import { resolveVaultRoot, type VaultRootDeps } from "../vaultRoots.js";
 import { handleRequest, type IpcMainLike } from "./handler.js";
 
 /** note 组 handler 依赖：与 vault 组共享同一 registry/transients（index.ts 注入）。 */
 export type NoteHandlerDeps = VaultRootDeps;
 
-function notImplemented(channel: string): never {
-  throw new IpcFailure(
-    "NOT_IMPLEMENTED",
-    `${channel} 将在 R006-C4（Markdown 创建与安全保存）实现`,
-  );
+/** 扩展名必须为 .md（大小写不敏感）。 */
+const MARKDOWN_EXTENSION = /\.md$/i;
+
+/** exclusive create 冲突递增上限（防止异常死循环）。 */
+const MAX_CREATE_ATTEMPTS = 10_000;
+
+/** 默认新建文档 Markdown（含 id/title/created/updated/tags，FR-48）。 */
+function buildDefaultNewNoteMarkdown(noteId: string, title: string): string {
+  const now = new Date().toISOString();
+  const fm = generateFrontmatter({
+    id: noteId,
+    title,
+    createdAt: now,
+    updatedAt: now,
+  });
+  // generateFrontmatter 对空 tags 省略；FR-48 要求显式 tags: []——插在收尾 --- 前。
+  const withTags = fm.endsWith("\n---")
+    ? `${fm.slice(0, -4)}\ntags: []\n---`
+    : `${fm.slice(0, -3)}tags: []\n---`;
+  return `${withTags}\n\n`;
+}
+
+/**
+ * 在 directory 下 exclusive create 一个新 Markdown。
+ * 返回实际 relativePath 与绝对路径。
+ */
+async function exclusiveCreateMarkdown(input: {
+  vaultRoot: string;
+  directory: string;
+  title: string;
+  markdown: string;
+}): Promise<{ relativePath: string; absolutePath: string }> {
+  const stem = sanitizeMarkdownStem(input.title);
+  const dirPrefix =
+    input.directory.trim() === ""
+      ? ""
+      : input.directory.replace(/\\/g, "/").replace(/\/+$/, "") + "/";
+
+  let lastError: unknown;
+  for (let attempt = 0; attempt < MAX_CREATE_ATTEMPTS; attempt += 1) {
+    const fileName = markdownFileNameForAttempt(stem, attempt);
+    const relativePath = `${dirPrefix}${fileName}`;
+    const absolutePath = await resolveCreatablePathWithinVault(
+      input.vaultRoot,
+      relativePath,
+    );
+    try {
+      await writeFile(absolutePath, input.markdown, {
+        encoding: "utf8",
+        flag: "wx",
+      });
+      return { relativePath, absolutePath };
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException | undefined)?.code;
+      if (code === "EEXIST") {
+        lastError = error;
+        continue;
+      }
+      throw classifyNoteWriteError(error);
+    }
+  }
+  throw classifyNoteWriteError(lastError ?? new Error("create attempts exhausted"));
 }
 
 export function registerNoteHandlers(
@@ -62,16 +134,117 @@ export function registerNoteHandlers(
             modifiedAt: file.modifiedAt,
             sizeBytes: file.sizeBytes,
           },
+          hadUtf8Bom: file.hadUtf8Bom,
         };
       },
     ),
   );
   bus.handle(
     IPC_CHANNELS.noteCreate,
-    handleRequest(parseCreateNoteInput, () => notImplemented("note.create")),
+    handleRequest(parseCreateNoteInput, async (input): Promise<CreateNoteResult> => {
+      const root = await resolveVaultRoot(input.vaultId, deps);
+      if (root.transient) {
+        throw new IpcFailure(
+          "VAULT_READ_ONLY",
+          "仅预览知识库不能创建文件。",
+        );
+      }
+
+      const noteId = randomUUID();
+      const markdown =
+        input.markdown ?? buildDefaultNewNoteMarkdown(noteId, input.title);
+      const bytes = Buffer.from(markdown, "utf8");
+      if (bytes.byteLength > MAX_MARKDOWN_FILE_SIZE) {
+        throw new IpcFailure(
+          "DOCUMENT_TOO_LARGE",
+          "新建 Markdown 内容过大，当前版本暂不支持（上限 10 MB）。",
+          {
+            sizeBytes: bytes.byteLength,
+            maxBytes: MAX_MARKDOWN_FILE_SIZE,
+          },
+        );
+      }
+
+      // 若调用方传入 markdown，以其 Frontmatter id 为准；缺省用本函数生成的 noteId。
+      const parsedId =
+        splitFrontmatter(markdown.replace(/\r\n/g, "\n")).metadata.id ?? noteId;
+
+      const created = await exclusiveCreateMarkdown({
+        vaultRoot: root.absolutePath,
+        directory: input.directory,
+        title: input.title,
+        markdown,
+      });
+
+      const st = await stat(created.absolutePath);
+      return {
+        noteId: parsedId,
+        relativePath: created.relativePath,
+        versionToken: sha256Token(bytes),
+        source: {
+          modifiedAt: st.mtimeMs,
+          sizeBytes: st.size,
+        },
+      };
+    }),
   );
   bus.handle(
     IPC_CHANNELS.noteSave,
-    handleRequest(parseSaveNoteInput, () => notImplemented("note.save")),
+    handleRequest(
+      parseSaveNoteInput,
+      async (input): Promise<SaveNoteResult> => {
+        const root = await resolveVaultRoot(input.vaultId, deps);
+        // FR-15：Transient Preview Main 层拒写（不依赖 Renderer 门控）。
+        if (root.transient) {
+          throw new IpcFailure(
+            "VAULT_READ_ONLY",
+            "仅预览知识库不能修改文件。",
+          );
+        }
+        if (!MARKDOWN_EXTENSION.test(input.relativePath)) {
+          throw new IpcFailure(
+            "INVALID_INPUT",
+            `只支持保存 Markdown（.md）文件：${input.relativePath}`,
+          );
+        }
+        // PathGuard 复核目标路径（SEC-02）；读取语义要求目标已存在。
+        const targetPath = await resolveWithinVault(
+          root.absolutePath,
+          input.relativePath,
+        );
+        if (!MARKDOWN_EXTENSION.test(targetPath)) {
+          throw new IpcFailure(
+            "INVALID_INPUT",
+            "符号链接目标不是 Markdown（.md）文件，已拒绝保存。",
+          );
+        }
+
+        // UTF-8 编码；序列化结果同样受 10 MiB 限制（FR-16）。
+        const bytes = new TextEncoder().encode(input.markdown);
+        if (bytes.byteLength > MAX_MARKDOWN_FILE_SIZE) {
+          throw new IpcFailure(
+            "DOCUMENT_TOO_LARGE",
+            "这篇 Markdown 序列化结果过大，当前版本暂不支持保存（上限 10 MB）。",
+            {
+              sizeBytes: bytes.byteLength,
+              maxBytes: MAX_MARKDOWN_FILE_SIZE,
+            },
+          );
+        }
+
+        const written = await atomicWriteFile({
+          targetPath,
+          bytes,
+          expectedVersionToken: input.expectedVersionToken,
+        });
+        return {
+          versionToken: written.versionToken,
+          source: {
+            modifiedAt: written.modifiedAt,
+            sizeBytes: written.sizeBytes,
+          },
+        };
+      },
+    ),
   );
 }

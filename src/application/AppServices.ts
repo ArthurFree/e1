@@ -111,6 +111,12 @@ export interface AppServices {
   desktopExtras?: {
     /** 使指定 Vault 的扫描缓存失效并重新扫描（只读，不修改任何文件）。 */
     rescanVault(vaultId: string): Promise<void>;
+    /** R006-C4：会话内批准有损来源编辑（lossy-source）。 */
+    approveSourceLossy?(pageId: string): void;
+    /** R006-C4：会话内批准有损输出保存（lossy-output）。 */
+    approveOutputLossy?(pageId: string): void;
+    /** R006-C4：会话内批准 Stable ID Adoption。 */
+    approveIdentityAdoption?(pageId: string): void;
   };
   /**
    * 命令服务（R005 批次 1）：业务写编排入口，状态层经此触发仓储写、

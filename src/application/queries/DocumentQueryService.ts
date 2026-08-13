@@ -7,6 +7,7 @@
  * R006-C3（FR-17/18）：openDocument 为文档打开主入口——返回正文 +
  * 访问级别（editable/read-only）+ Markdown 兼容性 + 来源信息；
  * Desktop 正文仓储经 DocumentOpenCapable 扩展提供真实打开语义。
+ * R006-C4（FR-02）：扩展 writePolicy——区分运行时持久化能力与当前文档写入策略。
  *
  * 仓储经构造函数注入（domain port），不依赖 IndexedDB 具体实现。
  */
@@ -20,6 +21,12 @@ import type {
   DocumentRevision,
 } from "../../domain/types";
 import type { UnsupportedMarkdownFeature } from "../../editor/markdown/types";
+import {
+  DEFAULT_WRITE_POLICY,
+  type DocumentWritePolicy,
+} from "./documentWritePolicy";
+
+export type { DocumentWritePolicy } from "./documentWritePolicy";
 
 /**
  * 文档打开访问级别（R006-C3 FR-17/19/21）：
@@ -30,13 +37,15 @@ import type { UnsupportedMarkdownFeature } from "../../editor/markdown/types";
 export type DocumentAccess = "editable" | "read-only";
 
 /**
- * 文档打开结果（R006-C3 FR-17）：区分持久化内容与会话打开状态。
- * content 是唯一的正文载体；access/compatibility/source 只在「打开」这一刻
- * 由读取通道判定（Desktop 来自 note.read + MarkdownCodec，Web 为固定默认值）。
+ * 文档打开结果（R006-C3 FR-17 + R006-C4 FR-02）：区分持久化内容与会话打开状态。
+ * content 是唯一的正文载体；access/writePolicy/compatibility/source 只在「打开」
+ * 这一刻由读取通道判定（Desktop 来自 note.read + MarkdownCodec，Web 为固定默认值）。
  */
 export interface DocumentOpenResult {
   content: DocumentContent;
   access: DocumentAccess;
+  /** R006-C4：当前文档写入策略（与 capabilities.documentPersistence 正交）。 */
+  writePolicy: DocumentWritePolicy;
   compatibility: {
     /** true = 解析检出无法无损往返的语法（与 unsupported.length > 0 等价）。 */
     lossy: boolean;
@@ -98,6 +107,7 @@ export class DocumentQueryService {
     return {
       content,
       access: "editable",
+      writePolicy: DEFAULT_WRITE_POLICY,
       compatibility: { lossy: false, unsupported: [] },
       source: { versionToken: content.version, modifiedAt: content.updatedAt },
     };

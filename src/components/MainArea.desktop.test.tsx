@@ -1,12 +1,11 @@
 /**
- * MainArea Desktop 打开链路组件测试（R006-C3 §42，FR-17~25）：
+ * MainArea Desktop 打开/保存链路组件测试（R006-C3/C4）：
  * mock 桌面桥（E1DesktopAPI）+ createDesktopRuntime 真实装配，验证——
  * - 打开 Markdown 显示正文（FR-15）；
  * - lossy Markdown 出现兼容性警告条且默认只读（FR-19/20/21）；
  * - 「允许本次编辑」后可编辑（FR-20 §28.2，仅当前会话）；
  * - NOTE_NOT_FOUND / DOCUMENT_TOO_LARGE 统一错误块（§36.3，FR-23/17）；
- * - FR-22：documentPersistence=false 时不创建保存协调器，顶栏显示
- *   「技术验证模式 · 当前修改不会写回磁盘」。
+ * - C4-E：documentPersistence=true 时创建保存协调器并显示保存状态。
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -166,15 +165,15 @@ describe("MainArea Desktop 打开链路（R006-C3 §42）", () => {
     );
   });
 
-  it("FR-22：技术验证模式提示取代保存状态；不创建保存协调器", async () => {
+  it("C4-E：documentPersistence=true → 显示保存状态（非技术验证模式）", async () => {
     const { coordinatorSpy } = renderDesktopApp(makeApi({}));
     await waitForEditorText("这是正文内容");
     expect(
-      screen.getByText("技术验证模式 · 当前修改不会写回磁盘"),
-    ).toBeInTheDocument();
-    expect(screen.queryByText("已保存")).toBeNull();
+      screen.queryByText("技术验证模式 · 当前修改不会写回磁盘"),
+    ).toBeNull();
+    expect(screen.getByText("已保存")).toBeInTheDocument();
+    // 协调器惰性创建：首次编辑才 enqueue；打开瞬间可不创建。
     expect(coordinatorSpy).not.toHaveBeenCalled();
-    // 兼容文档仍可本地编辑（技术验证价值，§30）。
     expect(editorEl()?.getAttribute("contenteditable")).toBe("true");
   });
 
@@ -190,7 +189,7 @@ describe("MainArea Desktop 打开链路（R006-C3 §42）", () => {
     expect(
       screen.getByRole("button", { name: "允许本次编辑" }),
     ).toBeInTheDocument();
-    // 只读禁止项（§29.2）：不可输入、无常驻格式工具栏、无协调器、版本历史禁用。
+    // 只读禁止项（§29.2）：不可输入、无常驻格式工具栏、版本历史禁用。
     expect(editorEl()?.getAttribute("contenteditable")).toBe("false");
     expect(document.querySelector(".format-toolbar")).toBeNull();
     expect(coordinatorSpy).not.toHaveBeenCalled();
@@ -232,11 +231,8 @@ describe("MainArea Desktop 打开链路（R006-C3 §42）", () => {
     );
     expect(screen.queryByRole("button", { name: "允许本次编辑" })).toBeNull();
     expect(screen.getByText(/已允许本次编辑/)).toBeInTheDocument();
-    // 「允许编辑」不改变 FR-22：仍无持久化、无协调器。
+    // 允许编辑后仍惰性创建协调器（首次编辑才 enqueue）。
     expect(coordinatorSpy).not.toHaveBeenCalled();
-    expect(
-      screen.getByText("技术验证模式 · 当前修改不会写回磁盘"),
-    ).toBeInTheDocument();
   });
 
   it("NOTE_NOT_FOUND → 「这篇笔记已经不存在」+ 重新扫描按钮（FR-23/§36.3）", async () => {

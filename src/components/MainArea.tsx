@@ -16,7 +16,9 @@ import type { DocumentEditorController } from "../application/services/DocumentE
 import type {
   DocumentAccess,
   DocumentOpenResult,
+  DocumentWritePolicy,
 } from "../application/queries/DocumentQueryService";
+import { DEFAULT_WRITE_POLICY } from "../application/queries/documentWritePolicy";
 import type { RecoveryRecord } from "../application/services/RecoveryStore";
 import {
   clearCorruptedDiagnostic,
@@ -285,6 +287,10 @@ export function MainArea() {
     useState<DocumentAccess>("editable");
   const [compatibility, setCompatibility] =
     useState<DocumentOpenResult["compatibility"]>(EMPTY_COMPATIBILITY);
+  const [writePolicy, setWritePolicy] =
+    useState<DocumentWritePolicy>(DEFAULT_WRITE_POLICY);
+  /** C4-F：用户选择「保持只读」后隐藏 Adoption 提示（仍不可编辑）。 */
+  const [identityKeptReadOnly, setIdentityKeptReadOnly] = useState(false);
   const [compatibilityDetailOpen, setCompatibilityDetailOpen] = useState(false);
   // 正文加载重试计数：错误块「重试」递增以重跑加载 effect。
   const [contentRetryId, setContentRetryId] = useState(0);
@@ -313,6 +319,8 @@ export function MainArea() {
     // 只对当前 Document Session 生效，重新打开重新判断（FR-20 §28.2）。
     setDocumentAccess("editable");
     setCompatibility(EMPTY_COMPATIBILITY);
+    setWritePolicy(DEFAULT_WRITE_POLICY);
+    setIdentityKeptReadOnly(false);
     setCompatibilityDetailOpen(false);
     pendingExitToBodyRef.current = false;
     if (view === "document" && page?.kind === "document") {
@@ -351,6 +359,7 @@ export function MainArea() {
           if (opened) {
             setDocumentAccess(opened.access);
             setCompatibility(opened.compatibility);
+            setWritePolicy(opened.writePolicy ?? DEFAULT_WRITE_POLICY);
           }
           setContent(base);
         })
@@ -762,6 +771,39 @@ export function MainArea() {
           )}
           <div className="doc-main">
             <div className="doc-scroll">
+              {writePolicy.mode === "confirmation-required" &&
+                writePolicy.reason === "identity-adoption" &&
+                documentAccess === "read-only" &&
+                !identityKeptReadOnly && (
+                  <div
+                    className="recovery-banner compatibility-banner"
+                    role="alert"
+                  >
+                    <IconAlertTriangle size={16} />
+                    <span className="recovery-banner__text">
+                      这篇 Markdown 尚未建立 E1 稳定笔记身份。启用编辑后，E1
+                      会在 Frontmatter 中加入一个稳定
+                      id，用于未来识别移动、重命名后的同一篇笔记。不会修改正文内容。
+                    </span>
+                    <Button
+                      variant="secondary"
+                      onClick={() => setIdentityKeptReadOnly(true)}
+                    >
+                      保持只读
+                    </Button>
+                    <Button
+                      variant="primary"
+                      onClick={() => {
+                        services.desktopExtras?.approveIdentityAdoption?.(
+                          page.id,
+                        );
+                        setDocumentAccess("editable");
+                      }}
+                    >
+                      启用编辑
+                    </Button>
+                  </div>
+                )}
               {compatibility.lossy && (
                 // FR-20/§36.2：Markdown 兼容性保护提示条——默认只读，
                 // 「允许本次编辑」仅当前会话生效，重开重新判断（§28.2）。
@@ -784,17 +826,44 @@ export function MainArea() {
                   {documentAccess === "read-only" && (
                     <Button
                       variant="primary"
-                      onClick={() => setDocumentAccess("editable")}
+                      onClick={() => {
+                        // C4：允许编辑同时批准有损来源会话授权（保存门槛）。
+                        services.desktopExtras?.approveSourceLossy?.(page.id);
+                        setDocumentAccess("editable");
+                      }}
                     >
                       允许本次编辑
                     </Button>
                   )}
                 </div>
               )}
+              {saveState.status === "error" &&
+                saveState.errorKind === "lossy" && (
+                  <div
+                    className="recovery-banner compatibility-banner"
+                    role="alert"
+                  >
+                    <IconAlertTriangle size={16} />
+                    <span className="recovery-banner__text">
+                      当前内容包含 Markdown 无法完整表达的格式，自动保存已暂停。
+                    </span>
+                    <Button
+                      variant="primary"
+                      onClick={() => {
+                        services.desktopExtras?.approveOutputLossy?.(page.id);
+                        retrySaveRef.current?.();
+                      }}
+                    >
+                      仍然保存
+                    </Button>
+                  </div>
+                )}
               {conflictVisible && (
                 <div className="recovery-banner conflict-banner" role="alert">
                   <span className="recovery-banner__text">
-                    本文档已在其他标签页被修改，与当前未保存的编辑冲突。
+                    {services.capabilities.localDirectory
+                      ? "这篇笔记已在 E1 之外发生修改，为了避免覆盖外部修改，自动保存已暂停。"
+                      : "本文档已在其他标签页被修改，与当前未保存的编辑冲突。"}
                   </span>
                   <Button
                     variant="primary"
@@ -802,12 +871,14 @@ export function MainArea() {
                   >
                     重新载入
                   </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={() => void saveConflictCopy()}
-                  >
-                    另存副本
-                  </Button>
+                  {!services.capabilities.localDirectory && (
+                    <Button
+                      variant="secondary"
+                      onClick={() => void saveConflictCopy()}
+                    >
+                      另存副本
+                    </Button>
+                  )}
                   <Button
                     variant="secondary"
                     onClick={() => conflictActionsRef.current?.forceOverwrite()}

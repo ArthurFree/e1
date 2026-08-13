@@ -43,6 +43,8 @@ export interface ReadNoteFileResult {
   /** 文件最后修改时间（ms 整数，取自 stat.mtimeMs 四舍五入）。 */
   modifiedAt: number;
   sizeBytes: number;
+  /** R006-C4：磁盘原始字节是否含 UTF-8 BOM（保存时跟随）。 */
+  hadUtf8Bom: boolean;
 }
 
 /** 扩展名必须为 .md（大小写不敏感，FR-08）。 */
@@ -133,10 +135,9 @@ export async function readNoteFile(
   const versionToken = `sha256:${createHash("sha256").update(raw).digest("hex")}`;
 
   // FR-10：UTF-8 BOM（EF BB BF）剥离；fatal 解码，不猜测其他编码。
-  const body =
-    raw.length >= 3 && raw[0] === 0xef && raw[1] === 0xbb && raw[2] === 0xbf
-      ? raw.subarray(3)
-      : raw;
+  const hadUtf8Bom =
+    raw.length >= 3 && raw[0] === 0xef && raw[1] === 0xbb && raw[2] === 0xbf;
+  const body = hadUtf8Bom ? raw.subarray(3) : raw;
   let markdown: string;
   try {
     markdown = new TextDecoder("utf-8", { fatal: true }).decode(body);
@@ -152,6 +153,7 @@ export async function readNoteFile(
     versionToken,
     modifiedAt: Math.round(stats.mtimeMs),
     sizeBytes: stats.size,
+    hadUtf8Bom,
   };
 }
 

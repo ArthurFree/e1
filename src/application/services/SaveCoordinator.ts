@@ -52,13 +52,14 @@ export interface SaveResult {
 export type SaveStatus = "saved" | "dirty" | "saving" | "error";
 
 /**
- * 保存失败分类（R004 阶段 6/7）：
+ * 保存失败分类（R004 阶段 6/7 + R006-C4）：
  * - quota = 本地存储空间不足，需用户清理后重试；
- * - conflict = 乐观锁冲突（磁盘版本被其他标签页推进），不自动重试，
+ * - conflict = 乐观锁冲突（磁盘版本被其他标签页/外部程序推进），不自动重试，
  *   由冲突 UI 提供「重新载入 / 另存副本 / 强制覆盖 / 复制内容」；
+ * - lossy = Markdown 序列化有损，自动保存暂停，需用户显式「仍然保存」；
  * - generic = 其他写入失败。
  */
-export type SaveErrorKind = "quota" | "conflict" | "generic";
+export type SaveErrorKind = "quota" | "conflict" | "lossy" | "generic";
 
 export interface SaveCoordinatorState {
   status: SaveStatus;
@@ -290,9 +291,11 @@ export class DocumentSaveCoordinator {
           status: "error",
           errorKind: isDomainError(err, "DOCUMENT_CONFLICT")
             ? "conflict"
-            : isQuotaExceededError(err)
-              ? "quota"
-              : "generic",
+            : isDomainError(err, "MARKDOWN_LOSSY_OUTPUT")
+              ? "lossy"
+              : isQuotaExceededError(err)
+                ? "quota"
+                : "generic",
         });
       }
     }

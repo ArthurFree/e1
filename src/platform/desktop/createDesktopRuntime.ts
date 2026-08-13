@@ -1,12 +1,11 @@
 /**
- * R006 阶段 2（C2）：Desktop 运行时装配——IPC-backed 真实适配。
+ * R006 阶段 2（C2）+ C4：Desktop 运行时装配——IPC-backed 真实适配。
  *
  * 与 Web 装配根（infrastructure/browserServices.ts）同构，仓储换成
  * platform/desktop 的 IPC-backed 实现：知识库/页面/标签读路径经
- * E1DesktopAPI 走 Main 文件系统（vault:listRecent / vault:openRecent /
- * vault:openSelection / vault:scan），正文经 note.read 真实读取
- * （R006-C3，DesktopContentRepository）；写路径抛 DomainError("NOT_IMPLEMENTED")
- * 诚实失败（note.create/save 属 C4，附件属阶段 5）。
+ * E1DesktopAPI 走 Main 文件系统；正文经 note.read/save/create
+ *（R006-C3/C4，DesktopContentRepository + DocumentWriteRepository）。
+ * 附件仍为 NOT_IMPLEMENTED（C5）。
  *
  * 复用说明（platform/desktop → platform/web 方向）：
  * BrowserMemorySearchIndex / BroadcastChangeChannel / WebRecoveryStore /
@@ -45,6 +44,7 @@ import { desktopCapabilities } from "./desktopCapabilities";
 import type { E1DesktopAPI } from "./desktopApi";
 import {
   DesktopContentRepository,
+  DesktopDocumentWriteRepository,
   DesktopPageRepository,
   DesktopTagRepository,
   DesktopVaultScanCache,
@@ -52,10 +52,10 @@ import {
 } from "./repositories";
 import {
   DesktopAssetStore,
-  DesktopDocumentWriteRepository,
   DesktopRevisionRepository,
 } from "./stubRepositories";
 import { DesktopPreferencesRepository } from "./preferencesRepository";
+import { DesktopTitleSearchIndex } from "./DesktopTitleSearchIndex";
 
 export interface DesktopRuntime {
   services: AppServices;
@@ -73,7 +73,11 @@ export function createDesktopRuntime(api: E1DesktopAPI): DesktopRuntime {
   const tagRepository = new DesktopTagRepository(scans);
   const revisionRepository = new DesktopRevisionRepository();
   const assetStore = new DesktopAssetStore();
-  const documentWriteRepository = new DesktopDocumentWriteRepository();
+  const documentWriteRepository = new DesktopDocumentWriteRepository(
+    api,
+    scans,
+    contentRepository.getSourceCache(),
+  );
   // 偏好：localStorage（lastRoute 持久化支撑 US-06 重开自动进入最近 Vault）。
   const preferencesRepository = new DesktopPreferencesRepository();
 
@@ -81,13 +85,13 @@ export function createDesktopRuntime(api: E1DesktopAPI): DesktopRuntime {
     pages: pageRepository,
     tags: tagRepository,
   });
-  // 搜索索引：复用 Web 内存实现；正文仓储的 listAll/listByWorkspace 恒空
-  // （R006-C3 §35：C3 不扩大 Desktop 搜索，打开 Vault 不全量读正文），
-  // 索引只含标题元数据。
-  const searchIndex = new BrowserMemorySearchIndex({
-    pages: pageRepository,
-    content: contentRepository,
-  });
+  // 搜索索引：标题搜索；updateText no-op（§53，避免半完整全文搜索）。
+  const searchIndex = new DesktopTitleSearchIndex(
+    new BrowserMemorySearchIndex({
+      pages: pageRepository,
+      content: contentRepository,
+    }),
+  );
   // 变更广播：桌面单窗口无多标签页同步需求，null 传输层即 no-op 实例
   // （ChangeChannel port 形状保留，未来多窗口时再接真实传输）。
   const syncChannel = new BroadcastChangeChannel(null, "desktop-main-window");
@@ -160,6 +164,26 @@ export function createDesktopRuntime(api: E1DesktopAPI): DesktopRuntime {
     desktopExtras: {
       rescanVault: async (vaultId) => {
         await scans.rescan(vaultId);
+      },
+      approveSourceLossy: (pageId) => {
+        contentRepository.getSourceCache().approveSourceLossy(pageId);
+      },
+      approveOutputLossy: (pageId) => {
+        contentRepository.getSourceCache().approveOutputLossy(pageId);
+      },
+      approveIdentityAdoption: (pageId) => {
+        const cache = contentRepository.getSourceCache();
+        const existing = cache.get(pageId);
+        // C4-F：启用编辑时预生成 stableNoteId（会话 pageId 仍为 path:*）；
+        // 首次 note.save 才把 id 写入 Frontmatter。
+        if (existing && !existing.stableNoteId) {
+          const id =
+            typeof crypto !== "undefined" && "randomUUID" in crypto
+              ? crypto.randomUUID()
+              : `id-${Date.now().toString(36)}`;
+          cache.updateStableNoteId(pageId, id);
+        }
+        cache.approveIdentityAdoption(pageId);
       },
     },
     preferencesService,

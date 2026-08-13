@@ -191,6 +191,8 @@ export interface ReadNoteResult {
     modifiedAt: number;
     sizeBytes: number;
   };
+  /** R006-C4：磁盘是否含 UTF-8 BOM（保存时跟随；可选以兼容旧 mock）。 */
+  hadUtf8Bom?: boolean;
 }
 
 export interface CreateNoteInput {
@@ -208,6 +210,11 @@ export interface CreateNoteResult {
   /** 实际创建的 relativePath（文件名冲突已确定性递增）。 */
   relativePath: string;
   versionToken: string;
+  /** R006-C4 FR-52：创建后磁盘来源信息。 */
+  source?: {
+    modifiedAt: number;
+    sizeBytes: number;
+  };
 }
 
 export interface SaveNoteInput {
@@ -222,6 +229,11 @@ export interface SaveNoteInput {
 export interface SaveNoteResult {
   /** 写入后的新令牌（r006 §18：temp file → fsync → atomic rename → 新 hash）。 */
   versionToken: string;
+  /** R006-C4 FR-13：写后磁盘来源信息。 */
+  source: {
+    modifiedAt: number;
+    sizeBytes: number;
+  };
 }
 
 /* ---------------------------------- asset ---------------------------------- */

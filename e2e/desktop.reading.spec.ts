@@ -131,10 +131,11 @@ test.describe("桌面冒烟：Markdown 安全阅读（R006-C3 §43）", () => {
         "组件化与 Hooks 要点。",
       );
       await expect(window.locator(".topbar__title")).toHaveText("React 笔记");
-      // FR-22：技术验证模式提示（修改不会写回磁盘）。
+      // C4-E：documentPersistence=true → 真实保存状态（非技术验证模式）。
+      await expect(window.getByText("已保存")).toBeVisible();
       await expect(
         window.getByText("技术验证模式 · 当前修改不会写回磁盘"),
-      ).toBeVisible();
+      ).toHaveCount(0);
     } finally {
       await app.close();
       await fixture.cleanup();

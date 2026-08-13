@@ -46,6 +46,12 @@ export type DomainErrorCode =
   | "NOTE_PERMISSION_DENIED"
   /** R006-C3（FR-25）：读取 Markdown 的其他系统 I/O 错误（文件未被修改）。 */
   | "NOTE_IO_ERROR"
+  /** R006-C4：写入 Markdown 被拒绝（EACCES/EPERM）。 */
+  | "NOTE_WRITE_PERMISSION_DENIED"
+  /** R006-C4：写入 Markdown 的其他系统 I/O 错误。 */
+  | "NOTE_WRITE_IO_ERROR"
+  /** R006-C4：仅预览（transient）Vault 拒绝任何写操作。 */
+  | "VAULT_READ_ONLY"
   /**
    * R006-C3（FR-09）：Markdown 超过单文件大小上限（10 MiB）；
    * details 携带 { sizeBytes, maxBytes } 供 UI 展示。
@@ -53,6 +59,11 @@ export type DomainErrorCode =
   | "DOCUMENT_TOO_LARGE"
   /** R006-C3（FR-10）：文件无法作为 UTF-8 安全解码（不猜测/不转码）。 */
   | "UNSUPPORTED_ENCODING"
+  /**
+   * R006-C4：Tiptap → Markdown 序列化有损，自动保存已暂停；
+   * 用户显式「仍然保存」后会话内可继续。
+   */
+  | "MARKDOWN_LOSSY_OUTPUT"
   /**
    * R006-C2.1（FR-03）：选中的文件夹尚未初始化，等待用户在确认框中选择
    * 「仅预览 / 初始化并打开 / 取消」——仅 Desktop 打开本地知识库链路使用，

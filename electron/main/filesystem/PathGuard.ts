@@ -8,14 +8,13 @@
  * 符号链接逃逸由 realpath 天然暴露：目标经 symlink 指出 Vault 外时，
  * 真实路径不再以根为前缀，按 PATH_ESCAPE 拒绝。
  *
- * 本批只实现「读取语义」：目标必须存在，realpath 失败（ENOENT 等）抛
- * NOTE_NOT_FOUND——通用「目标不存在」语义暂借该码；阶段 3+ 各调用方按
- * 自身语义映射（note.read → NOTE_NOT_FOUND，asset 读取 → ASSET_NOT_FOUND）。
- * 「将创建语义」（目标可不存在、校验其父目录 realpath 后拼接待创建名 +
- * assertSafeFileName）留待阶段 3 note.create 接入时实现。
+ * 本批实现「读取语义」与「将创建语义」：
+ * - resolveWithinVault：目标必须存在（note.read / note.save）；
+ * - resolveCreatablePathWithinVault：目标可不存在，校验父目录 realpath
+ *   后拼接待创建文件名 + assertSafeFileName（note.create）。
  */
 import { realpath } from "node:fs/promises";
-import { isAbsolute, resolve, sep } from "node:path";
+import { isAbsolute, join, resolve, sep } from "node:path";
 import { IpcFailure } from "../../../shared/errors.js";
 
 function pathEscape(message: string): never {
@@ -64,6 +63,48 @@ export async function resolveWithinVault(
     pathEscape(`路径逃逸出 Vault 根：${relativePath}`);
   }
   return targetReal;
+}
+
+/**
+ * 将创建语义：相对路径的目标文件可不存在；父目录必须存在且在 Vault 内。
+ * 返回待创建文件的绝对路径（未经 realpath，因文件尚不存在）。
+ * @throws IpcFailure PATH_ESCAPE / INVALID_INPUT / NOTE_NOT_FOUND（父目录缺失）
+ */
+export async function resolveCreatablePathWithinVault(
+  vaultRoot: string,
+  relativePath: string,
+): Promise<string> {
+  if (relativePath.trim() === "") {
+    pathEscape("相对路径不能为空");
+  }
+  if (isAbsolute(relativePath) || /^[a-zA-Z]:[\\/]/.test(relativePath)) {
+    pathEscape(`不允许绝对路径：${relativePath}`);
+  }
+  const segments = relativePath.split(/[\\/]/);
+  if (segments.some((s) => s === "" || s === "." || s === "..")) {
+    pathEscape(`相对路径含非法路径段：${relativePath}`);
+  }
+  const fileName = segments[segments.length - 1]!;
+  assertSafeFileName(fileName);
+
+  const rootReal = await realpath(vaultRoot);
+  const parentRel = segments.slice(0, -1);
+  const parentCandidate =
+    parentRel.length === 0 ? rootReal : resolve(rootReal, ...parentRel);
+
+  let parentReal: string;
+  try {
+    parentReal = await realpath(parentCandidate);
+  } catch {
+    throw new IpcFailure(
+      "NOTE_NOT_FOUND",
+      `目标目录不存在：${parentRel.join("/") || "."}`,
+    );
+  }
+  if (parentReal !== rootReal && !parentReal.startsWith(rootReal + sep)) {
+    pathEscape(`路径逃逸出 Vault 根：${relativePath}`);
+  }
+  return join(parentReal, fileName);
 }
 
 /** Windows 保留设备名（不区分大小写，含带扩展名形态如 "CON.txt"）。 */

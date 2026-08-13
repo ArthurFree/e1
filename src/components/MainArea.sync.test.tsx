@@ -166,7 +166,7 @@ async function setupConflict(localText: string, remoteText: string) {
     release!();
   });
   await waitFor(() =>
-    expect(screen.getByText("与其他标签页的修改冲突")).toBeInTheDocument(),
+    expect(screen.getByText("文档版本冲突")).toBeInTheDocument(),
   );
   // 磁盘仍是远端内容。
   expect((await services.content.get(pageA.id))?.textSnapshot).toBe(remoteText);

@@ -26,12 +26,20 @@ export function SaveStateIndicator({
   onRetry,
 }: SaveStateIndicatorProps) {
   if (state.status === "error") {
-    // 乐观锁冲突（R004 阶段 7）：普通重试必然再撞版本，不显示重试按钮，
-    // 处理方式由正文顶部的冲突面板提供（重新载入/另存副本/强制覆盖/复制）。
+    // 乐观锁冲突（R004 阶段 7 / R006-C4）：普通重试必然再撞版本，不显示重试按钮，
+    // 处理方式由正文顶部的冲突面板提供。
     if (state.errorKind === "conflict") {
       return (
         <span className="save-state save-state--error" role="alert">
-          与其他标签页的修改冲突
+          文档版本冲突
+        </span>
+      );
+    }
+    // 有损输出（R006-C4）：自动保存已暂停，由 Banner「仍然保存」处理。
+    if (state.errorKind === "lossy") {
+      return (
+        <span className="save-state save-state--error" role="alert">
+          自动保存已暂停
         </span>
       );
     }

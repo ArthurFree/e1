@@ -20,7 +20,11 @@
 import { DomainError } from "../../domain/errors";
 import type {
   ContentRepository,
+  CreateDocumentWithContentInput,
+  CreatePageInput,
+  DocumentWriteRepository,
   PageRepository,
+  ReplaceDocumentContentInput,
   TagRepository,
   WorkspaceRepository,
 } from "../../domain/repositories";
@@ -31,10 +35,16 @@ import type {
   Tag,
   Workspace,
 } from "../../domain/types";
+import { parseDocumentContent } from "../../domain/validation/documentContent";
 import type {
   DocumentOpenCapable,
   DocumentOpenResult,
 } from "../../application/queries/DocumentQueryService";
+import {
+  accessFromWritePolicy,
+  isTransientVaultId,
+  resolveWritePolicy,
+} from "../../application/queries/documentWritePolicy";
 import { createMarkdownCodec } from "../../editor/markdown/codec";
 import type {
   MarkdownCodec,
@@ -61,6 +71,8 @@ import {
   pageIdOfEntry,
   tagIdOfName,
 } from "./vaultMapping";
+import { DesktopDocumentSourceCache } from "./DesktopDocumentSourceCache";
+import type { PortableNoteMetadata } from "../../editor/markdown/types";
 
 /** 一次扫描的快照：条目 + 扫描时刻（页面 createdAt/updatedAt 取它）。 */
 export interface VaultScanSnapshot {
@@ -76,6 +88,8 @@ export interface VaultScanSnapshot {
  */
 export class DesktopVaultScanCache {
   private readonly snapshots = new Map<string, Promise<VaultScanSnapshot>>();
+  /** 同步 pageId → relativePath（供 mention 解析；随 scan 结果更新）。 */
+  private readonly pageRelativePaths = new Map<string, string>();
 
   constructor(private readonly api: E1DesktopAPI) {}
 
@@ -83,9 +97,14 @@ export class DesktopVaultScanCache {
   scan(vaultId: string): Promise<VaultScanSnapshot> {
     let pending = this.snapshots.get(vaultId);
     if (!pending) {
-      pending = this.api.vault
-        .scan(vaultId)
-        .then((result) => ({ result, scannedAt: Date.now() }));
+      pending = this.api.vault.scan(vaultId).then((result) => {
+        for (const entry of result.entries) {
+          if (entry.kind === "document") {
+            this.pageRelativePaths.set(pageIdOfEntry(entry), entry.relativePath);
+          }
+        }
+        return { result, scannedAt: Date.now() };
+      });
       this.snapshots.set(vaultId, pending);
       // 扫描失败（如目录中途被移走）不缓存拒绝态，下次调用重试。
       pending.catch(() => this.snapshots.delete(vaultId));
@@ -101,6 +120,7 @@ export class DesktopVaultScanCache {
   /** 全部缓存失效（如 Vault 列表整体刷新）。 */
   invalidateAll(): void {
     this.snapshots.clear();
+    this.pageRelativePaths.clear();
   }
 
   /** 强制重新扫描（跳过缓存并以新快照替换；失败时保留语义同 scan）。 */
@@ -132,6 +152,11 @@ export class DesktopVaultScanCache {
   async findEntryByPageId(pageId: string): Promise<VaultScanEntry | null> {
     const found = await this.findDocument(pageId);
     return found?.entry ?? null;
+  }
+
+  /** 同步取页面相对路径（mention 解析；未扫描到返回 null）。 */
+  getRelativePathSync(pageId: string): string | null {
+    return this.pageRelativePaths.get(pageId) ?? null;
   }
 }
 
@@ -275,8 +300,60 @@ export class DesktopPageRepository implements PageRepository {
     return pages;
   }
 
-  async create(): Promise<Page> {
-    throw notImplemented("新建页面", "阶段 3（note.create）");
+  async create(input: CreatePageInput): Promise<Page> {
+    if (input.kind !== "document") {
+      throw notImplemented("新建分组", "后续阶段（目录即分组）");
+    }
+    if (isTransientVaultId(input.workspaceId)) {
+      throw new DomainError(
+        "VAULT_READ_ONLY",
+        "当前知识库处于仅预览模式，E1 不会在这个文件夹中创建文件。",
+      );
+    }
+    const directory = this.resolveCreateDirectory(input.parentId);
+    let created;
+    try {
+      created = await this.api.note.create({
+        vaultId: input.workspaceId,
+        directory,
+        title: input.title.trim() === "" ? "无标题" : input.title,
+      });
+    } catch (err) {
+      mapNoteWriteError(err);
+    }
+    this.scans.invalidate(input.workspaceId);
+    const pages = await this.listByWorkspace(input.workspaceId);
+    const found = pages.find((p) => p.id === created.noteId);
+    if (found) return found;
+    // 扫描偶发未收录时回退合成（仍带稳定 id）。
+    const now = Date.now();
+    return {
+      id: created.noteId,
+      workspaceId: input.workspaceId,
+      parentId: input.parentId,
+      kind: "document",
+      title: input.title,
+      icon: input.icon ?? null,
+      position: pages.length,
+      favoriteAt: null,
+      lastOpenedAt: null,
+      deletedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+  }
+
+  /** parentId → note.create 的 directory（根=""；path:学习 → 学习）。 */
+  private resolveCreateDirectory(parentId: string | null): string {
+    if (!parentId) return "";
+    if (parentId.startsWith("path:")) {
+      return parentId.slice("path:".length);
+    }
+    // 父级是带稳定 id 的文档：新建为其同级（父文件所在目录）。
+    const rel = this.scans.getRelativePathSync(parentId);
+    if (!rel) return "";
+    const slash = rel.lastIndexOf("/");
+    return slash === -1 ? "" : rel.slice(0, slash);
   }
 
   async rename(): Promise<void> {
@@ -370,15 +447,8 @@ function mapNoteReadError(err: unknown): never {
 }
 
 /**
- * 正文仓储（R006-C3 批次 3，FR-13/15/17/18）：真实读取 Markdown 正文。
- * 链路：pageId → 扫描缓存反查（vaultId + relativePath）→ note.read →
- * MarkdownCodec.parse（codec 内部做 CRLF→LF 归一并剥离 Frontmatter）→
- * DocumentContent。全程只读：不写 id、不改 Frontmatter、不产生任何写盘
- * （PR-02/03）。
- * 同时实现 DocumentOpenCapable：openDocument 透出访问级别（含不支持语法
- * 时 read-only）、兼容性明细与来源信息（FR-17/19）。
- * save/listAll/listByWorkspace 保持批次 2 语义（保存属 C4；正文不进入
- * 搜索索引，Desktop 搜索维持标题搜索，§35）。
+ * 正文仓储（R006-C3 批次 3 + R006-C4-D）：真实读取 Markdown 正文，
+ * 打开时写入 DesktopDocumentSourceCache 供保存 serialize 使用。
  */
 export class DesktopContentRepository
   implements ContentRepository, DocumentOpenCapable
@@ -386,13 +456,24 @@ export class DesktopContentRepository
   constructor(
     private readonly api: E1DesktopAPI,
     private readonly scans: DesktopVaultScanCache,
+    private readonly sources: DesktopDocumentSourceCache = new DesktopDocumentSourceCache(),
     private readonly codec: MarkdownCodec = createMarkdownCodec(),
   ) {}
+
+  /** 供装配层 / 保存链路读取来源缓存。 */
+  getSourceCache(): DesktopDocumentSourceCache {
+    return this.sources;
+  }
 
   /** 读取并解析指定页面的 Markdown；找不到扫描条目即页面不存在。 */
   private async readNote(pageId: string): Promise<{
     content: DocumentContent;
     unsupported: UnsupportedMarkdownFeature[];
+    stableNoteId: string | null;
+    vaultId: string;
+    metadata: PortableNoteMetadata;
+    lineEnding: "lf" | "crlf";
+    hadUtf8Bom: boolean;
     source: { relativePath: string; modifiedAt: number; sizeBytes: number };
   }> {
     const found = await this.scans.findDocument(pageId);
@@ -415,6 +496,15 @@ export class DesktopContentRepository
       markdown: result.markdown,
       relativePath: result.relativePath,
     });
+    const metadata: PortableNoteMetadata = {
+      id: parsed.metadata.id,
+      title: parsed.metadata.title,
+      tags: parsed.metadata.tags,
+      createdAt: parsed.metadata.createdAt,
+      updatedAt: parsed.metadata.updatedAt,
+      aliases: parsed.metadata.aliases,
+      extra: parsed.metadata.extra,
+    };
     return {
       content: {
         pageId,
@@ -425,6 +515,11 @@ export class DesktopContentRepository
         updatedAt: result.source.modifiedAt,
       },
       unsupported: parsed.unsupported,
+      stableNoteId: result.stableNoteId,
+      vaultId: found.vaultId,
+      metadata,
+      lineEnding: parsed.lineEnding,
+      hadUtf8Bom: result.hadUtf8Bom ?? false,
       source: {
         relativePath: result.relativePath,
         modifiedAt: result.source.modifiedAt,
@@ -439,22 +534,158 @@ export class DesktopContentRepository
   }
 
   /**
-   * 打开语义（FR-17/19）：检出无法无损往返的语法（unsupported 非空）时
-   * 以 read-only 打开——「无法确认无损 → 默认只读」（PR-04）。
+   * 打开语义（R006-C3 FR-17/19 + R006-C4 FR-02/03/19）：
+   * 计算 writePolicy，并写入 Source Context 缓存供后续保存使用。
    */
   async openDocument(pageId: string): Promise<DocumentOpenResult> {
-    const { content, unsupported, source } = await this.readNote(pageId);
+    const {
+      content,
+      unsupported,
+      stableNoteId,
+      vaultId,
+      metadata,
+      lineEnding,
+      hadUtf8Bom,
+      source,
+    } = await this.readNote(pageId);
     const lossy = unsupported.length > 0;
+    const writePolicy = resolveWritePolicy({
+      transient: isTransientVaultId(vaultId),
+      lossy,
+      stableNoteId,
+    });
+    this.sources.set(pageId, {
+      vaultId,
+      sessionPageId: pageId,
+      relativePath: source.relativePath,
+      stableNoteId,
+      metadata,
+      frontmatterExtra: metadata.extra ?? [],
+      lineEnding,
+      hadUtf8Bom,
+      versionToken: content.version,
+      compatibility: { lossy, unsupported },
+      writeSession: {
+        sourceLossyApproved: false,
+        outputLossyApproved: false,
+        identityAdoptionApproved: false,
+      },
+    });
     return {
       content,
-      access: lossy ? "read-only" : "editable",
+      access: accessFromWritePolicy(writePolicy),
+      writePolicy,
       compatibility: { lossy, unsupported },
       source: { ...source, versionToken: content.version },
     };
   }
 
-  async save(): Promise<{ version: string; updatedAt: number }> {
-    throw notImplemented("保存文档", "阶段 4（note.save）");
+  /**
+   * ContentRepository.save（R006-C4-E FR-30）：
+   * SourceCache → serialize → lossy gate → note.save → 更新 versionToken。
+   */
+  async save(
+    pageId: string,
+    contentJson: unknown,
+    _textSnapshot: string,
+    expectedVersion: string,
+  ): Promise<{ version: string; updatedAt: number }> {
+    const ctx = this.sources.get(pageId);
+    if (!ctx) {
+      throw new DomainError(
+        "PAGE_NOT_FOUND",
+        "文档来源上下文已失效，请重新打开该笔记后再保存。",
+      );
+    }
+    // 有损来源未确认 / 身份未 Adoption：拒绝自动保存。
+    if (
+      ctx.compatibility.lossy &&
+      !ctx.writeSession.sourceLossyApproved
+    ) {
+      throw new DomainError(
+        "MARKDOWN_LOSSY_OUTPUT",
+        "当前 Markdown 包含 E1 暂不完全支持的格式，请先确认了解风险后再保存。",
+        { phase: "source", unsupported: ctx.compatibility.unsupported },
+      );
+    }
+    if (
+      !ctx.stableNoteId &&
+      !ctx.writeSession.identityAdoptionApproved
+    ) {
+      throw new DomainError(
+        "MARKDOWN_LOSSY_OUTPUT",
+        "这篇 Markdown 尚未建立稳定笔记身份，请先启用编辑后再保存。",
+        { phase: "identity-adoption" },
+      );
+    }
+
+    const metadata: PortableNoteMetadata = {
+      ...ctx.metadata,
+      id: ctx.stableNoteId ?? ctx.metadata.id,
+      // FR-20：只更新 updated；title/tags/created/aliases/extra 保留。
+      updatedAt: new Date().toISOString(),
+      extra: ctx.frontmatterExtra,
+    };
+
+    const serialized = await this.codec.serialize({
+      document: contentJson,
+      metadata,
+      assetResolver: {
+        resolveAssetPath: ({ name, kind }) =>
+          // C4 无真实 AssetStore：生成相对占位；localImage/attachment 节点
+          // 会在 transform 中记 unsupported → lossy gate。
+          `assets/${kind}-${name || "file"}`,
+      },
+      mode: "portable",
+      lineEnding: ctx.lineEnding,
+      resolveMentionPath: (targetPageId) =>
+        this.resolveMentionRelativePath(ctx.relativePath, targetPageId),
+    });
+
+    if (serialized.lossy && !ctx.writeSession.outputLossyApproved) {
+      throw new DomainError(
+        "MARKDOWN_LOSSY_OUTPUT",
+        "当前内容包含 Markdown 无法完整表达的格式，自动保存已暂停。",
+        { phase: "output", unsupported: serialized.unsupported },
+      );
+    }
+
+    let saved;
+    try {
+      saved = await this.api.note.save({
+        vaultId: ctx.vaultId,
+        relativePath: ctx.relativePath,
+        markdown: serialized.markdown,
+        expectedVersionToken: expectedVersion,
+      });
+    } catch (err) {
+      throw mapNoteWriteError(err);
+    }
+
+    this.sources.updateVersion(pageId, saved.versionToken);
+    // 同步 metadata.updatedAt 到缓存，供下次 serialize。
+    const latest = this.sources.get(pageId);
+    if (latest) {
+      this.sources.set(pageId, {
+        ...latest,
+        metadata: { ...latest.metadata, updatedAt: metadata.updatedAt },
+        versionToken: saved.versionToken,
+      });
+    }
+    return {
+      version: saved.versionToken,
+      updatedAt: saved.source?.modifiedAt ?? Date.now(),
+    };
+  }
+
+  /** 当前文档相对路径 → 目标页相对路径（同 Vault）；无法解析返回 null。 */
+  private resolveMentionRelativePath(
+    fromRelativePath: string,
+    targetPageId: string,
+  ): string | null {
+    const target = this.scans.getRelativePathSync(targetPageId);
+    if (!target) return null;
+    return relativeMarkdownPath(fromRelativePath, target);
   }
 
   async listAll(): Promise<DocumentContent[]> {
@@ -464,6 +695,75 @@ export class DesktopContentRepository
   async listByWorkspace(): Promise<DocumentContent[]> {
     return [];
   }
+}
+
+/**
+ * note.save 的 IPC 错误 → DomainError（R006-C4 FR-10/11/15）。
+ */
+function mapNoteWriteError(err: unknown): never {
+  if (err instanceof DesktopIpcError) {
+    switch (err.code) {
+      case "DOCUMENT_CONFLICT":
+        throw new DomainError(
+          "DOCUMENT_CONFLICT",
+          "这篇笔记已在 E1 之外发生修改，为了避免覆盖外部修改，自动保存已暂停。",
+          err.details,
+        );
+      case "VAULT_READ_ONLY":
+        throw new DomainError(
+          "VAULT_READ_ONLY",
+          "当前知识库处于仅预览模式，E1 不会修改这个文件夹中的任何内容。",
+        );
+      case "NOTE_WRITE_PERMISSION_DENIED":
+        throw new DomainError(
+          "NOTE_WRITE_PERMISSION_DENIED",
+          "无法保存 Markdown，当前系统用户没有该文件的写入权限。你的编辑内容仍保留在当前应用中。",
+        );
+      case "NOTE_WRITE_IO_ERROR":
+        throw new DomainError(
+          "NOTE_WRITE_IO_ERROR",
+          "保存 Markdown 时发生系统错误，原文件没有被主动清空。",
+        );
+      case "DOCUMENT_TOO_LARGE":
+        throw new DomainError(
+          "DOCUMENT_TOO_LARGE",
+          "这篇 Markdown 序列化结果过大，当前版本暂不支持保存。",
+          err.details,
+        );
+      case "NOTE_NOT_FOUND":
+        throw new DomainError(
+          "PAGE_NOT_FOUND",
+          "这篇笔记已经不存在。它可能已经被其他程序移动或删除。",
+        );
+      case "PATH_ESCAPE":
+      case "INVALID_INPUT":
+        throw new DomainError("INVALID_INPUT", err.message);
+      default:
+        throw err;
+    }
+  }
+  throw err;
+}
+
+/**
+ * 从 from 文件到 to 文件的相对 Markdown 链接路径（posix 风格）。
+ * 例：学习/a.md → 学习/b.md => b.md；学习/a.md → 根/c.md => ../c.md。
+ */
+export function relativeMarkdownPath(fromFile: string, toFile: string): string {
+  const fromParts = fromFile.split("/").slice(0, -1);
+  const toParts = toFile.split("/");
+  let i = 0;
+  while (
+    i < fromParts.length &&
+    i < toParts.length - 1 &&
+    fromParts[i] === toParts[i]
+  ) {
+    i += 1;
+  }
+  const ups = fromParts.length - i;
+  const down = toParts.slice(i);
+  const rel = [...Array(ups).fill(".."), ...down].join("/");
+  return rel || toParts[toParts.length - 1]!;
 }
 
 /** 标签仓储：从扫描条目的 Frontmatter tags 聚合；写操作抛错。 */
@@ -499,5 +799,167 @@ export class DesktopTagRepository implements TagRepository {
       "设置页面标签",
       "后续阶段（Frontmatter 回写属阶段 3+）",
     );
+  }
+}
+
+/**
+ * 原子文档写（R006-C4-G）：createWithContent → note.create；
+ * replaceContent 对已打开文档走 note.save，未验证路径仍 NOT_IMPLEMENTED。
+ */
+export class DesktopDocumentWriteRepository implements DocumentWriteRepository {
+  private readonly codec: MarkdownCodec;
+
+  constructor(
+    private readonly api: E1DesktopAPI,
+    private readonly scans: DesktopVaultScanCache,
+    private readonly sources: DesktopDocumentSourceCache,
+    codec?: MarkdownCodec,
+  ) {
+    this.codec = codec ?? createMarkdownCodec();
+  }
+
+  async createWithContent(input: CreateDocumentWithContentInput): Promise<Page> {
+    if (isTransientVaultId(input.workspaceId)) {
+      throw new DomainError(
+        "VAULT_READ_ONLY",
+        "当前知识库处于仅预览模式，E1 不会在这个文件夹中创建文件。",
+      );
+    }
+    const parsed = parseDocumentContent(input.contentJson);
+    if (!parsed.ok) {
+      throw new DomainError(
+        "CORRUPTED_DOCUMENT",
+        "初始正文 JSON 未通过白名单校验",
+      );
+    }
+    const noteId =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `id-${Date.now().toString(36)}`;
+    const nowIso = new Date().toISOString();
+    const title = input.title.trim() === "" ? "无标题" : input.title;
+    const serialized = await this.codec.serialize({
+      document: parsed.value,
+      metadata: {
+        id: noteId,
+        title,
+        tags: [],
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      },
+      assetResolver: {
+        resolveAssetPath: ({ name, kind }) =>
+          `assets/${kind}-${name || "file"}`,
+      },
+      mode: "portable",
+      lineEnding: "lf",
+    });
+
+    const directory = this.resolveCreateDirectory(input.parentId);
+    let created;
+    try {
+      created = await this.api.note.create({
+        vaultId: input.workspaceId,
+        directory,
+        title,
+        markdown: serialized.markdown,
+      });
+    } catch (err) {
+      mapNoteWriteError(err);
+    }
+
+    this.scans.invalidate(input.workspaceId);
+    const pages = await this.scans.scan(input.workspaceId).then((snap) =>
+      mapScanEntriesToPages(
+        input.workspaceId,
+        snap.result.entries,
+        snap.scannedAt,
+      ),
+    );
+    const found = pages.find((p) => p.id === created.noteId);
+    if (found) return found;
+    const now = Date.now();
+    return {
+      id: created.noteId,
+      workspaceId: input.workspaceId,
+      parentId: input.parentId,
+      kind: "document",
+      title,
+      icon: input.icon ?? null,
+      position: pages.length,
+      favoriteAt: null,
+      lastOpenedAt: null,
+      deletedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+  }
+
+  async replaceContent(
+    input: ReplaceDocumentContentInput,
+  ): Promise<DocumentContent> {
+    const ctx = this.sources.get(input.pageId);
+    if (!ctx) {
+      throw notImplemented(
+        "覆盖文档内容（模板/导入等未验证路径）",
+        "阶段 4（仅已打开文档可经 note.save 覆盖）",
+      );
+    }
+    const parsed = parseDocumentContent(input.contentJson);
+    if (!parsed.ok) {
+      throw new DomainError(
+        "CORRUPTED_DOCUMENT",
+        "正文 JSON 未通过白名单校验",
+      );
+    }
+    // 复用 ContentRepository.save 语义：经 serialize + note.save。
+    // 此处直接 IPC，避免循环依赖 ContentRepository。
+    const metadata: PortableNoteMetadata = {
+      ...ctx.metadata,
+      id: ctx.stableNoteId ?? ctx.metadata.id,
+      updatedAt: new Date().toISOString(),
+      extra: ctx.frontmatterExtra,
+    };
+    const serialized = await this.codec.serialize({
+      document: parsed.value,
+      metadata,
+      assetResolver: {
+        resolveAssetPath: ({ name, kind }) =>
+          `assets/${kind}-${name || "file"}`,
+      },
+      mode: "portable",
+      lineEnding: ctx.lineEnding,
+    });
+    let saved;
+    try {
+      saved = await this.api.note.save({
+        vaultId: ctx.vaultId,
+        relativePath: ctx.relativePath,
+        markdown: serialized.markdown,
+        expectedVersionToken: ctx.versionToken,
+      });
+    } catch (err) {
+      mapNoteWriteError(err);
+    }
+    this.sources.updateVersion(input.pageId, saved.versionToken);
+    return {
+      pageId: input.pageId,
+      workspaceId: ctx.vaultId,
+      contentJson: parsed.value,
+      textSnapshot: input.textSnapshot,
+      version: saved.versionToken,
+      updatedAt: saved.source?.modifiedAt ?? Date.now(),
+    };
+  }
+
+  private resolveCreateDirectory(parentId: string | null): string {
+    if (!parentId) return "";
+    if (parentId.startsWith("path:")) {
+      return parentId.slice("path:".length);
+    }
+    const rel = this.scans.getRelativePathSync(parentId);
+    if (!rel) return "";
+    const slash = rel.lastIndexOf("/");
+    return slash === -1 ? "" : rel.slice(0, slash);
   }
 }

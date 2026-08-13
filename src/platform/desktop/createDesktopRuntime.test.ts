@@ -121,32 +121,49 @@ describe("createDesktopRuntime（IPC-backed）", () => {
     expect(hits.map((h) => h.pageId)).toEqual(["01JABC"]);
   });
 
-  it("写路径诚实失败：page.create / document.createWithContent；正文读取为真实路径（R006-C3）", async () => {
-    const { services } = createDesktopRuntime(mockApi());
-    await expect(
-      services.commands.page.create({
-        workspaceId: "v1",
-        parentId: null,
-        kind: "document",
-        title: "x",
+  it("写路径：page.create / document.createWithContent 接通 note.create；未扫描正文仍 PAGE_NOT_FOUND", async () => {
+    const api = mockApi();
+    (api.note as unknown as { create: ReturnType<typeof vi.fn> }).create = vi.fn(
+      async () => ({
+        noteId: "01NEW",
+        relativePath: "x.md",
+        versionToken: `sha256:${"a".repeat(64)}`,
       }),
-    ).rejects.toMatchObject({ code: "NOT_IMPLEMENTED" });
-    await expect(
-      services.commands.document.createWithContent({
-        workspaceId: "v1",
-        parentId: null,
-        title: "x",
-        contentJson: {},
-        textSnapshot: "",
+    );
+    // 创建后扫描需能返回新页面。
+    let created = false;
+    (api.vault.scan as ReturnType<typeof vi.fn>).mockImplementation(
+      async () => ({
+        vault: { vaultId: "v1", name: "我的笔记" },
+        entries: created
+          ? [
+              {
+                noteId: "01NEW",
+                relativePath: "x.md",
+                kind: "document" as const,
+                title: "x",
+                parentPath: null,
+                tags: [],
+              },
+            ]
+          : [],
       }),
-    ).rejects.toMatchObject({ code: "NOT_IMPLEMENTED" });
-    // getContent 已非桩（C3 批次 3 真实读路径）：未经会话扫描时扫描缓存
-    // 反查落空，映射为 DomainError(PAGE_NOT_FOUND)。
+    );
+    const { services } = createDesktopRuntime(api);
+    created = true;
+    const page = await services.commands.page.create({
+      workspaceId: "v1",
+      parentId: null,
+      kind: "document",
+      title: "x",
+    });
+    expect(page.id).toBe("01NEW");
+    expect(api.note.create).toHaveBeenCalled();
+    // getContent 未经打开：扫描有条目但 note.read 未 mock → 需 mock read。
     await expect(
-      services.queries.document.getContent("01JABC"),
+      services.queries.document.getContent("missing"),
     ).rejects.toMatchObject({ code: "PAGE_NOT_FOUND" });
   });
-
   it("workspace.create：取消目录选择抛 DomainError(CANCELLED)", async () => {
     const { services } = createDesktopRuntime(
       mockApi({ selectDirectory: vi.fn(async () => null) }),

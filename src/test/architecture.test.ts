@@ -313,4 +313,27 @@ describe("架构分层约束", () => {
     expect(format(violations)).toBe("");
     expect(violations).toEqual([]);
   });
+
+  /**
+   * R006-C4-H：components/state 不得直呼 note.save / window.e1——写盘只经
+   * ContentRepository → DesktopContentRepository → IPC 装配根。
+   */
+  it("components/state 不得出现 note.save 或 window.e1（R006-C4）", () => {
+    const pattern = /\bnote\.save\b|\bwindow\.e1\b/;
+    const violations: Violation[] = [];
+    for (const [path, content] of entries) {
+      if (!path.startsWith("../components/") && !path.startsWith("../state/")) {
+        continue;
+      }
+      content.split("\n").forEach((text, index) => {
+        const trimmed = text.trim();
+        if (trimmed.startsWith("*") || trimmed.startsWith("//")) return;
+        if (pattern.test(text)) {
+          violations.push({ file: path, line: index + 1, text: trimmed });
+        }
+      });
+    }
+    expect(format(violations)).toBe("");
+    expect(violations).toEqual([]);
+  });
 });
