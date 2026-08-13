@@ -6,18 +6,21 @@
  * 且不落盘；配额不足等存储错误原样透传（isQuotaExceededError 可判定）。
  * 平台无关：二进制为 Uint8Array，持久化细节由注入的 AssetStore 承担。
  */
-import { validateAttachment } from "../../domain/attachments";
+import {
+  validateAttachment,
+  type AssetImportSource,
+} from "../../domain/attachments";
 import type { AssetStore } from "../../domain/repositories";
 import type { Attachment } from "../../domain/types";
 
-/** 导入资源入参：字节已由调用方读出（File.arrayBuffer / 粘贴板 File 等）。 */
+/** 导入资源入参（R006-C5：来源为 AssetImportSource，不再强制 Uint8Array）。 */
 export interface ImportAssetInput {
   pageId: string;
   name: string;
   mimeType: string;
-  /** 权威字节数（与 data.byteLength 一致；取自 File.size 等实际来源）。 */
+  /** 权威字节数（取自 File.size / PickedAsset.size）。 */
   size: number;
-  data: Uint8Array;
+  source: AssetImportSource;
   /** true 时按图片 MIME 白名单校验（图片插入路径）。 */
   requireImage?: boolean;
 }
@@ -46,7 +49,8 @@ export class AssetCommandService {
       name: input.name,
       mimeType: input.mimeType,
       size: input.size,
-      data: input.data,
+      source: input.source,
+      data: input.source.kind === "bytes" ? input.source.data : undefined,
     });
   }
 

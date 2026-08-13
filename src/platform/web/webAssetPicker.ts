@@ -37,7 +37,7 @@ export class WebAssetPicker implements AssetPicker {
               name: file.name,
               mimeType: file.type,
               size: file.size,
-              data: new Uint8Array(buffer),
+              source: { kind: "bytes", data: new Uint8Array(buffer) },
             }),
           )
           .catch(() => finish(null));

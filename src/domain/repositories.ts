@@ -5,6 +5,8 @@
  * 未来接入云同步或协作时可整体替换实现而不重写界面（见 docs/architecture.md）。
  */
 
+import type { AssetImportSource } from "./attachments";
+import { DomainError } from "./errors";
 import type {
   Attachment,
   BinaryAttachment,
@@ -154,15 +156,42 @@ export interface RevisionRepository {
 }
 
 /**
- * 导入附件入参（R005 阶段 5）：二进制为平台无关的 Uint8Array，不再含 Blob；
- * size 为权威字节数（与 data.byteLength 一致，调用方从 File.size 等来源取得）。
+ * 导入附件入参（R005 阶段 5 / R006-C5）：来源为 AssetImportSource。
+ * Web / 内存实现只接受 `source.kind === "bytes"`（或过渡字段 `data`）；
+ * Desktop 同时接受 bytes 与 authorized-ref。size 为权威字节数。
  */
 export interface CreateAttachmentInput {
   pageId: string;
   name: string;
   mimeType: string;
   size: number;
-  data: Uint8Array;
+  /** 权威来源；缺省时回退 `data` 视为 bytes（Web 存量调用）。 */
+  source?: AssetImportSource;
+  /**
+   * 过渡字段：仅 bytes 来源。Web IndexedDB / 内存实现与既有测试可继续填它。
+   */
+  data?: Uint8Array;
+}
+
+/** 解析导入来源：优先 source，否则把 data 视为 bytes。 */
+export function resolveAttachmentSource(
+  input: CreateAttachmentInput,
+): AssetImportSource {
+  if (input.source) return input.source;
+  if (input.data) return { kind: "bytes", data: input.data };
+  throw new DomainError("INVALID_INPUT", "附件缺少来源数据。");
+}
+
+/** Web / 内存存储只接受字节来源；authorized-ref 必须由 Desktop AssetStore 消费。 */
+export function requireAttachmentBytes(input: CreateAttachmentInput): Uint8Array {
+  const source = resolveAttachmentSource(input);
+  if (source.kind !== "bytes") {
+    throw new DomainError(
+      "INVALID_INPUT",
+      "当前存储只接受字节来源的附件。",
+    );
+  }
+  return source.data;
 }
 
 /**

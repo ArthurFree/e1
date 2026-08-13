@@ -62,7 +62,7 @@ export async function insertLocalImageData(
       name: file.name,
       mimeType: file.mimeType,
       size: file.size,
-      data: file.data,
+      source: file.source,
       requireImage: true,
     });
   } catch (err) {
@@ -98,7 +98,7 @@ export async function insertLocalImageFile(
   return insertLocalImageData(
     editor,
     pageId,
-    { name: file.name, mimeType: file.type, size: file.size, data },
+    { name: file.name, mimeType: file.type, size: file.size, source: { kind: "bytes", data } },
     options,
   );
 }
@@ -211,6 +211,7 @@ export const LocalImage = Node.create({
         }
         resolvedUrl = url;
         img.src = url;
+        img.onerror = () => showMissing();
         placeholder.remove();
         if (!img.isConnected) dom.append(img);
         dom.classList.remove("local-image--missing");

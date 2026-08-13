@@ -205,8 +205,12 @@ export async function scanVault(root: string): Promise<VaultScanResult> {
   return {
     vault:
       meta.status === "initialized"
-        ? { vaultId: meta.meta.vaultId, name: meta.meta.name }
-        : { vaultId: null, name: basename(rootReal) },
+        ? {
+            vaultId: meta.meta.vaultId,
+            name: meta.meta.name,
+            assetsDirectory: meta.meta.assetsDirectory,
+          }
+        : { vaultId: null, name: basename(rootReal), assetsDirectory: null },
     entries,
   };
 }

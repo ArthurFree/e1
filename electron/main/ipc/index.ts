@@ -6,6 +6,7 @@
  * R006-C2.1：selectionTokens（目录选择授权令牌）与 transients（仅预览
  * 会话）为进程级共享单例，在此构造并注入 vault 组与 note 组 handler
  * （R006-C3-A note.read 经同一 transients 双通道解析 vaultId）。
+ * R006-C5：返回 registry/transients 供 e1-asset 协议与 asset 组共用。
  */
 import { app, dialog, ipcMain } from "electron";
 import { join } from "node:path";
@@ -15,8 +16,14 @@ import { registerAssetHandlers } from "./asset.js";
 import { VaultRegistry } from "../vaultRegistry.js";
 import { SelectionTokenStore } from "../SelectionTokenStore.js";
 import { TransientVaultStore } from "../transientVaults.js";
+import {
+  CapabilityTokenStore,
+  type PendingFileSelection,
+} from "../CapabilityTokenStore.js";
 import type { IpcMainLike } from "./handler.js";
 import type { OpenDialogLike } from "./vault.js";
+import type { FileDialogLike } from "./asset.js";
+import type { VaultRootDeps } from "../vaultRoots.js";
 
 export interface RegisterIpcHandlersDeps {
   ipc?: IpcMainLike;
@@ -25,21 +32,30 @@ export interface RegisterIpcHandlersDeps {
   /** R006-C2.1：可注入以控制时钟/隔离状态（测试用）。 */
   selectionTokens?: SelectionTokenStore;
   transients?: TransientVaultStore;
+  fileTokens?: CapabilityTokenStore<PendingFileSelection>;
 }
 
-export function registerIpcHandlers(deps: RegisterIpcHandlersDeps = {}): void {
+export function registerIpcHandlers(
+  deps: RegisterIpcHandlersDeps = {},
+): VaultRootDeps {
   const bus = deps.ipc ?? ipcMain;
   const registry =
     deps.registry ??
     new VaultRegistry(join(app.getPath("userData"), "recent-vaults.json"));
   const transients = deps.transients ?? new TransientVaultStore();
+  const openDialog = deps.openDialog ?? dialog;
   registerVaultHandlers(bus, {
-    openDialog: deps.openDialog ?? dialog,
+    openDialog,
     registry,
     selectionTokens: deps.selectionTokens ?? new SelectionTokenStore(),
     transients,
   });
-  // R006-C3-A：note.read 经同一 registry/transients 双通道解析 vaultId。
   registerNoteHandlers(bus, { registry, transients });
-  registerAssetHandlers(bus);
+  registerAssetHandlers(bus, {
+    openDialog: openDialog as FileDialogLike,
+    registry,
+    transients,
+    fileTokens: deps.fileTokens ?? new CapabilityTokenStore(),
+  });
+  return { registry, transients };
 }

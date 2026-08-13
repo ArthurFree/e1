@@ -96,7 +96,7 @@ function mockDesktopApi(overrides: {
       })),
     },
     note: { read: vi.fn(), create: vi.fn(), save: vi.fn() },
-    asset: { pick: vi.fn(), import: vi.fn(), resolveUrl: vi.fn() },
+    asset: { pick: vi.fn(), import: vi.fn(), read: vi.fn(), resolveUrl: vi.fn() },
   } as unknown as E1DesktopAPI;
   return { api, openRecent, openSelection };
 }

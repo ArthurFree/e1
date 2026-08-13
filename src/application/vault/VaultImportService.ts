@@ -584,7 +584,7 @@ export class VaultImportService {
           name,
           mimeType: mimeFromName(name),
           size: bytes.byteLength,
-          data: bytes,
+          source: { kind: "bytes", data: bytes },
           requireImage: kind === "image",
         });
         attachmentIdByPath.set(resolvedPath, record.id);

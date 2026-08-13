@@ -72,7 +72,7 @@ R005 将项目划分为四层运行时边界：Shared UI、Shared Application、
 | `revealInFileManager`  | 能在系统文件管理器中显示笔记或附件文件                                                 | 否  |       是        |
 | `nativeMenu`           | 能使用系统原生菜单（应用菜单/上下文菜单）                                              | 否  |       是        |
 | `nativeSecrets`        | 能使用系统级安全存储保存 AI 密钥等机密                                                 | 否  |       是        |
-| `persistentAssetPaths` | 附件拥有稳定文件路径，可被外部软件直接访问（而非 Blob/Object URL）                     | 否  |       是        |
+| `persistentAssetPaths` | 附件拥有稳定文件路径，可被外部软件直接访问（而非 Blob/Object URL）                     | 否  |  是（C5 翻是）  |
 | `documentPersistence`  | 文档编辑会真实持久化（false 时编辑器不启动 SaveCoordinator，UI 必须提示修改不写回磁盘） | 是  |  否（C4 翻是）  |
 
 约定：能力为 `false` 时对应 UI 入口隐藏或降级，不做「平台名 + 弹窗提示」式分支；新增平台功能一律先定义能力字段再实现（r005.md §十六）。

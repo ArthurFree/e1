@@ -70,7 +70,7 @@ describe("StubAssetPicker / StubNotificationService", () => {
       name: "a.txt",
       mimeType: "text/plain",
       size: 1,
-      data: new Uint8Array([1]),
+      source: { kind: "bytes", data: new Uint8Array([1]) },
     };
     expect((await picker.pick())?.name).toBe("a.txt");
   });

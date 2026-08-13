@@ -37,6 +37,7 @@ export const IPC_CHANNELS = {
   noteSave: "note:save",
   assetPick: "asset:pick",
   assetImport: "asset:import",
+  assetRead: "asset:read",
   assetResolveUrl: "asset:resolveUrl",
 } as const;
 
@@ -152,6 +153,11 @@ export interface VaultScanResult {
     vaultId: string | null;
     /** 库名：vault.json name，未初始化时为目录 basename。 */
     name: string;
+    /**
+     * R006-C5：受管资源目录名（来自 vault.json）；未初始化为 null。
+     * Hydration 只管理该目录下的相对路径。扫描实现始终填写。
+     */
+    assetsDirectory?: string | null;
   };
   /**
    * 全部条目（DFS 序：每目录内先 group 后 document，各按名称
@@ -238,6 +244,11 @@ export interface SaveNoteResult {
 
 /* ---------------------------------- asset ---------------------------------- */
 
+export interface AssetPickRequest {
+  /** 可接受的 MIME 列表；缺省不限。 */
+  accept?: string[];
+}
+
 /**
  * asset.pick 原生文件选择结果（取消返回 null）。
  * R006-C2.1（FR-05）：absolutePath 替换为 pickToken——源路径授权同样
@@ -252,21 +263,35 @@ export interface PickedFile {
   mimeType: string;
 }
 
+export type ImportAssetSource =
+  | { kind: "pick-token"; token: string }
+  | { kind: "bytes"; data: Uint8Array };
+
 export interface ImportAssetInput {
   vaultId: string;
-  /** asset.pick 返回的一次性令牌（Main 据此解析源文件并复制进 assets/）。 */
-  pickToken: string;
-  /** 期望文件名（Main 侧做冲突递增与非法字符清理）。 */
   fileName: string;
+  mimeType: string;
+  source: ImportAssetSource;
 }
 
 export interface ImportedAsset {
-  /** 附件稳定身份（阶段 5 分配，当前为文件名派生）。 */
   assetId: string;
-  /** 相对 Vault 根路径（如 "assets/abc.png"），Markdown 输出用它（r006 §13.3）。 */
+  /** 相对 Vault 根路径（如 "assets/abc.png"），Markdown 输出用它。 */
   relativePath: string;
   sizeBytes: number;
   mimeType: string;
+}
+
+export interface ReadAssetInput {
+  assetId: string;
+}
+
+export interface AssetReadResult {
+  assetId: string;
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+  data: Uint8Array;
 }
 
 /* --------------------------------- 桥接 API --------------------------------- */
@@ -315,10 +340,11 @@ export interface E1DesktopAPI {
     save(input: SaveNoteInput): Promise<SaveNoteResult>;
   };
   asset: {
-    /** 原生文件选择；取消返回 null。 */
-    pick(): Promise<PickedFile | null>;
+    /** 原生文件选择；取消返回 null。不得返回绝对路径。 */
+    pick(input?: AssetPickRequest): Promise<PickedFile | null>;
     import(input: ImportAssetInput): Promise<ImportedAsset>;
-    /** 解析附件为可渲染 URL（自定义协议/安全 URL，阶段 5 实现）。 */
+    read(input: ReadAssetInput): Promise<AssetReadResult>;
+    /** 解析为 e1-asset:// URL（不含字节）。 */
     resolveUrl(assetId: string): Promise<string>;
   };
 }

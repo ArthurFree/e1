@@ -133,20 +133,15 @@ describe("契约桩 NOT_IMPLEMENTED 归一", () => {
     if (!read.ok) expect(read.error.code).toBe("VAULT_NOT_FOUND");
   });
 
-  it("asset 三方法 → NOT_IMPLEMENTED", async () => {
-    for (const [channel, payload] of [
-      [IPC_CHANNELS.assetPick, undefined],
-      [
-        IPC_CHANNELS.assetImport,
-        // R006-C2.1（FR-05）：sourceAbsolutePath → pickToken。
-        { vaultId: "v1", pickToken: "p-token", fileName: "a.png" },
-      ],
-      [IPC_CHANNELS.assetResolveUrl, "asset-1"],
-    ] as const) {
-      const result = await call(channel, payload);
-      expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error.code).toBe("NOT_IMPLEMENTED");
-    }
+  it("asset.import 未登记 vaultId → VAULT_NOT_FOUND（不再是桩）", async () => {
+    const result = await call(IPC_CHANNELS.assetImport, {
+      vaultId: "v-未登记",
+      fileName: "a.png",
+      mimeType: "image/png",
+      source: { kind: "pick-token", token: "p-token" },
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("VAULT_NOT_FOUND");
   });
 });
 

@@ -201,7 +201,15 @@ export function SettingsPanel() {
         accept: ".zip,application/zip",
       });
       if (!picked) return; // 用户取消选择
-      const report = await importVault(picked.data);
+      const bytes =
+        picked.source.kind === "bytes" ? picked.source.data : undefined;
+      if (!bytes) {
+        services.assets.notify.notify(
+          "无法读取所选文件，请重新选择一个 .e1.zip。",
+        );
+        return;
+      }
+      const report = await importVault(bytes);
       setImportResult(
         `已导入到「${report.workspaceName}」：${report.importedCount} 篇文档` +
           (report.skipped.length > 0

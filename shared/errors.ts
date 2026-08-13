@@ -45,6 +45,12 @@ export type IpcErrorCode =
   | "UNSUPPORTED_ENCODING"
   /** 附件不存在。 */
   | "ASSET_NOT_FOUND"
+  /** R006-C5：写入资源被拒绝（EACCES/EPERM）。 */
+  | "ASSET_WRITE_PERMISSION_DENIED"
+  /** R006-C5：写入资源的其他系统 I/O 错误。 */
+  | "ASSET_WRITE_IO_ERROR"
+  /** R006-C5：原生选择的源文件在导入前已消失。 */
+  | "ASSET_SOURCE_NOT_FOUND"
   /** 路径逃逸：相对路径含 ../、绝对路径注入或符号链接逃逸出 Vault 根。 */
   | "PATH_ESCAPE"
   /** 保存乐观锁冲突：expectedVersionToken 与磁盘当前 hash 不一致。 */
@@ -146,6 +152,9 @@ const DOMAIN_TO_IPC: Record<string, IpcErrorCode> = {
   NOTE_WRITE_PERMISSION_DENIED: "NOTE_WRITE_PERMISSION_DENIED",
   NOTE_WRITE_IO_ERROR: "NOTE_WRITE_IO_ERROR",
   VAULT_READ_ONLY: "VAULT_READ_ONLY",
+  ASSET_WRITE_PERMISSION_DENIED: "ASSET_WRITE_PERMISSION_DENIED",
+  ASSET_WRITE_IO_ERROR: "ASSET_WRITE_IO_ERROR",
+  ASSET_SOURCE_NOT_FOUND: "ASSET_SOURCE_NOT_FOUND",
 };
 
 /** IPC 错误码 → domain 错误码（可反向映射的子集；无对应 domain 语义时为 null）。 */
@@ -165,6 +174,9 @@ const IPC_TO_DOMAIN: Partial<Record<IpcErrorCode, string>> = {
   NOTE_WRITE_PERMISSION_DENIED: "NOTE_WRITE_PERMISSION_DENIED",
   NOTE_WRITE_IO_ERROR: "NOTE_WRITE_IO_ERROR",
   VAULT_READ_ONLY: "VAULT_READ_ONLY",
+  ASSET_WRITE_PERMISSION_DENIED: "ASSET_WRITE_PERMISSION_DENIED",
+  ASSET_WRITE_IO_ERROR: "ASSET_WRITE_IO_ERROR",
+  ASSET_SOURCE_NOT_FOUND: "ASSET_SOURCE_NOT_FOUND",
 };
 
 /** DomainError → IPC 错误载荷；未识别的 domain code 归一为 INTERNAL。 */

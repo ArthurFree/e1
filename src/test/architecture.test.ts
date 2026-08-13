@@ -352,5 +352,39 @@ describe("架构分层约束", () => {
     const runtime = sources["../platform/desktop/createDesktopRuntime.ts"] ?? "";
     expect(runtime).toContain("DesktopMarkdownWriteService");
     expect(runtime).toContain("DesktopIdentityAliasRegistry");
+    expect(runtime).toContain("DesktopAssetStore");
+    expect(runtime).toContain("DesktopAssetRegistry");
+  });
+
+  it("editor 不得出现 pickToken（R006-C5）", () => {
+    const violations: Violation[] = [];
+    for (const [path, content] of entries) {
+      if (!path.startsWith("../editor/")) continue;
+      content.split("\n").forEach((text, index) => {
+        const trimmed = text.trim();
+        if (trimmed.startsWith("*") || trimmed.startsWith("//")) return;
+        if (/\bpickToken\b/.test(text)) {
+          violations.push({ file: path, line: index + 1, text: trimmed });
+        }
+      });
+    }
+    expect(format(violations)).toBe("");
+    expect(violations).toEqual([]);
+  });
+
+  it("application 不得出现绝对路径字段名 absolutePath（R006-C5）", () => {
+    const violations: Violation[] = [];
+    for (const [path, content] of entries) {
+      if (!path.startsWith("../application/")) continue;
+      content.split("\n").forEach((text, index) => {
+        const trimmed = text.trim();
+        if (trimmed.startsWith("*") || trimmed.startsWith("//")) return;
+        if (/\babsolutePath\b/.test(text)) {
+          violations.push({ file: path, line: index + 1, text: trimmed });
+        }
+      });
+    }
+    expect(format(violations)).toBe("");
+    expect(violations).toEqual([]);
   });
 });

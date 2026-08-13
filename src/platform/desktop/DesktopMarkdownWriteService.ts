@@ -5,6 +5,7 @@
  * 共用本服务——Source/Identity/Output Gate、Frontmatter 保留、Mention
  * 解析、note.save、versionToken 更新只存在一份。
  */
+import { relativeVaultPath } from "../../../shared/markdown/relativePath";
 import { DomainError } from "../../domain/errors";
 import type { ContentVersionToken } from "../../domain/types";
 import { createMarkdownCodec } from "../../editor/markdown/codec";
@@ -13,7 +14,8 @@ import type { PortableNoteMetadata } from "../../editor/markdown/types";
 import type { E1DesktopAPI } from "./desktopApi";
 import { DesktopIpcError } from "./desktopApi";
 import type { DesktopDocumentSourceCache } from "./DesktopDocumentSourceCache";
-import type { DesktopVaultScanCache } from "./repositories";
+import type { DesktopVaultScanCache } from "./DesktopVaultScanCache";
+import type { DesktopAssetRegistry } from "./DesktopAssetRegistry";
 
 export type DesktopMarkdownWriteMode = "autosave" | "replace-content";
 
@@ -36,6 +38,7 @@ export class DesktopMarkdownWriteService {
     private readonly sources: DesktopDocumentSourceCache,
     private readonly scans: DesktopVaultScanCache,
     private readonly codec: MarkdownCodec = createMarkdownCodec(),
+    private readonly assets?: DesktopAssetRegistry,
   ) {}
 
   async save(
@@ -74,8 +77,13 @@ export class DesktopMarkdownWriteService {
       document: input.contentJson,
       metadata,
       assetResolver: {
-        resolveAssetPath: ({ name, kind }) =>
-          `assets/${kind}-${name || "file"}`,
+        resolveAssetPath: ({ attachmentId, name }) =>
+          this.resolveAssetRelativePath(
+            ctx.vaultId,
+            ctx.relativePath,
+            attachmentId,
+            name,
+          ),
       },
       mode: "portable",
       lineEnding: ctx.lineEnding,
@@ -130,7 +138,22 @@ export class DesktopMarkdownWriteService {
   ): string | null {
     const target = this.scans.getRelativePathSync(vaultId, targetPageId);
     if (!target) return null;
-    return relativeMarkdownPath(fromRelativePath, target);
+    return relativeVaultPath(fromRelativePath, target);
+  }
+
+  private resolveAssetRelativePath(
+    vaultId: string,
+    fromRelativePath: string,
+    attachmentId: string,
+    name: string,
+  ): string {
+    const record = this.assets?.get(attachmentId);
+    if (record) {
+      return relativeVaultPath(fromRelativePath, record.relativePath);
+    }
+    const dir = this.scans.getAssetsDirectorySync(vaultId) ?? "assets";
+    const file = name.split("/").pop() || "file";
+    return relativeVaultPath(fromRelativePath, `${dir}/${file}`);
   }
 }
 
@@ -180,23 +203,6 @@ export function mapNoteWriteError(err: unknown): never {
   throw err;
 }
 
-/**
- * 从 from 文件到 to 文件的相对 Markdown 链接路径（posix 风格）。
- * 例：学习/a.md → 学习/b.md => b.md；学习/a.md → 根/c.md => ../c.md。
- */
 export function relativeMarkdownPath(fromFile: string, toFile: string): string {
-  const fromParts = fromFile.split("/").slice(0, -1);
-  const toParts = toFile.split("/");
-  let i = 0;
-  while (
-    i < fromParts.length &&
-    i < toParts.length - 1 &&
-    fromParts[i] === toParts[i]
-  ) {
-    i += 1;
-  }
-  const ups = fromParts.length - i;
-  const down = toParts.slice(i);
-  const rel = [...Array(ups).fill(".."), ...down].join("/");
-  return rel || toParts[toParts.length - 1]!;
+  return relativeVaultPath(fromFile, toFile);
 }

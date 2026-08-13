@@ -52,6 +52,9 @@ export type DomainErrorCode =
   | "NOTE_WRITE_IO_ERROR"
   /** R006-C4：仅预览（transient）Vault 拒绝任何写操作。 */
   | "VAULT_READ_ONLY"
+  | "ASSET_WRITE_PERMISSION_DENIED"
+  | "ASSET_WRITE_IO_ERROR"
+  | "ASSET_SOURCE_NOT_FOUND"
   /**
    * R006-C3（FR-09）：Markdown 超过单文件大小上限（10 MiB）；
    * details 携带 { sizeBytes, maxBytes } 供 UI 展示。

@@ -12,6 +12,8 @@
 import { contextBridge, ipcRenderer } from "electron";
 import {
   IPC_CHANNELS,
+  type AssetPickRequest,
+  type AssetReadResult,
   type CreateNoteInput,
   type CreateNoteResult,
   type E1DesktopAPI,
@@ -22,6 +24,7 @@ import {
   type OpenRecentRequest,
   type OpenSelectionRequest,
   type PickedFile,
+  type ReadAssetInput,
   type ReadNoteInput,
   type ReadNoteResult,
   type RecentVault,
@@ -73,9 +76,12 @@ const api: E1DesktopAPI = {
       invoke<SaveNoteResult>(IPC_CHANNELS.noteSave, input),
   },
   asset: {
-    pick: () => invoke<PickedFile | null>(IPC_CHANNELS.assetPick),
+    pick: (input?: AssetPickRequest) =>
+      invoke<PickedFile | null>(IPC_CHANNELS.assetPick, input),
     import: (input: ImportAssetInput) =>
       invoke<ImportedAsset>(IPC_CHANNELS.assetImport, input),
+    read: (input: ReadAssetInput) =>
+      invoke<AssetReadResult>(IPC_CHANNELS.assetRead, input),
     resolveUrl: (assetId) =>
       invoke<string>(IPC_CHANNELS.assetResolveUrl, assetId),
   },

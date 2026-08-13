@@ -123,7 +123,10 @@ describe("WebAssetPicker", () => {
     expect(picked?.name).toBe("a.txt");
     expect(picked?.mimeType).toBe("text/plain");
     expect(picked?.size).toBe(2);
-    expect([...(picked?.data ?? [])]).toEqual([9, 8]);
+    expect(picked?.source.kind).toBe("bytes");
+    expect([
+      ...(picked?.source.kind === "bytes" ? picked.source.data : []),
+    ]).toEqual([9, 8]);
   });
 
   it("change 但无文件：resolve null", async () => {

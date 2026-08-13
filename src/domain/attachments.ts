@@ -29,6 +29,16 @@ export const IMAGE_MIME_TYPES: ReadonlySet<string> = new Set([
   "image/svg+xml",
 ]);
 
+/**
+ * 附件导入来源（R006-C5 FR-01）：Application 只理解这两种形态，
+ * 不得出现 pickToken / absolutePath / 平台名称。
+ * - bytes：Web Picker、粘贴/拖拽、Portable Import；
+ * - authorized-ref：Desktop 原生选择签发的一次性授权引用（ref 对 Application 不透明）。
+ */
+export type AssetImportSource =
+  | { kind: "bytes"; data: Uint8Array }
+  | { kind: "authorized-ref"; ref: string };
+
 /** 附件校验入参；size 为实际字节数（以实际大小为准，不信任外部声明值）。 */
 export interface ValidateAttachmentInput {
   name: string;

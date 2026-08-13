@@ -19,8 +19,8 @@ export const desktopCapabilities: RuntimeCapabilities = {
   // 阶段 6/后续批次：DesktopSecretStore 接系统安全存储后翻 true
   // （r006 §21；当前 secretStore 为内存实现）。
   nativeSecrets: false,
-  // 阶段 5：附件落 Vault assets/ 真实文件后翻 true（r006 §13）。
-  persistentAssetPaths: false,
+  // R006-C5：附件落 Vault assets/ 真实文件 + Hydration/Serialize 闭环。
+  persistentAssetPaths: true,
   // R006-C4-E：note.save + DesktopContentRepository.save + Lossy Gate
   // + Transient Guard 已接通并通过测试后翻 true。
   documentPersistence: true,

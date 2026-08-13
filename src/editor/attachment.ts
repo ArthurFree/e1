@@ -12,6 +12,7 @@
 import { Node } from "@tiptap/core";
 import type { Editor } from "@tiptap/core";
 import type { AssetServices } from "../application/assets/assetServices";
+import type { AssetImportSource } from "../application/assets/assetServices";
 import { isDomainError, isQuotaExceededError } from "../domain/errors";
 import { paperclipSvgString } from "../components/ui/icons";
 
@@ -44,12 +45,12 @@ export interface AttachmentAttrs {
   size: number;
 }
 
-/** 已读出字节的待插入文件（File 与 PickedAsset 的统一形状）。 */
+/** 已读出字节或授权引用的待插入文件（File 与 PickedAsset 的统一形状）。 */
 export interface AttachmentFileData {
   name: string;
   mimeType: string;
   size: number;
-  data: Uint8Array;
+  source: AssetImportSource;
 }
 
 /**
@@ -72,7 +73,7 @@ export async function insertAttachmentData(
       name: file.name,
       mimeType: file.mimeType || "application/octet-stream",
       size: file.size,
-      data: file.data,
+      source: file.source,
     });
   } catch (err) {
     // 校验失败（DomainError）/存储空间不足/普通写入失败分开提示（R004 §6.3），
@@ -113,7 +114,7 @@ export async function insertAttachmentFile(
     name: file.name,
     mimeType: file.type,
     size: file.size,
-    data,
+    source: { kind: "bytes", data },
   });
 }
 

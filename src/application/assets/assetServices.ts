@@ -13,8 +13,11 @@
  * 编辑器扩展只经 editor.storage.assetServices 消费本组接口；
  * domain 实体与 port 均不出现 Blob（见 domain/repositories.ts 的 AssetStore）。
  */
+import type { AssetImportSource } from "../../domain/attachments";
 import type { Attachment, BinaryAttachment } from "../../domain/types";
 import type { AssetCommandService } from "./AssetCommandService";
+
+export type { AssetImportSource };
 
 /** 资源读取与平台相关访问能力。 */
 export interface AssetAccessService {
@@ -41,12 +44,12 @@ export interface AssetPickOptions {
   accept?: string;
 }
 
-/** 用户选中的文件（字节已读出）。 */
+/** 用户选中的文件（R006-C5：来源为 bytes 或 authorized-ref，不再强制读出字节）。 */
 export interface PickedAsset {
   name: string;
   mimeType: string;
   size: number;
-  data: Uint8Array;
+  source: AssetImportSource;
 }
 
 /** 文件选择器；用户取消时 resolve null。 */

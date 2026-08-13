@@ -269,11 +269,23 @@ describe("parseSaveNoteInput", () => {
 });
 
 describe("parseImportAssetInput", () => {
-  it("合法入参通过（R006-C2.1 FR-05：pickToken）", () => {
+  it("合法 pick-token 入参通过", () => {
     const input = {
       vaultId: "v1",
-      pickToken: "p-token",
       fileName: "pic.png",
+      mimeType: "image/png",
+      source: { kind: "pick-token" as const, token: "p-token" },
+    };
+    expect(parseImportAssetInput(input)).toEqual(input);
+  });
+
+  it("合法 bytes 入参通过", () => {
+    const data = new Uint8Array([1, 2]);
+    const input = {
+      vaultId: "v1",
+      fileName: "pic.png",
+      mimeType: "image/png",
+      source: { kind: "bytes" as const, data },
     };
     expect(parseImportAssetInput(input)).toEqual(input);
   });
@@ -287,8 +299,9 @@ describe("parseImportAssetInput", () => {
       () =>
         parseImportAssetInput({
           vaultId: "v1",
-          pickToken: "p-token",
           fileName: "",
+          mimeType: "image/png",
+          source: { kind: "pick-token", token: "p-token" },
         }),
       "INVALID_INPUT",
     );

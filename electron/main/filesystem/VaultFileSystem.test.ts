@@ -331,6 +331,7 @@ describe("scanVault 映射", () => {
     expect(result.vault).toEqual({
       vaultId: null,
       name: "纯 Markdown 文件夹",
+      assetsDirectory: null,
     });
     expect(result.entries).toHaveLength(1);
   });
@@ -339,7 +340,11 @@ describe("scanVault 映射", () => {
     const root = await makeDir();
     const meta = await initializeVault(root, "我的库");
     const result = await scanVault(root);
-    expect(result.vault).toEqual({ vaultId: meta.vaultId, name: "我的库" });
+    expect(result.vault).toEqual({
+      vaultId: meta.vaultId,
+      name: "我的库",
+      assetsDirectory: "assets",
+    });
     // .e1/ 自身不被扫描。
     expect(result.entries).toHaveLength(0);
   });

@@ -42,10 +42,9 @@ import {
 import { DesktopDocumentSourceCache } from "./DesktopDocumentSourceCache";
 import { DesktopIdentityAliasRegistry } from "./DesktopIdentityAliasRegistry";
 import { DesktopPreferencesRepository } from "./preferencesRepository";
-import {
-  DesktopAssetStore,
-  DesktopRevisionRepository,
-} from "./stubRepositories";
+import { DesktopRevisionRepository } from "./stubRepositories";
+import { DesktopAssetStore } from "./DesktopAssetStore";
+import { DesktopAssetRegistry } from "./DesktopAssetRegistry";
 
 const SCAN: VaultScanResult = {
   vault: { vaultId: "v1", name: "我的笔记" },
@@ -104,6 +103,7 @@ function mockApi(overrides: {
     asset: {
       pick: vi.fn(),
       import: vi.fn(),
+      read: vi.fn(),
       resolveUrl: vi.fn(),
     },
   } as unknown as E1DesktopAPI;
@@ -804,24 +804,16 @@ describe("维护桩与 DocumentWrite（C4-E/G）", () => {
     await expect(repo.pruneInterval("p", 1)).resolves.toBeUndefined();
   });
 
-  it("AssetStore：读取空；removeOrphans 返回 0；add/remove 抛错", async () => {
-    const store: AssetStore = new DesktopAssetStore();
+  it("AssetStore：读取空；removeOrphans 返回 0；remove 不抛错", async () => {
+    const api = mockApi({});
+    const scans = new DesktopVaultScanCache(api);
+    const registry = new DesktopAssetRegistry();
+    const store: AssetStore = new DesktopAssetStore(api, scans, registry);
     await expect(store.getMetadata("a")).resolves.toBeUndefined();
     await expect(store.getBinary("a")).resolves.toBeUndefined();
     await expect(store.listByDocument("p")).resolves.toEqual([]);
     await expect(store.removeOrphans("p", [])).resolves.toBe(0);
-    await expect(
-      store.add({
-        pageId: "p",
-        name: "a.png",
-        mimeType: "image/png",
-        size: 1,
-        data: new Uint8Array(1),
-      }),
-    ).rejects.toMatchObject({ code: "NOT_IMPLEMENTED" });
-    await expect(store.remove("a")).rejects.toMatchObject({
-      code: "NOT_IMPLEMENTED",
-    });
+    await expect(store.remove("a")).resolves.toBeUndefined();
   });
 
   it("DocumentWriteRepository：createWithContent 走 note.create", async () => {

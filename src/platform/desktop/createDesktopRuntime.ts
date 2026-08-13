@@ -5,12 +5,12 @@
  * platform/desktop 的 IPC-backed 实现：知识库/页面/标签读路径经
  * E1DesktopAPI 走 Main 文件系统；正文经 note.read/save/create
  *（R006-C3/C4，DesktopContentRepository + DocumentWriteRepository）。
- * 附件仍为 NOT_IMPLEMENTED（C5）。
+ * 附件经 DesktopAssetStore 落 Vault/assets/（R006-C5）。
  *
  * 复用说明（platform/desktop → platform/web 方向）：
  * BrowserMemorySearchIndex / BroadcastChangeChannel / WebRecoveryStore /
- * webAsset* 均为「只依赖 renderer 标准能力」的实现，Electron renderer
- * 同样可用，直接复用而非另写桌面副本；deps:check 不禁止该方向。
+ * webNotification 为「只依赖 renderer 标准能力」的实现，Electron renderer
+ * 同样可用；附件 Picker/Access 已换 Desktop 实现（R006-C5）。
  * secretStore/storageHealth 用内存实现（nativeSecrets=false，
  * DesktopSecretStore 接系统安全存储属阶段 6+/R007，见 r006 §21）。
  */
@@ -34,9 +34,8 @@ import type { RuntimeCapabilities } from "../../runtime/RuntimeCapabilities";
 import { BrowserMemorySearchIndex } from "../web/search/BrowserMemorySearchIndex";
 import { BroadcastChangeChannel } from "../web/BroadcastChangeChannel";
 import { WebRecoveryStore } from "../web/webRecoveryStore";
-import { WebAssetAccessService } from "../web/webAssetAccess";
-import { WebAssetPicker } from "../web/webAssetPicker";
 import { WebNotificationService } from "../web/webNotification";
+import { WebAssetPicker } from "../web/webAssetPicker";
 import { InMemorySecretStore } from "../../infrastructure/memory/secretStore";
 import { InMemoryStorageHealthService } from "../../infrastructure/memory/storageHealth";
 import { createOpenAICompatibleProvider } from "../../infrastructure/aiProvider";
@@ -46,6 +45,10 @@ import type { E1DesktopAPI } from "./desktopApi";
 import { DesktopDocumentSourceCache } from "./DesktopDocumentSourceCache";
 import { DesktopIdentityAliasRegistry } from "./DesktopIdentityAliasRegistry";
 import { DesktopMarkdownWriteService } from "./DesktopMarkdownWriteService";
+import { DesktopAssetRegistry } from "./DesktopAssetRegistry";
+import { DesktopAssetStore } from "./DesktopAssetStore";
+import { DesktopAssetPicker } from "./DesktopAssetPicker";
+import { DesktopAssetAccessService } from "./DesktopAssetAccessService";
 import {
   DesktopContentRepository,
   DesktopDocumentWriteRepository,
@@ -54,10 +57,7 @@ import {
   DesktopVaultScanCache,
   DesktopWorkspaceRepository,
 } from "./repositories";
-import {
-  DesktopAssetStore,
-  DesktopRevisionRepository,
-} from "./stubRepositories";
+import { DesktopRevisionRepository } from "./stubRepositories";
 import { DesktopPreferencesRepository } from "./preferencesRepository";
 import { DesktopTitleSearchIndex } from "./DesktopTitleSearchIndex";
 
@@ -72,10 +72,17 @@ export function createDesktopRuntime(api: E1DesktopAPI): DesktopRuntime {
   // 与搜索索引准备只触发一次真实扫描）。Alias / Source / WriteService
   // 三份单例：Adoption 后 Session 身份稳定，save 与 replaceContent 共用 Gate。
   const aliases = new DesktopIdentityAliasRegistry();
+  const assets = new DesktopAssetRegistry();
   const scans = new DesktopVaultScanCache(api, aliases);
   const sources = new DesktopDocumentSourceCache();
   const codec = createMarkdownCodec();
-  const writer = new DesktopMarkdownWriteService(api, sources, scans, codec);
+  const writer = new DesktopMarkdownWriteService(
+    api,
+    sources,
+    scans,
+    codec,
+    assets,
+  );
   const workspaceRepository = new DesktopWorkspaceRepository(api);
   const pageRepository = new DesktopPageRepository(api, scans);
   const contentRepository = new DesktopContentRepository(
@@ -84,10 +91,11 @@ export function createDesktopRuntime(api: E1DesktopAPI): DesktopRuntime {
     sources,
     codec,
     writer,
+    assets,
   );
   const tagRepository = new DesktopTagRepository(scans);
   const revisionRepository = new DesktopRevisionRepository();
-  const assetStore = new DesktopAssetStore();
+  const assetStore = new DesktopAssetStore(api, scans, assets);
   const documentWriteRepository = new DesktopDocumentWriteRepository(
     api,
     scans,
@@ -164,17 +172,15 @@ export function createDesktopRuntime(api: E1DesktopAPI): DesktopRuntime {
       content: contentRepository,
     }),
   };
-  // 资源服务组：picker/access/notify 复用 Web 适配（input file、Object URL、
-  // alert 在 Electron renderer 均可用）；store 为桩，附件导入落库抛
-  // NOT_IMPLEMENTED（属阶段 5），UI 不崩、用户得到明确错误。
-  const assets: AssetServices = {
+  // 资源服务组：Desktop 真实 Store/Picker/Access；notify 复用 Web alert。
+  const assetsServices: AssetServices = {
     commands: new AssetCommandService({ store: assetStore }),
-    access: new WebAssetAccessService(assetStore),
-    picker: new WebAssetPicker(),
+    access: new DesktopAssetAccessService(api, assets, assetStore),
+    picker: new DesktopAssetPicker(api, new WebAssetPicker()),
     notify: new WebNotificationService(),
   };
   const services: AppServices = {
-    assets,
+    assets: assetsServices,
     capabilities: desktopCapabilities,
     // FR-26「重新扫描知识库」过渡通道（PoC）：缓存失效 + 新快照预热；
     // 页面树/标签镜像刷新由 UI 经 refreshCurrentWorkspace 命令完成。

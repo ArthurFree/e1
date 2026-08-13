@@ -33,7 +33,7 @@ function input(overrides: Partial<ImportAssetInput> = {}): ImportAssetInput {
     name: "说明.txt",
     mimeType: "text/plain",
     size: 3,
-    data: new Uint8Array([1, 2, 3]),
+    source: { kind: "bytes", data: new Uint8Array([1, 2, 3]) },
     ...overrides,
   };
 }

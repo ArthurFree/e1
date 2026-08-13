@@ -2,6 +2,13 @@
 import { app, BrowserWindow } from "electron";
 import { createMainWindow } from "./window.js";
 import { registerIpcHandlers } from "./ipc/index.js";
+import {
+  registerE1AssetProtocol,
+  registerE1AssetScheme,
+} from "./protocol/e1AssetProtocol.js";
+
+// e1-asset:// 必须在 app.ready 之前声明为特权协议（R006-C5 FR-21）。
+registerE1AssetScheme();
 
 // 测试隔离（R006 阶段 2）：E1_USER_DATA_DIR 覆盖 userData 目录，
 // 冒烟测试因此获得独立的 recent-vaults.json / localStorage，
@@ -11,8 +18,8 @@ if (process.env.E1_USER_DATA_DIR) {
 }
 
 void app.whenReady().then(() => {
-  // R006 阶段 1：注册 vault/note/asset 三组 IPC handler。
-  registerIpcHandlers();
+  const vaultRoots = registerIpcHandlers();
+  registerE1AssetProtocol(vaultRoots);
   createMainWindow();
 
   // macOS 惯例：点击 Dock 图标且已无窗口时重建窗口。

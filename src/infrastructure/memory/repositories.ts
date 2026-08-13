@@ -33,6 +33,7 @@ import type {
   TagRepository,
   WorkspaceRepository,
 } from "../../domain/repositories";
+import { requireAttachmentBytes } from "../../domain/repositories";
 import type {
   Attachment,
   ContentVersionToken,
@@ -605,7 +606,7 @@ export function createInMemoryRepositories(
         name: input.name,
         mimeType: input.mimeType,
         size: input.size,
-        data: input.data,
+        data: requireAttachmentBytes(input),
         createdAt: Date.now(),
       };
       store.attachments.set(record.id, record);

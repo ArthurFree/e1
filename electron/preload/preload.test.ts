@@ -50,6 +50,7 @@ describe("preload 暴露形状", () => {
     expect(Object.keys(api.asset).sort()).toEqual([
       "import",
       "pick",
+      "read",
       "resolveUrl",
     ]);
   });
@@ -127,8 +128,9 @@ describe("channel 与负载透传", () => {
 
     const importInput = {
       vaultId: "v1",
-      pickToken: "p-token",
       fileName: "a.png",
+      mimeType: "image/png",
+      source: { kind: "pick-token" as const, token: "p-token" },
     };
     await api.asset.import(importInput);
     expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.assetImport, importInput);

@@ -10,10 +10,13 @@
  */
 import { IpcFailure } from "../errors.js";
 import type {
+  AssetPickRequest,
   CreateNoteInput,
   ImportAssetInput,
+  ImportAssetSource,
   OpenRecentRequest,
   OpenSelectionRequest,
+  ReadAssetInput,
   ReadNoteInput,
   SaveNoteInput,
 } from "./contracts.js";
@@ -152,15 +155,49 @@ export function parseSaveNoteInput(payload: unknown): SaveNoteInput {
   };
 }
 
+export function parseAssetPickInput(payload: unknown): AssetPickRequest {
+  if (payload === undefined || payload === null) return {};
+  if (!isRecord(payload)) invalid("asset.pick 入参必须为对象");
+  const accept = payload.accept;
+  if (accept === undefined) return {};
+  if (!Array.isArray(accept) || accept.some((item) => typeof item !== "string")) {
+    invalid("asset.pick.accept 必须为字符串数组");
+  }
+  return { accept };
+}
+
 export function parseImportAssetInput(payload: unknown): ImportAssetInput {
   if (!isRecord(payload)) invalid("asset.import 入参必须为对象");
-  return {
-    vaultId: requireString(payload, "vaultId", { nonEmpty: true }),
-    // R006-C2.1（FR-05）：来源授权为 asset.pick 签发的一次性 pickToken；
-    // Main 实现需复查令牌有效性与类型白名单（阶段 5）。
-    pickToken: requireString(payload, "pickToken", { nonEmpty: true }),
-    fileName: requireString(payload, "fileName", { nonEmpty: true }),
-  };
+  const vaultId = requireString(payload, "vaultId", { nonEmpty: true });
+  const fileName = requireString(payload, "fileName", { nonEmpty: true });
+  const mimeType = requireString(payload, "mimeType");
+  const source = parseImportAssetSource(payload.source);
+  return { vaultId, fileName, mimeType, source };
+}
+
+function parseImportAssetSource(value: unknown): ImportAssetSource {
+  if (!isRecord(value)) invalid("asset.import.source 必须为对象");
+  const kind = value.kind;
+  if (kind === "pick-token") {
+    const token = value.token;
+    if (typeof token !== "string" || token.trim() === "") {
+      invalid("asset.import.source.token 必须为非空字符串");
+    }
+    return { kind: "pick-token", token };
+  }
+  if (kind === "bytes") {
+    const data = value.data;
+    if (!(data instanceof Uint8Array)) {
+      invalid("asset.import.source.data 必须为 Uint8Array");
+    }
+    return { kind: "bytes", data };
+  }
+  invalid("asset.import.source.kind 必须为 pick-token 或 bytes");
+}
+
+export function parseReadAssetInput(payload: unknown): ReadAssetInput {
+  if (!isRecord(payload)) invalid("asset.read 入参必须为对象");
+  return { assetId: requireString(payload, "assetId", { nonEmpty: true }) };
 }
 
 /** asset.resolveUrl：payload 即 assetId 字符串。 */

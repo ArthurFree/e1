@@ -104,6 +104,7 @@ function makeApi(overrides: {
     asset: {
       pick: vi.fn(),
       import: vi.fn(),
+      read: vi.fn(),
       resolveUrl: vi.fn(),
     },
   } as unknown as E1DesktopAPI;

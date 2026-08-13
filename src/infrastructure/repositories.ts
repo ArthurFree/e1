@@ -11,6 +11,7 @@ import type {
   UpdateWorkspaceInput,
   WorkspaceRepository,
 } from "../domain/repositories";
+import { requireAttachmentBytes } from "../domain/repositories";
 import {
   childrenOf,
   collectSubtreeIds,
@@ -1002,7 +1003,7 @@ export const assetStore: AssetStore = {
       name: input.name,
       mimeType: input.mimeType,
       size: input.size,
-      data: input.data,
+      data: requireAttachmentBytes(input),
       createdAt: Date.now(),
     };
     await db.put(STORE_ATTACHMENTS, record);

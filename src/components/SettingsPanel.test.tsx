@@ -246,7 +246,7 @@ describe("SettingsPanel 知识库导入（R005 阶段 7B）", () => {
             name: "vault.e1.zip",
             mimeType: "application/zip",
             size: data.byteLength,
-            data,
+            source: { kind: "bytes", data },
           }
         : null,
     );
