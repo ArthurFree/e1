@@ -17,9 +17,11 @@ import type {
   OpenRecentRequest,
   OpenSelectionRequest,
   PatchNoteMetadataInput,
+  PatchVaultStateInput,
   ReadAssetInput,
   ReadNoteInput,
   SaveNoteInput,
+  VaultPageStatePatch,
 } from "./contracts.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -188,6 +190,93 @@ export function parsePatchNoteMetadataInput(
       requireString(payload, "relativePath", { nonEmpty: true }),
     ),
     expectedVersionToken: requireString(payload, "expectedVersionToken"),
+    patch: result,
+  };
+}
+
+/**
+ * R007 阶段 2：vaultState.get——payload 即 vaultId 字符串（同 vault.scan）。
+ */
+export function parseVaultStateGetInput(payload: unknown): string {
+  if (typeof payload !== "string" || payload.trim() === "") {
+    invalid("vaultState.get 入参必须为非空 vaultId 字符串");
+  }
+  return payload;
+}
+
+/** 毫秒时间戳或 null（清值语义）；拒绝 NaN/负数/非整数。 */
+function parseNullableTimestamp(value: unknown, field: string): number | null {
+  if (value === null) return null;
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    !Number.isInteger(value) ||
+    value < 0
+  ) {
+    invalid(`字段 ${field} 必须为非负整数毫秒时间戳或 null`);
+  }
+  return value;
+}
+
+function parsePageStatePatch(
+  value: unknown,
+  field: string,
+): VaultPageStatePatch {
+  if (!isRecord(value)) invalid(`字段 ${field} 必须为对象`);
+  const result: VaultPageStatePatch = {};
+  if (value.favoriteAt !== undefined) {
+    result.favoriteAt = parseNullableTimestamp(
+      value.favoriteAt,
+      `${field}.favoriteAt`,
+    );
+  }
+  if (value.lastOpenedAt !== undefined) {
+    result.lastOpenedAt = parseNullableTimestamp(
+      value.lastOpenedAt,
+      `${field}.lastOpenedAt`,
+    );
+  }
+  return result;
+}
+
+/** R007 阶段 2：vaultState.patch——局部合并，缺省键保持原值。 */
+export function parsePatchVaultStateInput(
+  payload: unknown,
+): PatchVaultStateInput {
+  if (!isRecord(payload)) invalid("vaultState.patch 入参必须为对象");
+  const patch = payload.patch;
+  if (!isRecord(patch)) invalid("vaultState.patch.patch 必须为对象");
+  const result: PatchVaultStateInput["patch"] = {};
+  if (patch.pages !== undefined) {
+    if (!isRecord(patch.pages)) {
+      invalid("vaultState.patch.patch.pages 必须为对象");
+    }
+    const pages: Record<string, VaultPageStatePatch> = {};
+    for (const [key, value] of Object.entries(patch.pages)) {
+      if (key.trim() === "") {
+        invalid("vaultState.patch.patch.pages 的键不能为空");
+      }
+      pages[key] = parsePageStatePatch(value, `pages["${key}"]`);
+    }
+    result.pages = pages;
+  }
+  if (patch.workspace !== undefined) {
+    if (!isRecord(patch.workspace)) {
+      invalid("vaultState.patch.patch.workspace 必须为对象");
+    }
+    result.workspace = {};
+    if (patch.workspace.favoriteAt !== undefined) {
+      result.workspace.favoriteAt = parseNullableTimestamp(
+        patch.workspace.favoriteAt,
+        "workspace.favoriteAt",
+      );
+    }
+  }
+  if (result.pages === undefined && result.workspace === undefined) {
+    invalid("vaultState.patch.patch 至少包含 pages 或 workspace 之一");
+  }
+  return {
+    vaultId: requireString(payload, "vaultId", { nonEmpty: true }),
     patch: result,
   };
 }

@@ -1,7 +1,7 @@
 # R007：Desktop Local Vault 产品化基础闭环
 
 - **版本**：0.1
-- **状态**：实现中（阶段 0–1 已完成）
+- **状态**：实现中（阶段 0–2 已完成）
 - **更新时间**：2026-08-14
 - **基线 Commit**：`623f5292c290d0843d8e7eb72a7ce11bbaf22d06`
 - **前置阶段**：R006（Electron Desktop 本地 Vault 技术验证版）
@@ -540,6 +540,20 @@ color = deterministicColor(tagName)
 ---
 
 ## 阶段 2：Desktop Local Metadata Store
+
+**状态：已完成（2026-08-14）**
+
+实际实现与偏差记录：
+
+- IPC：采用推荐的 `vaultState.get(vaultId)` / `vaultState.patch({vaultId, patch})` 形状（局部合并：缺省键保留、显式 null 清空、空补丁不建条目），返回合并后完整状态供 Renderer 镜像对账；`shared/ipc/schemas.ts` 逐字段校验（非负整数毫秒时间戳或 null）。
+- Main：`electron/main/state/DesktopVaultStateStore.ts`——落 `userData/vault-state/<vaultId>.json`（vaultId 文件名片段白名单校验防路径逃逸），容错与 VaultRegistry 同口径（缺失空表、损坏备份 `.corrupt-<ts>` 后自愈、畸形页面条目逐条丢弃、tmp+rename 原子写）。handler 只校验注册表登记、**不做目录可达性复查**（目录暂不可访问不应拖垮列表）；transient 仅预览会话短路（get 空表、patch 不落盘）。
+- Renderer：`DesktopVaultStateClient`（会话内缓存 + transient 内存镜像；get 失败降级空表并告警——读路径不被状态故障拖垮；patch 失败原样抛出，与 Web 仓储写失败语义一致）。`DesktopWorkspaceRepository.setFavorite` / `DesktopPageRepository.setFavorite/setLastOpened` 接通；`list`/`listByWorkspace`/`listAll`/`trackOpened` 合并 state 映射 favoriteAt/lastOpenedAt。
+- Adoption 键迁移以「读兜底 + 写清空」实现（`pageStateOfEntry` stable 键优先、path 键兜底；写入已知 stableNoteId 时同请求清空旧 path 键），而非显式迁移流程——效果等价且无额外时序耦合。
+- `DesktopPageRepository.setLastOpened` 写失败只告警不抛出（fire-and-forget 非关键路径，与阶段 0 的 no-op 约定兼容）。
+- 测试：store 9 例 + handler 4 例 + schema 3 例 + Renderer 5 例（含 transient 不发起 IPC、path 键、迁移清空）+ preload 透传；桌面 golden E2E G06（收藏重启保持 + Markdown 逐字节不变）/G07（最近重启保持）2 例。
+- 偏差 1：修复阶段 1 引入的 CI flake——`DocumentEditor.test.tsx` 版本推进用例在慢机上「发布落在于飞保存完成之前、被保存结果覆盖」，改为经 `onSaveStateChange` 等待「saving 之后的 saved」再发布（本地连跑 6/6 通过）。
+- 偏差 2：`desktop.saving`/`desktop.assets` 4 例（E2E-03/04、外部修改冲突、新建文档）在 macOS 本地确定性失败（strict mode 双匹配等时序问题），已用 HEAD 源码 + HEAD 产物复现确认**非本阶段引入**（CI xvfb 的 e2e-desktop 任务为绿）；属阶段 0 遗留的本地环境差异，本阶段不处理。
+- 偏差 3：`desktop.smoke` 的桥形状断言补齐 vaultState 组（顺带补齐阶段 1 漏更的 patchMetadata/asset.read——该用例不在 golden 集合，阶段 1 本地未跑到）。
 
 ### 目标
 

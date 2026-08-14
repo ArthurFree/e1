@@ -40,13 +40,15 @@ test.describe("桌面冒烟", () => {
     const window = await app.firstWindow();
 
     // R006 阶段 1 预加载契约：contextBridge 暴露的完整 E1DesktopAPI
-    // （platform + vault/note/asset 三组方法；Renderer 拿不到 ipcRenderer）。
+    // （platform + vault/vaultState/note/asset 四组方法；Renderer 拿不到
+    // ipcRenderer）。
     const bridge = await window.evaluate(() => {
       const e1 = (
         window as unknown as {
           e1?: {
             platform?: string;
             vault?: Record<string, unknown>;
+            vaultState?: Record<string, unknown>;
             note?: Record<string, unknown>;
             asset?: Record<string, unknown>;
           };
@@ -55,6 +57,7 @@ test.describe("桌面冒烟", () => {
       return {
         platform: e1?.platform,
         vault: Object.keys(e1?.vault ?? {}).sort(),
+        vaultState: Object.keys(e1?.vaultState ?? {}).sort(),
         note: Object.keys(e1?.note ?? {}).sort(),
         asset: Object.keys(e1?.asset ?? {}).sort(),
       };
@@ -69,8 +72,11 @@ test.describe("桌面冒烟", () => {
         "scan",
         "selectDirectory",
       ],
-      note: ["create", "read", "save"],
-      asset: ["import", "pick", "resolveUrl"],
+      // R007 阶段 2：设备级交互状态组。
+      vaultState: ["get", "patch"],
+      // R007 阶段 1：patchMetadata（Frontmatter title/tags 局部写入）。
+      note: ["create", "patchMetadata", "read", "save"],
+      asset: ["import", "pick", "read", "resolveUrl"],
     });
 
     // R006 阶段 2 起 desktop.html 经 IPC-backed 容器渲染；隔离 userData 下

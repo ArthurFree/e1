@@ -25,6 +25,7 @@ import {
   type OpenSelectionRequest,
   type PatchNoteMetadataInput,
   type PatchNoteMetadataResult,
+  type PatchVaultStateInput,
   type PickedFile,
   type ReadAssetInput,
   type ReadNoteInput,
@@ -34,6 +35,7 @@ import {
   type SaveNoteResult,
   type SelectedVault,
   type VaultScanResult,
+  type VaultState,
 } from "../../shared/ipc/contracts.js";
 import { DesktopIpcError, isIpcErrorPayload } from "../../shared/errors.js";
 
@@ -68,6 +70,11 @@ const api: E1DesktopAPI = {
       invoke<OpenedVault>(IPC_CHANNELS.vaultOpenRecent, input),
     listRecent: () => invoke<RecentVault[]>(IPC_CHANNELS.vaultListRecent),
     scan: (vaultId) => invoke<VaultScanResult>(IPC_CHANNELS.vaultScan, vaultId),
+  },
+  vaultState: {
+    get: (vaultId) => invoke<VaultState>(IPC_CHANNELS.vaultStateGet, vaultId),
+    patch: (input: PatchVaultStateInput) =>
+      invoke<VaultState>(IPC_CHANNELS.vaultStatePatch, input),
   },
   note: {
     read: (input: ReadNoteInput) =>

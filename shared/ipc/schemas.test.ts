@@ -12,6 +12,8 @@ import {
   parseOpenRecentRequest,
   parseOpenSelectionRequest,
   parsePatchNoteMetadataInput,
+  parsePatchVaultStateInput,
+  parseVaultStateGetInput,
   parseReadNoteInput,
   parseResolveAssetUrlInput,
   parseSaveNoteInput,
@@ -322,6 +324,63 @@ describe("parsePatchNoteMetadataInput", () => {
           relativePath: "a.md",
           patch: { title: "t" },
         }),
+      "INVALID_INPUT",
+    );
+  });
+});
+
+describe("parseVaultStateGetInput / parsePatchVaultStateInput（R007 阶段 2）", () => {
+  it("get：非空 vaultId 字符串通过；其余 INVALID_INPUT", () => {
+    expect(parseVaultStateGetInput("v1")).toBe("v1");
+    expectFailure(() => parseVaultStateGetInput(""), "INVALID_INPUT");
+    expectFailure(() => parseVaultStateGetInput(42), "INVALID_INPUT");
+    expectFailure(() => parseVaultStateGetInput(undefined), "INVALID_INPUT");
+  });
+
+  it("patch：pages/workspace 局部合并形状通过（null 清值）", () => {
+    const pagesOnly = {
+      vaultId: "v1",
+      patch: { pages: { "01JABC": { favoriteAt: 123, lastOpenedAt: null } } },
+    };
+    expect(parsePatchVaultStateInput(pagesOnly)).toEqual(pagesOnly);
+    const wsOnly = {
+      vaultId: "v1",
+      patch: { workspace: { favoriteAt: null } },
+    };
+    expect(parsePatchVaultStateInput(wsOnly)).toEqual(wsOnly);
+  });
+
+  it("patch：空 patch / 非法时间戳 / 非法形状 INVALID_INPUT", () => {
+    expectFailure(
+      () => parsePatchVaultStateInput({ vaultId: "v1", patch: {} }),
+      "INVALID_INPUT",
+    );
+    expectFailure(
+      () =>
+        parsePatchVaultStateInput({
+          vaultId: "v1",
+          patch: { pages: { p: { favoriteAt: -1 } } },
+        }),
+      "INVALID_INPUT",
+    );
+    expectFailure(
+      () =>
+        parsePatchVaultStateInput({
+          vaultId: "v1",
+          patch: { pages: { p: { lastOpenedAt: 1.5 } } },
+        }),
+      "INVALID_INPUT",
+    );
+    expectFailure(
+      () =>
+        parsePatchVaultStateInput({
+          vaultId: "v1",
+          patch: { workspace: { favoriteAt: "now" } },
+        }),
+      "INVALID_INPUT",
+    );
+    expectFailure(
+      () => parsePatchVaultStateInput({ patch: { workspace: {} } }),
       "INVALID_INPUT",
     );
   });

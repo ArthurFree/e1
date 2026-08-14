@@ -50,6 +50,7 @@ import { DesktopDocumentSourceCache } from "./DesktopDocumentSourceCache";
 import { DesktopIdentityAliasRegistry } from "./DesktopIdentityAliasRegistry";
 import { DesktopMarkdownWriteService } from "./DesktopMarkdownWriteService";
 import { DesktopNoteMetadataService } from "./DesktopNoteMetadataService";
+import { DesktopVaultStateClient } from "./DesktopVaultStateClient";
 import { createInMemoryDocumentVersionChannel } from "../../application/services/DocumentVersionChannel";
 import { DesktopAssetRegistry } from "./DesktopAssetRegistry";
 import { DesktopAssetStore } from "./DesktopAssetStore";
@@ -98,8 +99,16 @@ export function createDesktopRuntime(api: E1DesktopAPI): DesktopRuntime {
     sources,
     documentVersionChannel,
   );
-  const workspaceRepository = new DesktopWorkspaceRepository(api);
-  const pageRepository = new DesktopPageRepository(api, scans, noteMetadata);
+  // R007 阶段 2：设备级交互状态（收藏/最近打开）客户端——会话内缓存 +
+  // transient 短路 + Adoption 键迁移；Workspace/Page 仓储共用同一实例。
+  const vaultState = new DesktopVaultStateClient(api);
+  const workspaceRepository = new DesktopWorkspaceRepository(api, vaultState);
+  const pageRepository = new DesktopPageRepository(
+    api,
+    scans,
+    noteMetadata,
+    vaultState,
+  );
   const contentRepository = new DesktopContentRepository(
     api,
     scans,

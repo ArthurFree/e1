@@ -58,6 +58,7 @@ describe("preload 暴露形状", () => {
       "read",
       "resolveUrl",
     ]);
+    expect(Object.keys(api.vaultState).sort()).toEqual(["get", "patch"]);
   });
 });
 
@@ -73,7 +74,7 @@ describe("channel 与负载透传", () => {
     expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.assetPick, undefined);
   });
 
-  it("字符串负载原样透传（scan/resolveUrl）", async () => {
+  it("字符串负载原样透传（scan/resolveUrl/vaultState.get）", async () => {
     invoke.mockResolvedValue({
       ok: true,
       value: { vault: { vaultId: "v", name: "n" }, entries: [] },
@@ -86,6 +87,12 @@ describe("channel 与负载透传", () => {
       IPC_CHANNELS.assetResolveUrl,
       "asset-1",
     );
+    invoke.mockResolvedValue({
+      ok: true,
+      value: { version: 1, pages: {}, workspace: { favoriteAt: null } },
+    });
+    await api.vaultState.get("v1");
+    expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.vaultStateGet, "v1");
   });
 
   it("vault.openSelection/openRecent 对象负载透传；vault.listRecent 只传 channel", async () => {
@@ -151,6 +158,16 @@ describe("channel 与负载透传", () => {
     };
     await api.asset.import(importInput);
     expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.assetImport, importInput);
+
+    const statePatch = {
+      vaultId: "v1",
+      patch: { pages: { "01JABC": { favoriteAt: 1 } } },
+    };
+    await api.vaultState.patch(statePatch);
+    expect(invoke).toHaveBeenCalledWith(
+      IPC_CHANNELS.vaultStatePatch,
+      statePatch,
+    );
   });
 });
 

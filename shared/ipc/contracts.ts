@@ -32,6 +32,8 @@ export const IPC_CHANNELS = {
   vaultOpenRecent: "vault:openRecent",
   vaultListRecent: "vault:listRecent",
   vaultScan: "vault:scan",
+  vaultStateGet: "vaultState:get",
+  vaultStatePatch: "vaultState:patch",
   noteRead: "note:read",
   noteCreate: "note:create",
   noteSave: "note:save",
@@ -165,6 +167,56 @@ export interface VaultScanResult {
    * localeCompare("zh-CN") 排序——r006 §8 文件名排序，比较器选择在此锁定）。
    */
   entries: VaultScanEntry[];
+}
+
+/* -------------------------------- vaultState -------------------------------- */
+
+/**
+ * R007 阶段 2（DSK-04）：设备级交互状态——收藏/最近打开不进 Markdown
+ * Frontmatter（不属于用户内容、不参与 portable truth），持久化在 Main 的
+ * userData/vault-state/<vaultId>.json（Vault 复制到他机不携带）。
+ *
+ * 页面状态键：stableNoteId（Frontmatter id）；无 id 文档为
+ * "path:<relativePath>"（与会话页面 id 派生规则一致）。Stable ID
+ * Adoption 后新写走 stableNoteId 键，Renderer 读取时以 path 键兜底，
+ * 并在下一次写入时清空旧 path 键（迁移，见 DesktopVaultStateClient）。
+ */
+export interface VaultPageState {
+  favoriteAt: number | null;
+  lastOpenedAt: number | null;
+}
+
+export interface VaultState {
+  version: 1;
+  pages: Record<string, VaultPageState>;
+  workspace: { favoriteAt: number | null };
+}
+
+/**
+ * 局部合并语义：缺省键保持原值；显式 null 清空该字段。
+ * pages 的键缺省时不新建条目（字段全缺省的条目被忽略）。
+ */
+export interface VaultPageStatePatch {
+  favoriteAt?: number | null;
+  lastOpenedAt?: number | null;
+}
+
+export interface VaultStatePatch {
+  pages?: Record<string, VaultPageStatePatch>;
+  workspace?: { favoriteAt?: number | null };
+}
+
+/** vaultState.get 请求：payload 即 vaultId 字符串。 */
+export type VaultStateGetRequest = string;
+
+/** 空状态：文件缺失/损坏自愈/transient 会话的统一回退。 */
+export function createEmptyVaultState(): VaultState {
+  return { version: 1, pages: {}, workspace: { favoriteAt: null } };
+}
+
+export interface PatchVaultStateInput {
+  vaultId: string;
+  patch: VaultStatePatch;
 }
 
 /* ---------------------------------- note ---------------------------------- */
@@ -360,6 +412,15 @@ export interface E1DesktopAPI {
      * transient 仅预览会话（R006-C2.1）。
      */
     scan(vaultId: string): Promise<VaultScanResult>;
+  };
+  /**
+   * R007 阶段 2：设备级交互状态（收藏/最近打开），存 userData/vault-state/，
+   * 不写 Markdown。transient 仅预览会话不落盘（get 返回空表、patch no-op）。
+   */
+  vaultState: {
+    get(vaultId: string): Promise<VaultState>;
+    /** 局部合并；返回合并后的完整状态。 */
+    patch(input: PatchVaultStateInput): Promise<VaultState>;
   };
   note: {
     read(input: ReadNoteInput): Promise<ReadNoteResult>;

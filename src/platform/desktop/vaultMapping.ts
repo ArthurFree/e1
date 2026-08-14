@@ -21,6 +21,7 @@ import type {
   OpenedVault,
   RecentVault,
   VaultScanEntry,
+  VaultState,
 } from "../../../shared/ipc/contracts";
 import type { DesktopIdentityAliasRegistry } from "./DesktopIdentityAliasRegistry";
 
@@ -94,8 +95,12 @@ function parseIso(value: string, fallback: number): number {
  * 目录不可访问（accessible=false）的条目保留在列表中、名称加后缀提示；
  * 点击后会话加载会因 scan 失败进入可重试的错误态（重新定位属阶段 6，
  * 本批不做，见 r006 §5 US-06 / §阶段 6）。
+ * R007 阶段 2：favoriteAt 来自 vault-state（设备级，默认 null）。
  */
-export function mapRecentVaultToWorkspace(vault: RecentVault): Workspace {
+export function mapRecentVaultToWorkspace(
+  vault: RecentVault,
+  favoriteAt: number | null = null,
+): Workspace {
   const lastOpenedAt = parseIso(vault.lastOpenedAt, 0);
   return {
     id: vault.vaultId,
@@ -105,8 +110,7 @@ export function mapRecentVaultToWorkspace(vault: RecentVault): Workspace {
     icon: null,
     description: "",
     homePageId: null,
-    // 本地 Vault 暂无收藏语义（写路径禁用），恒为 null。
-    favoriteAt: null,
+    favoriteAt,
     lastOpenedAt: lastOpenedAt || null,
     createdAt: lastOpenedAt,
     updatedAt: lastOpenedAt,
@@ -117,6 +121,7 @@ export function mapRecentVaultToWorkspace(vault: RecentVault): Workspace {
 export function mapOpenedVaultToWorkspace(
   vault: OpenedVault,
   now: number,
+  favoriteAt: number | null = null,
 ): Workspace {
   const baseName = vault.name || vault.displayName;
   return {
@@ -127,7 +132,7 @@ export function mapOpenedVaultToWorkspace(
     icon: null,
     description: "",
     homePageId: null,
-    favoriteAt: null,
+    favoriteAt,
     lastOpenedAt: now,
     createdAt: parseIso(vault.createdAt, now),
     updatedAt: now,
@@ -135,21 +140,46 @@ export function mapOpenedVaultToWorkspace(
 }
 
 /**
+ * R007 阶段 2：从 vault-state 取单页交互状态。stableNoteId 键优先；
+ * 无条目时以 Adoption 前的 path:<relativePath> 键兜底（写入侧
+ * DesktopVaultStateClient.patchPage 会顺带清空旧键完成迁移）。
+ */
+export function pageStateOfEntry(
+  entry: VaultScanEntry,
+  state: VaultState | null | undefined,
+): { favoriteAt: number | null; lastOpenedAt: number | null } {
+  if (!state || entry.kind !== "document") {
+    return { favoriteAt: null, lastOpenedAt: null };
+  }
+  const pathKey = `${PATH_ID_PREFIX}${entry.relativePath}`;
+  const found = entry.noteId
+    ? (state.pages[entry.noteId] ?? state.pages[pathKey])
+    : state.pages[pathKey];
+  return {
+    favoriteAt: found?.favoriteAt ?? null,
+    lastOpenedAt: found?.lastOpenedAt ?? null,
+  };
+}
+
+/**
  * 扫描条目 → Page[]（扁平，顺序保持扫描的 DFS 序）。
  * 调用方保证 entries 来自同一次扫描（parentPath 指向的 group 条目必然
  * 先于其子条目出现，Main 侧 DFS 序保证）。
+ * R007 阶段 2：可选 state（vault-state）合并 favoriteAt/lastOpenedAt。
  */
 export function mapScanEntriesToPages(
   vaultId: string,
   entries: VaultScanEntry[],
   scannedAt: number,
   aliases?: DesktopIdentityAliasRegistry | null,
+  state?: VaultState | null,
 ): Page[] {
   // 同级序号计数器：key 为 parentPath（根级为 null）。
   const siblingCount = new Map<string | null, number>();
   return entries.map((entry) => {
     const position = siblingCount.get(entry.parentPath) ?? 0;
     siblingCount.set(entry.parentPath, position + 1);
+    const pageState = pageStateOfEntry(entry, state);
     return {
       id: resolveSessionPageId(vaultId, entry, aliases),
       workspaceId: vaultId,
@@ -161,8 +191,8 @@ export function mapScanEntriesToPages(
       title: entry.title,
       icon: null,
       position,
-      favoriteAt: null,
-      lastOpenedAt: null,
+      favoriteAt: pageState.favoriteAt,
+      lastOpenedAt: pageState.lastOpenedAt,
       deletedAt: null,
       createdAt: scannedAt,
       updatedAt: scannedAt,

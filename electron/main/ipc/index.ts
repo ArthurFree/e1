@@ -13,7 +13,9 @@ import { join } from "node:path";
 import { registerVaultHandlers } from "./vault.js";
 import { registerNoteHandlers } from "./note.js";
 import { registerAssetHandlers } from "./asset.js";
+import { registerVaultStateHandlers } from "./vaultState.js";
 import { VaultRegistry } from "../vaultRegistry.js";
+import { DesktopVaultStateStore } from "../state/DesktopVaultStateStore.js";
 import { SelectionTokenStore } from "../SelectionTokenStore.js";
 import { TransientVaultStore } from "../transientVaults.js";
 import {
@@ -29,6 +31,8 @@ export interface RegisterIpcHandlersDeps {
   ipc?: IpcMainLike;
   openDialog?: OpenDialogLike;
   registry?: VaultRegistry;
+  /** R007 阶段 2：设备级交互状态存储（缺省指向 userData/vault-state/）。 */
+  vaultStateStore?: DesktopVaultStateStore;
   /** R006-C2.1：可注入以控制时钟/隔离状态（测试用）。 */
   selectionTokens?: SelectionTokenStore;
   transients?: TransientVaultStore;
@@ -42,6 +46,9 @@ export function registerIpcHandlers(
   const registry =
     deps.registry ??
     new VaultRegistry(join(app.getPath("userData"), "recent-vaults.json"));
+  const vaultStateStore =
+    deps.vaultStateStore ??
+    new DesktopVaultStateStore(join(app.getPath("userData"), "vault-state"));
   const transients = deps.transients ?? new TransientVaultStore();
   const openDialog = deps.openDialog ?? dialog;
   registerVaultHandlers(bus, {
@@ -51,6 +58,11 @@ export function registerIpcHandlers(
     transients,
   });
   registerNoteHandlers(bus, { registry, transients });
+  registerVaultStateHandlers(bus, {
+    store: vaultStateStore,
+    registry,
+    transients,
+  });
   registerAssetHandlers(bus, {
     openDialog: openDialog as FileDialogLike,
     registry,

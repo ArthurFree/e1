@@ -13,13 +13,18 @@ import {
 import { createBrowserAppServices } from "../../platform/web/createBrowserServices";
 import { insertAttachmentFile } from "../../editor/attachment";
 import { DocumentEditor } from "./DocumentEditor";
+import type { SaveState } from "./DocumentEditor";
 
 let host: { editor: Editor | null; pageId: string | null } = {
   editor: null,
   pageId: null,
 };
 
-function Harness() {
+function Harness({
+  onSaveStateChange,
+}: {
+  onSaveStateChange?: (state: SaveState) => void;
+}) {
   const { ready, workspace, pages } = useApp();
   host.pageId = pages.find((p) => p.kind === "document")?.id ?? null;
   if (!ready || !host.pageId || !workspace) return null;
@@ -28,6 +33,7 @@ function Harness() {
       pageId={host.pageId}
       initialContent={{ type: "doc", content: [{ type: "paragraph" }] }}
       initialVersion="idb:1"
+      onSaveStateChange={onSaveStateChange}
       onEditorReady={(editor) => {
         host.editor = editor;
       }}
@@ -207,9 +213,17 @@ describe("DocumentEditor 版本推进通道", () => {
 
   it("通道发布后，下一次保存以发布版本为 expectedVersion", async () => {
     const saveSpy = vi.spyOn(contentRepository, "save");
+    // 经 onSaveStateChange 观察协调器状态：只有首次保存完整收尾
+    // （status=saved，版本已推进）后发布，才能排除「发布落在于飞保存
+    // 完成之前、被保存结果覆盖」的竞态（CI 慢机上曾因此 flake）。
+    const states: string[] = [];
     render(
       <TestApp>
-        <Harness />
+        <Harness
+          onSaveStateChange={(state) => {
+            states.push(state.status);
+          }}
+        />
       </TestApp>,
     );
     await waitFor(() => expect(host.editor).not.toBeNull(), { timeout: 3000 });
@@ -219,6 +233,17 @@ describe("DocumentEditor 版本推进通道", () => {
     await waitFor(() => expect(saveSpy).toHaveBeenCalled(), { timeout: 4000 });
     const firstExpected = saveSpy.mock.calls[0]![3];
     expect(firstExpected).toBe("idb:1");
+    // 等首次保存完整收尾：saving 之后出现 saved（发布早于收尾会被
+    // 在飞保存的结果覆盖——CI 慢机上曾因此 flake；挂载时的初始 saved
+    // 在 saving 之前，不会误判）。
+    await waitFor(
+      () => {
+        const savingAt = states.indexOf("saving");
+        expect(savingAt).toBeGreaterThanOrEqual(0);
+        expect(states.indexOf("saved", savingAt)).toBeGreaterThan(savingAt);
+      },
+      { timeout: 4000 },
+    );
 
     // 元数据写入落盘（标题/标签）：发布新版本令牌。
     const services = createBrowserAppServices();

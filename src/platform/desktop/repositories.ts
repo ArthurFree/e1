@@ -71,6 +71,7 @@ import {
 } from "./vaultMapping";
 import { DesktopDocumentSourceCache } from "./DesktopDocumentSourceCache";
 import type { DesktopNoteMetadataService } from "./DesktopNoteMetadataService";
+import type { DesktopVaultStateClient } from "./DesktopVaultStateClient";
 import {
   DesktopMarkdownWriteService,
   mapNoteWriteError,
@@ -105,12 +106,21 @@ export class DesktopWorkspaceRepository implements WorkspaceRepository {
    */
   private readonly transientWorkspaces = new Map<string, Workspace>();
 
-  constructor(private readonly api: E1DesktopAPI) {}
+  constructor(
+    private readonly api: E1DesktopAPI,
+    private readonly vaultState: DesktopVaultStateClient,
+  ) {}
 
   async list(): Promise<Workspace[]> {
     const recent = await this.api.vault.listRecent();
+    // R007 阶段 2：收藏状态逐库取（client 会话内缓存，仅首次真实 IPC）。
+    const states = await Promise.all(
+      recent.map((vault) => this.vaultState.get(vault.vaultId)),
+    );
     return [
-      ...recent.map(mapRecentVaultToWorkspace),
+      ...recent.map((vault, index) =>
+        mapRecentVaultToWorkspace(vault, states[index].workspace.favoriteAt),
+      ),
       ...this.transientWorkspaces.values(),
     ];
   }
@@ -157,8 +167,13 @@ export class DesktopWorkspaceRepository implements WorkspaceRepository {
   }
 
   /** 打开结果 → Workspace；transient 会话记入会话内列表（list 合并用）。 */
-  private trackOpened(opened: OpenedVault): Workspace {
-    const workspace = mapOpenedVaultToWorkspace(opened, Date.now());
+  private async trackOpened(opened: OpenedVault): Promise<Workspace> {
+    const state = await this.vaultState.get(opened.vaultId);
+    const workspace = mapOpenedVaultToWorkspace(
+      opened,
+      Date.now(),
+      state.workspace.favoriteAt,
+    );
     if (opened.transient) this.transientWorkspaces.set(workspace.id, workspace);
     return workspace;
   }
@@ -171,8 +186,12 @@ export class DesktopWorkspaceRepository implements WorkspaceRepository {
     throw notImplemented("修改本地知识库信息", "后续阶段");
   }
 
-  async setFavorite(): Promise<void> {
-    throw notImplemented("收藏本地知识库", "后续阶段");
+  /**
+   * 收藏/取消收藏（R007 阶段 2）：写 vault-state（设备级，不进 Markdown）。
+   * transient 仅预览会话不落盘（client 内存镜像，重启消失）。
+   */
+  async setFavorite(id: string, favoriteAt: number | null): Promise<void> {
+    await this.vaultState.setWorkspaceFavorite(id, favoriteAt);
   }
 
   /**
@@ -191,21 +210,24 @@ export class DesktopWorkspaceRepository implements WorkspaceRepository {
   }
 }
 
-/** 页面仓储：listByWorkspace/listAll 真实（扫描映射），其余写操作抛错。 */
+/** 页面仓储：listByWorkspace/listAll 真实（扫描映射 + vault-state 合并）。 */
 export class DesktopPageRepository implements PageRepository {
   constructor(
     private readonly api: E1DesktopAPI,
     private readonly scans: DesktopVaultScanCache,
     private readonly metadata: DesktopNoteMetadataService,
+    private readonly vaultState: DesktopVaultStateClient,
   ) {}
 
   async listByWorkspace(vaultId: string): Promise<Page[]> {
     const snapshot = await this.scans.scan(vaultId);
+    const state = await this.vaultState.get(vaultId);
     return mapScanEntriesToPages(
       vaultId,
       snapshot.result.entries,
       snapshot.scannedAt,
       this.scans.aliases,
+      state,
     );
   }
 
@@ -299,19 +321,58 @@ export class DesktopPageRepository implements PageRepository {
     await this.metadata.patch(pageId, { title });
   }
 
-  async setFavorite(): Promise<void> {
-    throw notImplemented("收藏页面", "后续阶段");
+  /**
+   * 收藏/取消收藏（R007 阶段 2）：写 vault-state 的页面条目——键为
+   * stableNoteId（无 id 文档为 path:<relativePath>）；已知 stableNoteId
+   * 时顺带清空 Adoption 前的 path 键（键迁移）。设备级状态，不进
+   * Markdown；transient 仅预览会话不落盘（client 内存镜像）。
+   */
+  async setFavorite(pageId: string, favoriteAt: number | null): Promise<void> {
+    const target = await this.resolveStateTarget(pageId);
+    if (!target) return;
+    await this.vaultState.patchPage(
+      target.vaultId,
+      target.key,
+      { favoriteAt },
+      target.stalePathKey,
+    );
   }
 
   /**
-   * 记录页面浏览时间：no-op——桌面端「最近」排序由 vault.openRecent 的
-   * 注册表 touch 承担（工作区粒度），页面粒度浏览记录不落盘（C3 全程
-   * 只读，不写 vault.json）；会话内排序由 WorkspaceProvider 的本地镜像
-   * 更新。此前抛 NOT_IMPLEMENTED 会让 MainArea 的 markOpened 产生
-   * unhandled rejection（fire-and-forget 非关键路径，不应失败）。
+   * 记录页面浏览时间（R007 阶段 2）：写 vault-state 的 lastOpenedAt——
+   * 「最近」列表重启保持。fire-and-forget 非关键路径：写失败只告警
+   * 不抛出（与 Web 仓储不同——本地状态丢失可自愈，不应打断打开流程）。
    */
-  async setLastOpened(): Promise<void> {
-    // no-op（见上注释）。
+  async setLastOpened(pageId: string, at: number): Promise<void> {
+    try {
+      const target = await this.resolveStateTarget(pageId);
+      if (!target) return;
+      await this.vaultState.patchPage(
+        target.vaultId,
+        target.key,
+        { lastOpenedAt: at },
+        target.stalePathKey,
+      );
+    } catch (err) {
+      console.warn("记录页面浏览时间失败", err);
+    }
+  }
+
+  /**
+   * pageId → vault-state 写入目标：vaultId + 状态键（stableNoteId 优先，
+   * 否则 path:<relativePath>）+ 待清空的 Adoption 前 path 键。
+   * 页面不在扫描快照（已删除/未收录）或 transient 会话返回 null（no-op）。
+   */
+  private async resolveStateTarget(
+    pageId: string,
+  ): Promise<{ vaultId: string; key: string; stalePathKey?: string } | null> {
+    const found = await this.scans.findDocument(pageId);
+    if (!found || isTransientVaultId(found.vaultId)) return null;
+    const pathKey = `path:${found.entry.relativePath}`;
+    if (found.entry.noteId) {
+      return { vaultId: found.vaultId, key: found.entry.noteId, stalePathKey: pathKey };
+    }
+    return { vaultId: found.vaultId, key: pathKey };
   }
 
   async move(): Promise<void> {

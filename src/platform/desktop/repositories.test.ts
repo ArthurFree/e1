@@ -27,6 +27,10 @@ import type {
 } from "./desktopApi";
 import { DesktopIpcError } from "./desktopApi";
 import {
+  createEmptyVaultState,
+  type PatchVaultStateInput,
+} from "../../../shared/ipc/contracts";
+import {
   decidePendingVaultSelection,
   discardPendingVaultSelection,
   peekPendingVaultSelection,
@@ -42,6 +46,7 @@ import {
 import { DesktopDocumentSourceCache } from "./DesktopDocumentSourceCache";
 import { DesktopIdentityAliasRegistry } from "./DesktopIdentityAliasRegistry";
 import { DesktopNoteMetadataService } from "./DesktopNoteMetadataService";
+import { DesktopVaultStateClient } from "./DesktopVaultStateClient";
 import { createInMemoryDocumentVersionChannel } from "../../application/services/DocumentVersionChannel";
 import { DesktopPreferencesRepository } from "./preferencesRepository";
 import { DesktopRevisionRepository } from "./stubRepositories";
@@ -80,6 +85,8 @@ function mockApi(overrides: {
   scan?: E1DesktopAPI["vault"]["scan"];
   noteRead?: E1DesktopAPI["note"]["read"];
   notePatchMetadata?: E1DesktopAPI["note"]["patchMetadata"];
+  vaultStateGet?: E1DesktopAPI["vaultState"]["get"];
+  vaultStatePatch?: E1DesktopAPI["vaultState"]["patch"];
 }): E1DesktopAPI {
   return {
     platform: "desktop",
@@ -99,6 +106,17 @@ function mockApi(overrides: {
       listRecent: overrides.listRecent ?? vi.fn(async () => []),
       scan: overrides.scan ?? vi.fn(async () => SCAN),
     },
+    vaultState: {
+      get:
+        overrides.vaultStateGet ??
+        vi.fn(async () => createEmptyVaultState()),
+      patch:
+        overrides.vaultStatePatch ??
+        vi.fn(async (input: PatchVaultStateInput) => {
+          void input;
+          return createEmptyVaultState();
+        }),
+    },
     note: {
       read: overrides.noteRead ?? vi.fn(),
       create: vi.fn(),
@@ -112,6 +130,11 @@ function mockApi(overrides: {
       resolveUrl: vi.fn(),
     },
   } as unknown as E1DesktopAPI;
+}
+
+/** R007 阶段 2：交互状态客户端的测试装配（与生产同一实例语义）。 */
+function stateClient(api: E1DesktopAPI): DesktopVaultStateClient {
+  return new DesktopVaultStateClient(api);
 }
 
 /** R007 阶段 1：元数据写入服务 + 版本通道的测试装配。 */
@@ -150,7 +173,7 @@ describe("DesktopWorkspaceRepository", () => {
         },
       ]),
     });
-    const repo: WorkspaceRepository = new DesktopWorkspaceRepository(api);
+    const repo: WorkspaceRepository = new DesktopWorkspaceRepository(api, stateClient(api));
     const list = await repo.list();
     expect(list.map((w) => w.id)).toEqual(["v1", "v2"]);
     expect(list[0].name).toBe("我的笔记");
@@ -158,8 +181,10 @@ describe("DesktopWorkspaceRepository", () => {
   });
 
   it("create：取消选择目录抛 DomainError(CANCELLED)", async () => {
+    const api = mockApi({ selectDirectory: vi.fn(async () => null) });
     const repo: WorkspaceRepository = new DesktopWorkspaceRepository(
-      mockApi({ selectDirectory: vi.fn(async () => null) }),
+      api,
+      stateClient(api),
     );
     await expect(repo.create("任意名")).rejects.toMatchObject({
       name: "DomainError",
@@ -185,7 +210,7 @@ describe("DesktopWorkspaceRepository", () => {
       })),
       openRecent,
     });
-    const repo: WorkspaceRepository = new DesktopWorkspaceRepository(api);
+    const repo: WorkspaceRepository = new DesktopWorkspaceRepository(api, stateClient(api));
     const ws = await repo.create("被忽略的名字");
     expect(openRecent).toHaveBeenCalledWith({ vaultId: "v9" });
     expect(ws).toMatchObject({ id: "v9", name: "已知库" });
@@ -200,7 +225,7 @@ describe("DesktopWorkspaceRepository", () => {
         initialized: false,
       })),
     });
-    const repo: WorkspaceRepository = new DesktopWorkspaceRepository(api);
+    const repo: WorkspaceRepository = new DesktopWorkspaceRepository(api, stateClient(api));
     await expect(repo.create("任意名")).rejects.toMatchObject({
       name: "DomainError",
       code: "VAULT_CONFIRMATION_REQUIRED",
@@ -229,7 +254,7 @@ describe("DesktopWorkspaceRepository", () => {
       })),
       openSelection,
     });
-    const repo: WorkspaceRepository = new DesktopWorkspaceRepository(api);
+    const repo: WorkspaceRepository = new DesktopWorkspaceRepository(api, stateClient(api));
     await expect(repo.create("任意名")).rejects.toMatchObject({
       code: "VAULT_CONFIRMATION_REQUIRED",
     });
@@ -270,7 +295,7 @@ describe("DesktopWorkspaceRepository", () => {
         },
       ]),
     });
-    const repo: WorkspaceRepository = new DesktopWorkspaceRepository(api);
+    const repo: WorkspaceRepository = new DesktopWorkspaceRepository(api, stateClient(api));
     await expect(repo.create("任意名")).rejects.toMatchObject({
       code: "VAULT_CONFIRMATION_REQUIRED",
     });
@@ -289,17 +314,16 @@ describe("DesktopWorkspaceRepository", () => {
     await repo.setLastOpened("transient:t-1", Date.now());
   });
 
-  it("rename/update/setFavorite 抛 NOT_IMPLEMENTED", async () => {
+  it("rename/update 抛 NOT_IMPLEMENTED", async () => {
+    const api = mockApi({});
     const repo: WorkspaceRepository = new DesktopWorkspaceRepository(
-      mockApi({}),
+      api,
+      stateClient(api),
     );
     await expect(repo.rename("v1", "x")).rejects.toMatchObject({
       code: "NOT_IMPLEMENTED",
     });
     await expect(repo.update("v1", { name: "x" })).rejects.toMatchObject({
-      code: "NOT_IMPLEMENTED",
-    });
-    await expect(repo.setFavorite("v1", 1)).rejects.toMatchObject({
       code: "NOT_IMPLEMENTED",
     });
   });
@@ -314,7 +338,7 @@ describe("DesktopWorkspaceRepository", () => {
       initialized: false,
     }));
     const api = mockApi({ openRecent });
-    const repo: WorkspaceRepository = new DesktopWorkspaceRepository(api);
+    const repo: WorkspaceRepository = new DesktopWorkspaceRepository(api, stateClient(api));
     await repo.setLastOpened("v1", Date.now());
     expect(openRecent).toHaveBeenCalledWith({ vaultId: "v1" });
     // openRecent 失败（目录中途被移走）：只告警不抛出。
@@ -334,6 +358,7 @@ describe("DesktopPageRepository", () => {
         api,
         cache,
         metadataService(api, cache).service,
+        stateClient(api),
       );
     const tags: TagRepository = new DesktopTagRepository(
       cache,
@@ -387,6 +412,7 @@ describe("DesktopPageRepository", () => {
       api,
       new DesktopVaultScanCache(api),
       metadataService(api, new DesktopVaultScanCache(api)).service,
+      stateClient(api),
     );
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const all = await repo.listAll();
@@ -423,6 +449,7 @@ describe("DesktopPageRepository", () => {
         api,
         cache,
         metadataService(api, cache).service,
+        stateClient(api),
       );
     const page = await repo.create({
       workspaceId: "v1",
@@ -446,7 +473,6 @@ describe("DesktopPageRepository", () => {
           kind: "group",
           title: "x",
         }),
-      () => repo.setFavorite("p", 1),
       () => repo.move("p", null, 0),
       () => repo.remove("p"),
       () => repo.restore("p"),
@@ -466,6 +492,7 @@ describe("DesktopPageRepository", () => {
       api,
       new DesktopVaultScanCache(api),
       metadataService(api, new DesktopVaultScanCache(api)).service,
+      stateClient(api),
     );
     await expect(
       repo.create({
@@ -477,16 +504,18 @@ describe("DesktopPageRepository", () => {
     ).rejects.toMatchObject({ code: "VAULT_READ_ONLY" });
     expect(api.note.create).not.toHaveBeenCalled();
   });
-  it("setLastOpened 为 no-op（R006-C3：最近排序由 vault.openRecent 的注册表 touch 承担）", async () => {
+  it("setLastOpened：页面不在扫描快照时 no-op（fire-and-forget 不抛错）", async () => {
     const api = mockApi({});
     const repo: PageRepository = new DesktopPageRepository(
       api,
       new DesktopVaultScanCache(api),
       metadataService(api, new DesktopVaultScanCache(api)).service,
+      stateClient(api),
     );
-    // fire-and-forget 非关键路径：不得抛错（否则 MainArea markOpened 产生
-    // unhandled rejection）。
+    // "p" 不在 SCAN 中：找不到条目即 no-op；不得抛错（否则 MainArea
+    // markOpened 产生 unhandled rejection）。
     await expect(repo.setLastOpened("p", Date.now())).resolves.toBeUndefined();
+    expect(api.vaultState.patch).not.toHaveBeenCalled();
   });
 });
 
@@ -995,6 +1024,7 @@ describe("Session Alias 与扫描映射（R006-C4.1-B）", () => {
         api,
         cache,
         metadataService(api, cache).service,
+        stateClient(api),
       );
     aliases.register({
       vaultId: "v1",
@@ -1089,7 +1119,7 @@ describe("Desktop 元数据写入（R007 阶段 1）", () => {
     const api = mockApi({ notePatchMetadata: patchMetadata });
     const cache = new DesktopVaultScanCache(api);
     const { service, sources, versions } = metadataService(api, cache);
-    const repo: PageRepository = new DesktopPageRepository(api, cache, service);
+    const repo: PageRepository = new DesktopPageRepository(api, cache, service, stateClient(api));
     await cache.scan("v1");
     seedOpenDocument(sources);
     const published: string[] = [];
@@ -1127,7 +1157,7 @@ describe("Desktop 元数据写入（R007 阶段 1）", () => {
     const api = mockApi({ notePatchMetadata: patchMetadata, noteRead });
     const cache = new DesktopVaultScanCache(api);
     const { service } = metadataService(api, cache);
-    const repo: PageRepository = new DesktopPageRepository(api, cache, service);
+    const repo: PageRepository = new DesktopPageRepository(api, cache, service, stateClient(api));
     await cache.scan("v1");
 
     await repo.rename("01JABC", "新标题");
@@ -1172,7 +1202,7 @@ describe("Desktop 元数据写入（R007 阶段 1）", () => {
     const api = mockApi({ notePatchMetadata: patchMetadata });
     const cache = new DesktopVaultScanCache(api);
     const { service, sources } = metadataService(api, cache);
-    const repo: PageRepository = new DesktopPageRepository(api, cache, service);
+    const repo: PageRepository = new DesktopPageRepository(api, cache, service, stateClient(api));
     await cache.scan("v1");
     seedOpenDocument(sources);
 
@@ -1203,7 +1233,7 @@ describe("Desktop 元数据写入（R007 阶段 1）", () => {
     });
     const cache = new DesktopVaultScanCache(api);
     const { service } = metadataService(api, cache);
-    const repo: PageRepository = new DesktopPageRepository(api, cache, service);
+    const repo: PageRepository = new DesktopPageRepository(api, cache, service, stateClient(api));
     await cache.scan("transient:t-1");
 
     await expect(repo.rename("01T", "x")).rejects.toMatchObject({
@@ -1216,11 +1246,168 @@ describe("Desktop 元数据写入（R007 阶段 1）", () => {
     const api = mockApi({ notePatchMetadata: patchOk() });
     const cache = new DesktopVaultScanCache(api);
     const { service } = metadataService(api, cache);
-    const repo: PageRepository = new DesktopPageRepository(api, cache, service);
+    const repo: PageRepository = new DesktopPageRepository(api, cache, service, stateClient(api));
     await cache.scan("v1");
 
     await expect(repo.rename("不存在的页面", "x")).rejects.toMatchObject({
       code: "PAGE_NOT_FOUND",
     });
+  });
+});
+
+/**
+ * R007 阶段 2（DSK-04）：设备级交互状态——收藏/最近打开经 vaultState
+ * IPC 落 userData/vault-state/（不进 Markdown）；列表映射合并 state；
+ * stableNoteId 键优先、path 键兜底并在写入时迁移清空。
+ */
+describe("Desktop 交互状态（R007 阶段 2）", () => {
+  const RECENT_V1 = {
+    vaultId: "v1",
+    absolutePath: "/tmp/a",
+    displayName: "我的笔记",
+    lastOpenedAt: "2026-08-09T10:00:00.000Z",
+    accessible: true,
+  };
+
+  it("workspace.setFavorite 写 vault-state；list 合并收藏时间", async () => {
+    const patch = vi.fn(async (input: PatchVaultStateInput) => ({
+      ...createEmptyVaultState(),
+      workspace: {
+        favoriteAt: input.patch.workspace?.favoriteAt ?? null,
+      },
+    }));
+    const api = mockApi({
+      listRecent: vi.fn(async () => [RECENT_V1]),
+      vaultStatePatch: patch,
+    });
+    const client = stateClient(api);
+    const repo: WorkspaceRepository = new DesktopWorkspaceRepository(
+      api,
+      client,
+    );
+
+    await repo.setFavorite("v1", 1234);
+    expect(patch).toHaveBeenCalledWith({
+      vaultId: "v1",
+      patch: { workspace: { favoriteAt: 1234 } },
+    });
+    // client 缓存被 patch 返回值刷新：list 不再发起 get IPC。
+    const list = await repo.list();
+    expect(list[0].favoriteAt).toBe(1234);
+
+    await repo.setFavorite("v1", null);
+    expect(patch).toHaveBeenLastCalledWith({
+      vaultId: "v1",
+      patch: { workspace: { favoriteAt: null } },
+    });
+  });
+
+  it("page.setFavorite/setLastOpened 写 stableNoteId 键并迁移清空 path 键", async () => {
+    const patch = vi.fn(async () => createEmptyVaultState());
+    const api = mockApi({ vaultStatePatch: patch });
+    const cache = new DesktopVaultScanCache(api);
+    const repo: PageRepository = new DesktopPageRepository(
+      api,
+      cache,
+      metadataService(api, cache).service,
+      stateClient(api),
+    );
+    await cache.scan("v1");
+
+    await repo.setFavorite("01JABC", 1000);
+    expect(patch).toHaveBeenCalledWith({
+      vaultId: "v1",
+      patch: {
+        pages: {
+          "01JABC": { favoriteAt: 1000 },
+          "path:学习/React.md": { favoriteAt: null, lastOpenedAt: null },
+        },
+      },
+    });
+
+    await repo.setLastOpened("01JABC", 2000);
+    expect(patch).toHaveBeenLastCalledWith({
+      vaultId: "v1",
+      patch: {
+        pages: {
+          "01JABC": { lastOpenedAt: 2000 },
+          "path:学习/React.md": { favoriteAt: null, lastOpenedAt: null },
+        },
+      },
+    });
+  });
+
+  it("无 id 文档以 path:<relativePath> 为键", async () => {
+    const patch = vi.fn(async () => createEmptyVaultState());
+    const api = mockApi({
+      scan: vi.fn(async () => ({
+        vault: { vaultId: "v1", name: "n" },
+        entries: [
+          {
+            noteId: null,
+            relativePath: "散落笔记.md",
+            kind: "document" as const,
+            title: "散落笔记",
+            parentPath: null,
+            tags: [],
+          },
+        ],
+      })),
+      vaultStatePatch: patch,
+    });
+    const cache = new DesktopVaultScanCache(api);
+    const repo: PageRepository = new DesktopPageRepository(
+      api,
+      cache,
+      metadataService(api, cache).service,
+      stateClient(api),
+    );
+    await cache.scan("v1");
+
+    await repo.setFavorite("path:散落笔记.md", 42);
+    expect(patch).toHaveBeenCalledWith({
+      vaultId: "v1",
+      patch: { pages: { "path:散落笔记.md": { favoriteAt: 42 } } },
+    });
+  });
+
+  it("listByWorkspace 合并 vault-state（stable 键优先，path 键兜底）", async () => {
+    const state = createEmptyVaultState();
+    state.pages["01JABC"] = { favoriteAt: 111, lastOpenedAt: 222 };
+    const api = mockApi({
+      vaultStateGet: vi.fn(async () => state),
+    });
+    const cache = new DesktopVaultScanCache(api);
+    const repo: PageRepository = new DesktopPageRepository(
+      api,
+      cache,
+      metadataService(api, cache).service,
+      stateClient(api),
+    );
+
+    const pages = await repo.listByWorkspace("v1");
+    const doc = pages.find((p) => p.id === "01JABC");
+    expect(doc?.favoriteAt).toBe(111);
+    expect(doc?.lastOpenedAt).toBe(222);
+    // group 不携带交互状态。
+    const group = pages.find((p) => p.id === "path:学习");
+    expect(group?.favoriteAt).toBeNull();
+  });
+
+  it("transient 仅预览会话：状态只进内存镜像，不发起 IPC", async () => {
+    const get = vi.fn(async () => createEmptyVaultState());
+    const patch = vi.fn(async () => createEmptyVaultState());
+    const api = mockApi({ vaultStateGet: get, vaultStatePatch: patch });
+    const client = stateClient(api);
+    const repo: WorkspaceRepository = new DesktopWorkspaceRepository(
+      api,
+      client,
+    );
+
+    await repo.setFavorite("transient:t-1", 777);
+    expect(patch).not.toHaveBeenCalled();
+    // 内存镜像生效：同 client 的 get 读到新值。
+    expect((await client.get("transient:t-1")).workspace.favoriteAt).toBe(777);
+    expect(get).not.toHaveBeenCalled();
   });
 });

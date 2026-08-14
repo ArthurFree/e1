@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createDesktopRuntime } from "./createDesktopRuntime";
 import { desktopCapabilities } from "./desktopCapabilities";
 import type { E1DesktopAPI } from "./desktopApi";
+import { createEmptyVaultState } from "../../../shared/ipc/contracts";
 
 const SCAN = {
   vault: { vaultId: "v1", name: "我的笔记" },
@@ -54,6 +55,10 @@ function mockApi(
         },
       ]),
       scan: vi.fn(async () => SCAN),
+    },
+    vaultState: {
+      get: vi.fn(async () => createEmptyVaultState()),
+      patch: vi.fn(async () => createEmptyVaultState()),
     },
     note: { read: vi.fn(), create: vi.fn(), save: vi.fn() },
     asset: {
