@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import type { Editor } from "@tiptap/core";
 import { useApp } from "../../state/AppState";
@@ -99,5 +99,87 @@ describe("DocumentEditor 附件孤儿清理", () => {
       },
       { timeout: 3000 },
     );
+  }, 10000);
+});
+
+/**
+ * 回归（R007 阶段 0）：初始内容即含 localImage 的文档（重启后打开含图
+ * 文档），节点视图随 EditorView 创建同步装配，早于 useEffect 的 storage
+ * 注入——assetServices 必须在 onBeforeCreate 就绪，否则首屏误降级为
+ * 「图片不可用」。
+ */
+describe("DocumentEditor 初始内容资源注入", () => {
+  beforeEach(async () => {
+    cleanup();
+    await resetDB();
+    host = { editor: null, pageId: null };
+    vi.stubGlobal("URL", {
+      ...URL,
+      createObjectURL: vi.fn(() => "blob:mock-url"),
+      revokeObjectURL: vi.fn(),
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function ImageHarness({ initialContent }: { initialContent: unknown }) {
+    const { ready, workspace, pages } = useApp();
+    host.pageId = pages.find((p) => p.kind === "document")?.id ?? null;
+    if (!ready || !host.pageId || !workspace) return null;
+    return (
+      <DocumentEditor
+        pageId={host.pageId}
+        initialContent={initialContent as never}
+        initialVersion="idb:1"
+        onEditorReady={(editor) => {
+          host.editor = editor;
+        }}
+      />
+    );
+  }
+
+  it("初始内容含 localImage：首渲染即解析资源，不误报「图片不可用」", async () => {
+    const [ws] = await workspaceRepository.list();
+    const page = await pageRepository.create({
+      workspaceId: ws.id,
+      parentId: null,
+      kind: "document",
+      title: "含图文档",
+    });
+    const record = await assetStore.add({
+      pageId: page.id,
+      name: "照片.png",
+      mimeType: "image/png",
+      size: 4,
+      data: new Uint8Array(4),
+    });
+    const initialContent = {
+      type: "doc",
+      content: [
+        {
+          type: "localImage",
+          attrs: { attachmentId: record.id, alt: "照片.png", width: null },
+        },
+      ],
+    };
+
+    render(
+      <TestApp>
+        <ImageHarness initialContent={initialContent} />
+      </TestApp>,
+    );
+    await waitFor(
+      () => {
+        const img = document.querySelector<HTMLImageElement>(
+          ".local-image__img",
+        );
+        expect(img).not.toBeNull();
+        expect(img!.src).toBe("blob:mock-url");
+      },
+      { timeout: 3000 },
+    );
+    expect(document.querySelector(".local-image--missing")).toBeNull();
   }, 10000);
 });

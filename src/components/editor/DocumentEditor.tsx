@@ -220,6 +220,14 @@ export function DocumentEditor({
       // 只读（R006-C3 FR-21）：编辑器拒绝一切修改，仍可选择/复制/滚动。
       editable: !readOnly,
       autofocus: "end",
+      onBeforeCreate: ({ editor: e }) => {
+        // 初始内容里的附件/图片节点视图随 EditorView 创建同步装配，早于
+        // 下方 useEffect 的 storage 注入；在此提前注入，避免首屏资源节点
+        // 因 assetServices 缺失误降级为「图片不可用」（重启打开含图文档）。
+        const storage = e.storage as unknown as Record<string, unknown>;
+        storage.attachmentPageId = pageId;
+        storage.assetServices = services.assets;
+      },
       onUpdate: ({ editor: e }) => {
         // 只读或无持久化能力（FR-22）：不触发任何保存链路。
         if (!saveEnabled) return;

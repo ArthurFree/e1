@@ -94,7 +94,7 @@ async function stubFileDialog(
 }
 
 async function insertFromToolbar(window: Page, item: "图片" | "附件") {
-  await window.getByLabel("插入").click();
+  await window.getByRole("button", { name: "插入", exact: true }).click();
   await window.getByRole("menuitem", { name: item }).click();
 }
 
