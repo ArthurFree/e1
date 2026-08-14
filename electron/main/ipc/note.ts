@@ -9,6 +9,7 @@ import { writeFile, stat } from "node:fs/promises";
 import {
   IPC_CHANNELS,
   type CreateNoteResult,
+  type PatchNoteMetadataResult,
   type ReadNoteResult,
   type SaveNoteResult,
 } from "../../../shared/ipc/contracts.js";
@@ -20,6 +21,7 @@ import {
 } from "../../../shared/markdown/frontmatter.js";
 import {
   parseCreateNoteInput,
+  parsePatchNoteMetadataInput,
   parseReadNoteInput,
   parseSaveNoteInput,
 } from "../../../shared/ipc/schemas.js";
@@ -28,6 +30,7 @@ import {
   MAX_MARKDOWN_FILE_SIZE,
   readNoteFile,
 } from "../filesystem/NoteFileSystem.js";
+import { patchNoteMetadataFile } from "../filesystem/NoteMetadataFileSystem.js";
 import {
   resolveCreatablePathWithinVault,
   resolveWithinVault,
@@ -186,6 +189,28 @@ export function registerNoteHandlers(
         },
       };
     }),
+  );
+  bus.handle(
+    IPC_CHANNELS.notePatchMetadata,
+    handleRequest(
+      parsePatchNoteMetadataInput,
+      async (input): Promise<PatchNoteMetadataResult> => {
+        const root = await resolveVaultRoot(input.vaultId, deps);
+        // 与 note.save 同口径：Transient 仅预览 Main 层拒写。
+        if (root.transient) {
+          throw new IpcFailure(
+            "VAULT_READ_ONLY",
+            "仅预览知识库不能修改文件。",
+          );
+        }
+        return patchNoteMetadataFile({
+          vaultRoot: root.absolutePath,
+          relativePath: input.relativePath,
+          expectedVersionToken: input.expectedVersionToken,
+          patch: input.patch,
+        });
+      },
+    ),
   );
   bus.handle(
     IPC_CHANNELS.noteSave,

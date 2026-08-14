@@ -46,7 +46,12 @@ describe("preload 暴露形状", () => {
       "scan",
       "selectDirectory",
     ]);
-    expect(Object.keys(api.note).sort()).toEqual(["create", "read", "save"]);
+    expect(Object.keys(api.note).sort()).toEqual([
+      "create",
+      "patchMetadata",
+      "read",
+      "save",
+    ]);
     expect(Object.keys(api.asset).sort()).toEqual([
       "import",
       "pick",
@@ -107,7 +112,7 @@ describe("channel 与负载透传", () => {
     );
   });
 
-  it("对象负载原样透传（note 三方法 + asset.import）", async () => {
+  it("对象负载原样透传（note 四方法 + asset.import）", async () => {
     const readInput = { vaultId: "v1", relativePath: "a.md" };
     invoke.mockResolvedValue({ ok: true, value: {} });
     await api.note.read(readInput);
@@ -125,6 +130,18 @@ describe("channel 与负载透传", () => {
     };
     await api.note.save(saveInput);
     expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.noteSave, saveInput);
+
+    const patchInput = {
+      vaultId: "v1",
+      relativePath: "a.md",
+      expectedVersionToken: "sha256:x",
+      patch: { title: "新标题", tags: ["t"] },
+    };
+    await api.note.patchMetadata(patchInput);
+    expect(invoke).toHaveBeenCalledWith(
+      IPC_CHANNELS.notePatchMetadata,
+      patchInput,
+    );
 
     const importInput = {
       vaultId: "v1",

@@ -28,6 +28,7 @@ import type {
   SaveCoordinatorState,
 } from "./services/SaveCoordinator";
 import type { ChangeChannel } from "./services/ChangeChannel";
+import type { DocumentVersionChannel } from "./services/DocumentVersionChannel";
 import type { RecoveryStore } from "./services/RecoveryStore";
 import type { SecretStore } from "./services/SecretStore";
 import type { AIConfigService } from "./services/AIConfigService";
@@ -90,6 +91,13 @@ export interface AppServices {
    * tabId 回声抑制；无 BroadcastChannel 环境为 no-op 实例）。
    */
   syncChannel: ChangeChannel;
+  /**
+   * 文档版本推进通道（R007 阶段 1，DSK-03）：元数据写入（标题/标签）绕过
+   * 正文保存管线直接落盘后，经本通道把新 versionToken 推给已打开文档的
+   * 保存协调器，避免下一次 autosave 拿旧令牌产生假冲突。进程内 pub/sub，
+   * 双端装配同一内存实现。
+   */
+  documentVersionChannel: DocumentVersionChannel;
   /**
    * 恢复缓冲（R005 阶段 8 §8.1 RecoveryStore port）：编辑器未落盘内容的
    * 兜底读写；保存协调器经窄接口 RecoverySink 写入，启动恢复提示与

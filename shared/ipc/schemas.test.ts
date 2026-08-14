@@ -11,6 +11,7 @@ import {
   parseNoInput,
   parseOpenRecentRequest,
   parseOpenSelectionRequest,
+  parsePatchNoteMetadataInput,
   parseReadNoteInput,
   parseResolveAssetUrlInput,
   parseSaveNoteInput,
@@ -264,6 +265,64 @@ describe("parseSaveNoteInput", () => {
     expectFailure(
       () => parseSaveNoteInput({ ...valid, relativePath: "/abs.md" }),
       "PATH_ESCAPE",
+    );
+  });
+});
+
+describe("parsePatchNoteMetadataInput", () => {
+  const valid = {
+    vaultId: "v1",
+    relativePath: "a.md",
+    expectedVersionToken: "sha256:abc",
+    patch: { title: "新标题" },
+  };
+
+  it("title / tags / 两者同时均通过", () => {
+    expect(parsePatchNoteMetadataInput(valid)).toEqual(valid);
+    const tagsOnly = {
+      ...valid,
+      patch: { tags: ["前端", "后端"] },
+    };
+    expect(parsePatchNoteMetadataInput(tagsOnly)).toEqual(tagsOnly);
+    const both = { ...valid, patch: { title: "t", tags: [] } };
+    expect(parsePatchNoteMetadataInput(both)).toEqual(both);
+  });
+
+  it("patch 缺失/为空对象/类型错误 INVALID_INPUT", () => {
+    const { patch: _omit, ...noPatch } = valid;
+    expectFailure(() => parsePatchNoteMetadataInput(noPatch), "INVALID_INPUT");
+    expectFailure(
+      () => parsePatchNoteMetadataInput({ ...valid, patch: {} }),
+      "INVALID_INPUT",
+    );
+    expectFailure(
+      () => parsePatchNoteMetadataInput({ ...valid, patch: { title: 1 } }),
+      "INVALID_INPUT",
+    );
+    expectFailure(
+      () =>
+        parsePatchNoteMetadataInput({ ...valid, patch: { tags: ["a", 2] } }),
+      "INVALID_INPUT",
+    );
+    expectFailure(
+      () => parsePatchNoteMetadataInput({ ...valid, patch: "title" }),
+      "INVALID_INPUT",
+    );
+  });
+
+  it("路径逃逸 PATH_ESCAPE；缺令牌 INVALID_INPUT", () => {
+    expectFailure(
+      () => parsePatchNoteMetadataInput({ ...valid, relativePath: "/abs.md" }),
+      "PATH_ESCAPE",
+    );
+    expectFailure(
+      () =>
+        parsePatchNoteMetadataInput({
+          vaultId: "v1",
+          relativePath: "a.md",
+          patch: { title: "t" },
+        }),
+      "INVALID_INPUT",
     );
   });
 });

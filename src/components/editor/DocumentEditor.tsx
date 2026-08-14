@@ -113,14 +113,18 @@ export function DocumentEditor({
     (pid: string) => {
       let coordinator = coordinatorsRef.current.get(pid);
       if (!coordinator) {
-        // 乐观锁起点为编辑器加载时的磁盘版本（R004 阶段 7）。
+        // 乐观锁起点为编辑器加载时的磁盘版本（R004 阶段 7）；若加载后发生过
+        // 元数据写入（标题/标签，R007 阶段 1），以通道发布的最新版本为准。
         coordinator = services.createSaveCoordinator(
           pid,
           (state) => {
             // 只有当前文档的协调器驱动 UI；旧协调器排空期间的状态不外发。
             if (pid === pageIdRef.current) setSaveState(state);
           },
-          { initialVersion },
+          {
+            initialVersion:
+              services.documentVersionChannel.latest(pid) ?? initialVersion,
+          },
         );
         coordinatorsRef.current.set(pid, coordinator);
       }
@@ -128,6 +132,15 @@ export function DocumentEditor({
     },
     [services, initialVersion],
   );
+
+  // R007 阶段 1（DSK-03）：元数据写入（标题/标签）绕过正文管线直接落盘，
+  // 成功后经 DocumentVersionChannel 推进当前文档协调器的已加载版本，
+  // 避免下一次 autosave 拿旧令牌产生假冲突。
+  useEffect(() => {
+    return services.documentVersionChannel.subscribe(pageId, (version) => {
+      coordinatorsRef.current.get(pageId)?.setLoadedVersion(version);
+    });
+  }, [services, pageId]);
 
   useEffect(() => {
     onSaveStateChange?.(saveState);

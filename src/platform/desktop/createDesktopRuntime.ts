@@ -49,6 +49,8 @@ import type { E1DesktopAPI } from "./desktopApi";
 import { DesktopDocumentSourceCache } from "./DesktopDocumentSourceCache";
 import { DesktopIdentityAliasRegistry } from "./DesktopIdentityAliasRegistry";
 import { DesktopMarkdownWriteService } from "./DesktopMarkdownWriteService";
+import { DesktopNoteMetadataService } from "./DesktopNoteMetadataService";
+import { createInMemoryDocumentVersionChannel } from "../../application/services/DocumentVersionChannel";
 import { DesktopAssetRegistry } from "./DesktopAssetRegistry";
 import { DesktopAssetStore } from "./DesktopAssetStore";
 import { DesktopAssetPicker } from "./DesktopAssetPicker";
@@ -87,8 +89,17 @@ export function createDesktopRuntime(api: E1DesktopAPI): DesktopRuntime {
     codec,
     assets,
   );
+  // R007 阶段 1：元数据写入编排（rename/setPageTags 共用）与版本推进通道——
+  // 元数据落盘后同步 Source Cache 并把新令牌推给打开文档的保存协调器。
+  const documentVersionChannel = createInMemoryDocumentVersionChannel();
+  const noteMetadata = new DesktopNoteMetadataService(
+    api,
+    scans,
+    sources,
+    documentVersionChannel,
+  );
   const workspaceRepository = new DesktopWorkspaceRepository(api);
-  const pageRepository = new DesktopPageRepository(api, scans);
+  const pageRepository = new DesktopPageRepository(api, scans, noteMetadata);
   const contentRepository = new DesktopContentRepository(
     api,
     scans,
@@ -97,7 +108,7 @@ export function createDesktopRuntime(api: E1DesktopAPI): DesktopRuntime {
     writer,
     assets,
   );
-  const tagRepository = new DesktopTagRepository(scans);
+  const tagRepository = new DesktopTagRepository(scans, noteMetadata);
   const revisionRepository = new DesktopRevisionRepository();
   const assetStore = new DesktopAssetStore(api, scans, assets);
   const documentWriteRepository = new DesktopDocumentWriteRepository(
@@ -230,6 +241,7 @@ export function createDesktopRuntime(api: E1DesktopAPI): DesktopRuntime {
     documentSafety,
     preferencesService,
     syncChannel,
+    documentVersionChannel,
     recoveryStore,
     secretStore,
     aiConfigService,

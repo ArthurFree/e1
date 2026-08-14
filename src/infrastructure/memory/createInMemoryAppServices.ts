@@ -11,6 +11,7 @@ import { DocumentCommitService } from "../../application/services/DocumentCommit
 import { DocumentSaveCoordinator } from "../../application/services/SaveCoordinator";
 import { WorkspaceSessionService } from "../../application/services/WorkspaceSessionService";
 import { PreferencesService } from "../../application/services/PreferencesService";
+import { createInMemoryDocumentVersionChannel } from "../../application/services/DocumentVersionChannel";
 import {
   BroadcastChangeChannel,
   type BroadcastChannelLike,
@@ -126,6 +127,8 @@ export function createInMemoryAppServices(
     searchIndex,
     preferencesService,
     syncChannel,
+    // 文档版本推进通道（R007 阶段 1）：内存 pub/sub，测试容器同形状。
+    documentVersionChannel: createInMemoryDocumentVersionChannel(),
     recoveryStore,
     secretStore,
     aiConfigService,

@@ -66,9 +66,11 @@ import {
   mapRecentVaultToWorkspace,
   mapScanEntriesToPages,
   mapScanEntriesToTags,
+  deterministicTagColor,
   tagIdOfName,
 } from "./vaultMapping";
 import { DesktopDocumentSourceCache } from "./DesktopDocumentSourceCache";
+import type { DesktopNoteMetadataService } from "./DesktopNoteMetadataService";
 import {
   DesktopMarkdownWriteService,
   mapNoteWriteError,
@@ -194,6 +196,7 @@ export class DesktopPageRepository implements PageRepository {
   constructor(
     private readonly api: E1DesktopAPI,
     private readonly scans: DesktopVaultScanCache,
+    private readonly metadata: DesktopNoteMetadataService,
   ) {}
 
   async listByWorkspace(vaultId: string): Promise<Page[]> {
@@ -286,8 +289,14 @@ export class DesktopPageRepository implements PageRepository {
     return slash === -1 ? "" : rel.slice(0, slash);
   }
 
-  async rename(): Promise<void> {
-    throw notImplemented("重命名页面", "后续阶段（标题与文件名解耦，r006 §8）");
+  /**
+   * 重命名（R007 阶段 1，DSK-03）：标题写入 Frontmatter title 键——
+   * 乐观锁 + 原子写在 Main 完成；正文与其他 Frontmatter 键逐字节保留；
+   * 成功后来源缓存与打开文档的协调器版本同步推进（不假冲突）。
+   * 文件名不随标题改动（Title rename ≠ File rename，R007 §4.4）。
+   */
+  async rename(pageId: string, title: string): Promise<void> {
+    await this.metadata.patch(pageId, { title });
   }
 
   async setFavorite(): Promise<void> {
@@ -569,9 +578,12 @@ export class DesktopContentRepository
   }
 }
 
-/** 标签仓储：从扫描条目的 Frontmatter tags 聚合；写操作抛错。 */
+/** 标签仓储：从扫描条目的 Frontmatter tags 聚合；setPageTags 写回 Frontmatter。 */
 export class DesktopTagRepository implements TagRepository {
-  constructor(private readonly scans: DesktopVaultScanCache) {}
+  constructor(
+    private readonly scans: DesktopVaultScanCache,
+    private readonly metadata: DesktopNoteMetadataService,
+  ) {}
 
   async listByWorkspace(vaultId: string): Promise<Tag[]> {
     const snapshot = await this.scans.scan(vaultId);
@@ -597,19 +609,39 @@ export class DesktopTagRepository implements TagRepository {
     return entry ? entry.tags.map(tagIdOfName) : [];
   }
 
-  async create(): Promise<Tag> {
-    throw notImplemented("新建标签", "后续阶段");
+  /**
+   * 新建标签（R007 阶段 1 §1.5）：「创建」即得到一个可勾选的新字符串
+   * 标签——持久化发生在随后的 setPageTags（写入引用它的文档
+   * Frontmatter）；此处不产生任何文件写。颜色按名称确定性派生
+   * （Tag.color 是 E1 本地元数据，不进 Markdown）。
+   */
+  async create(workspaceId: string, name: string): Promise<Tag> {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      throw new DomainError("INVALID_INPUT", "标签名不能为空。");
+    }
+    return {
+      id: tagIdOfName(trimmed),
+      workspaceId,
+      name: trimmed,
+      color: deterministicTagColor(trimmed),
+    };
   }
 
   async remove(): Promise<void> {
-    throw notImplemented("删除标签", "后续阶段");
+    throw notImplemented("删除标签", "后续阶段（R007 阶段 4 批量写）");
   }
 
-  async setPageTags(): Promise<void> {
-    throw notImplemented(
-      "设置页面标签",
-      "后续阶段（Frontmatter 回写属阶段 3+）",
+  /**
+   * 覆盖式设置页面标签（R007 阶段 1）：tag:<name> id 还原为名称后写入
+   * Frontmatter tags（乐观锁 + 原子写在 Main；来源缓存与协调器版本由
+   * metadata service 同步推进）。
+   */
+  async setPageTags(pageId: string, tagIds: string[]): Promise<void> {
+    const names = tagIds.map((id) =>
+      id.startsWith("tag:") ? id.slice("tag:".length) : id,
     );
+    await this.metadata.patch(pageId, { tags: names });
   }
 }
 

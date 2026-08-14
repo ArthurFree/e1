@@ -41,10 +41,13 @@ import {
 } from "./repositories";
 import { DesktopDocumentSourceCache } from "./DesktopDocumentSourceCache";
 import { DesktopIdentityAliasRegistry } from "./DesktopIdentityAliasRegistry";
+import { DesktopNoteMetadataService } from "./DesktopNoteMetadataService";
+import { createInMemoryDocumentVersionChannel } from "../../application/services/DocumentVersionChannel";
 import { DesktopPreferencesRepository } from "./preferencesRepository";
 import { DesktopRevisionRepository } from "./stubRepositories";
 import { DesktopAssetStore } from "./DesktopAssetStore";
 import { DesktopAssetRegistry } from "./DesktopAssetRegistry";
+import { deterministicTagColor } from "./vaultMapping";
 
 const SCAN: VaultScanResult = {
   vault: { vaultId: "v1", name: "我的笔记" },
@@ -76,6 +79,7 @@ function mockApi(overrides: {
   openSelection?: E1DesktopAPI["vault"]["openSelection"];
   scan?: E1DesktopAPI["vault"]["scan"];
   noteRead?: E1DesktopAPI["note"]["read"];
+  notePatchMetadata?: E1DesktopAPI["note"]["patchMetadata"];
 }): E1DesktopAPI {
   return {
     platform: "desktop",
@@ -99,6 +103,7 @@ function mockApi(overrides: {
       read: overrides.noteRead ?? vi.fn(),
       create: vi.fn(),
       save: vi.fn(),
+      patchMetadata: overrides.notePatchMetadata ?? vi.fn(),
     },
     asset: {
       pick: vi.fn(),
@@ -107,6 +112,17 @@ function mockApi(overrides: {
       resolveUrl: vi.fn(),
     },
   } as unknown as E1DesktopAPI;
+}
+
+/** R007 阶段 1：元数据写入服务 + 版本通道的测试装配。 */
+function metadataService(
+  api: E1DesktopAPI,
+  scans: DesktopVaultScanCache,
+  sources = new DesktopDocumentSourceCache(),
+  versions = createInMemoryDocumentVersionChannel(),
+) {
+  const service = new DesktopNoteMetadataService(api, scans, sources, versions);
+  return { service, sources, versions };
 }
 
 describe("DesktopWorkspaceRepository", () => {
@@ -314,8 +330,15 @@ describe("DesktopPageRepository", () => {
     const scan = vi.fn(async () => SCAN);
     const api = mockApi({ scan });
     const cache = new DesktopVaultScanCache(api);
-    const pages: PageRepository = new DesktopPageRepository(api, cache);
-    const tags: TagRepository = new DesktopTagRepository(cache);
+    const pages: PageRepository = new DesktopPageRepository(
+        api,
+        cache,
+        metadataService(api, cache).service,
+      );
+    const tags: TagRepository = new DesktopTagRepository(
+      cache,
+      metadataService(api, cache).service,
+    );
 
     const list = await pages.listByWorkspace("v1");
     expect(list.map((p) => [p.id, p.parentId, p.position])).toEqual([
@@ -363,6 +386,7 @@ describe("DesktopPageRepository", () => {
     const repo: PageRepository = new DesktopPageRepository(
       api,
       new DesktopVaultScanCache(api),
+      metadataService(api, new DesktopVaultScanCache(api)).service,
     );
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const all = await repo.listAll();
@@ -395,7 +419,11 @@ describe("DesktopPageRepository", () => {
     const api = mockApi({ scan });
     (api.note as unknown as { create: typeof create }).create = create;
     const cache = new DesktopVaultScanCache(api);
-    const repo: PageRepository = new DesktopPageRepository(api, cache);
+    const repo: PageRepository = new DesktopPageRepository(
+        api,
+        cache,
+        metadataService(api, cache).service,
+      );
     const page = await repo.create({
       workspaceId: "v1",
       parentId: null,
@@ -418,7 +446,6 @@ describe("DesktopPageRepository", () => {
           kind: "group",
           title: "x",
         }),
-      () => repo.rename("p", "x"),
       () => repo.setFavorite("p", 1),
       () => repo.move("p", null, 0),
       () => repo.remove("p"),
@@ -438,6 +465,7 @@ describe("DesktopPageRepository", () => {
     const repo: PageRepository = new DesktopPageRepository(
       api,
       new DesktopVaultScanCache(api),
+      metadataService(api, new DesktopVaultScanCache(api)).service,
     );
     await expect(
       repo.create({
@@ -454,6 +482,7 @@ describe("DesktopPageRepository", () => {
     const repo: PageRepository = new DesktopPageRepository(
       api,
       new DesktopVaultScanCache(api),
+      metadataService(api, new DesktopVaultScanCache(api)).service,
     );
     // fire-and-forget 非关键路径：不得抛错（否则 MainArea markOpened 产生
     // unhandled rejection）。
@@ -738,6 +767,7 @@ describe("DesktopTagRepository", () => {
     const api = mockApi({});
     const repo: TagRepository = new DesktopTagRepository(
       new DesktopVaultScanCache(api),
+      metadataService(api, new DesktopVaultScanCache(api)).service,
     );
     expect(await repo.listByWorkspace("v1")).toEqual([
       expect.objectContaining({ id: "tag:前端", name: "前端" }),
@@ -772,7 +802,10 @@ describe("DesktopTagRepository", () => {
       })),
     });
     const cache = new DesktopVaultScanCache(api);
-    const repo: TagRepository = new DesktopTagRepository(cache);
+    const repo: TagRepository = new DesktopTagRepository(
+      cache,
+      metadataService(api, cache).service,
+    );
     await cache.scan("v1"); // 先建立缓存
     // noteId 与路径派生 id 都是各自条目的页面 id。
     expect(await repo.listPageTagIds("01JABC")).toEqual(["tag:前端"]);
@@ -780,17 +813,27 @@ describe("DesktopTagRepository", () => {
     expect(await repo.listPageTagIds("不存在的页面")).toEqual([]);
   });
 
-  it("写操作抛 NOT_IMPLEMENTED", async () => {
+  it("create 合成不持久化的标签实体（颜色确定性派生）；remove 仍 NOT_IMPLEMENTED", async () => {
+    const api = mockApi({});
+    const cache = new DesktopVaultScanCache(api);
     const repo: TagRepository = new DesktopTagRepository(
-      new DesktopVaultScanCache(mockApi({})),
+      cache,
+      metadataService(api, cache).service,
     );
-    await expect(repo.create("v1", "t", "#000")).rejects.toMatchObject({
-      code: "NOT_IMPLEMENTED",
+    // R007 阶段 1 §1.5：create 不写盘，持久化发生在随后的 setPageTags。
+    const tag = await repo.create("v1", " 前端 ", "#000");
+    expect(tag).toEqual({
+      id: "tag:前端",
+      workspaceId: "v1",
+      name: "前端",
+      color: deterministicTagColor("前端"),
+    });
+    // 同名标签颜色稳定（重启/跨会话不变）。
+    expect((await repo.create("v1", "前端", "#000")).color).toBe(tag.color);
+    await expect(repo.create("v1", "  ", "#000")).rejects.toMatchObject({
+      code: "INVALID_INPUT",
     });
     await expect(repo.remove("t")).rejects.toMatchObject({
-      code: "NOT_IMPLEMENTED",
-    });
-    await expect(repo.setPageTags("p", [])).rejects.toMatchObject({
       code: "NOT_IMPLEMENTED",
     });
   });
@@ -948,7 +991,11 @@ describe("Session Alias 与扫描映射（R006-C4.1-B）", () => {
       })),
     });
     const cache = new DesktopVaultScanCache(api, aliases);
-    const pages: PageRepository = new DesktopPageRepository(api, cache);
+    const pages: PageRepository = new DesktopPageRepository(
+        api,
+        cache,
+        metadataService(api, cache).service,
+      );
     aliases.register({
       vaultId: "v1",
       sessionPageId: "path:React.md",
@@ -992,5 +1039,188 @@ describe("DesktopPreferencesRepository", () => {
     localStorage.setItem("e1:desktop-preferences", "{not-json");
     const repo: PreferencesRepository = new DesktopPreferencesRepository();
     expect(await repo.get()).toEqual(DEFAULT_PREFERENCES);
+  });
+});
+
+/**
+ * R007 阶段 1（DSK-03）：元数据写入链路——rename / setPageTags 经
+ * DesktopNoteMetadataService 调 note.patchMetadata；乐观锁起点、
+ * Source Cache 同步、版本通道发布与扫描缓存失效。
+ */
+describe("Desktop 元数据写入（R007 阶段 1）", () => {
+  const TOKEN_OLD = `sha256:${"o".repeat(64)}`;
+  const TOKEN_NEW = `sha256:${"n".repeat(64)}`;
+  const TOKEN_DISK = `sha256:${"d".repeat(64)}`;
+
+  function patchOk() {
+    return vi.fn(async () => ({
+      versionToken: TOKEN_NEW,
+      updatedAt: 1722580000000,
+      stableNoteId: "01JABC",
+    }));
+  }
+
+  /** 模拟「文档已打开」：Source Cache 写入来源上下文。 */
+  function seedOpenDocument(
+    sources: DesktopDocumentSourceCache,
+    pageId = "01JABC",
+  ) {
+    sources.set(pageId, {
+      vaultId: "v1",
+      sessionPageId: pageId,
+      relativePath: "学习/React.md",
+      stableNoteId: "01JABC",
+      metadata: { id: "01JABC", title: "React 笔记", tags: ["前端"] },
+      frontmatterExtra: [],
+      lineEnding: "lf",
+      hadUtf8Bom: false,
+      versionToken: TOKEN_OLD,
+      compatibility: { lossy: false, unsupported: [] },
+      writeSession: {
+        sourceLossyApproved: false,
+        outputLossyApproved: false,
+        identityAdoptionApproved: false,
+      },
+    });
+  }
+
+  it("rename：已打开文档取 Source Cache 令牌，写后同步缓存并发布版本", async () => {
+    const patchMetadata = patchOk();
+    const api = mockApi({ notePatchMetadata: patchMetadata });
+    const cache = new DesktopVaultScanCache(api);
+    const { service, sources, versions } = metadataService(api, cache);
+    const repo: PageRepository = new DesktopPageRepository(api, cache, service);
+    await cache.scan("v1");
+    seedOpenDocument(sources);
+    const published: string[] = [];
+    versions.subscribe("01JABC", (v) => published.push(v));
+
+    await repo.rename("01JABC", "新标题");
+
+    expect(patchMetadata).toHaveBeenCalledWith({
+      vaultId: "v1",
+      relativePath: "学习/React.md",
+      expectedVersionToken: TOKEN_OLD,
+      patch: { title: "新标题" },
+    });
+    // Source Cache：新版本 + 新标题，未涉及的 tags 不动。
+    const ctx = sources.get("01JABC");
+    expect(ctx?.versionToken).toBe(TOKEN_NEW);
+    expect(ctx?.metadata.title).toBe("新标题");
+    expect(ctx?.metadata.tags).toEqual(["前端"]);
+    // 版本通道发布（打开文档的协调器据此推进，避免假冲突）。
+    expect(published).toEqual([TOKEN_NEW]);
+    expect(versions.latest("01JABC")).toBe(TOKEN_NEW);
+    // 扫描缓存失效：路径索引清空，下次列表重新扫描。
+    expect(cache.getRelativePathSync("v1", "01JABC")).toBeNull();
+  });
+
+  it("rename：未打开文档先 note.read 取磁盘当前版本作乐观锁起点", async () => {
+    const patchMetadata = patchOk();
+    const noteRead = vi.fn(async () => ({
+      stableNoteId: "01JABC",
+      relativePath: "学习/React.md",
+      markdown: "---\nid: 01JABC\n---\n\n正文",
+      versionToken: TOKEN_DISK,
+      source: { modifiedAt: 1, sizeBytes: 10 },
+    }));
+    const api = mockApi({ notePatchMetadata: patchMetadata, noteRead });
+    const cache = new DesktopVaultScanCache(api);
+    const { service } = metadataService(api, cache);
+    const repo: PageRepository = new DesktopPageRepository(api, cache, service);
+    await cache.scan("v1");
+
+    await repo.rename("01JABC", "新标题");
+
+    expect(noteRead).toHaveBeenCalledWith({
+      vaultId: "v1",
+      relativePath: "学习/React.md",
+    });
+    expect(patchMetadata).toHaveBeenCalledWith({
+      vaultId: "v1",
+      relativePath: "学习/React.md",
+      expectedVersionToken: TOKEN_DISK,
+      patch: { title: "新标题" },
+    });
+  });
+
+  it("setPageTags：tag:<name> id 还原为名称数组写入 Frontmatter", async () => {
+    const patchMetadata = patchOk();
+    const api = mockApi({ notePatchMetadata: patchMetadata });
+    const cache = new DesktopVaultScanCache(api);
+    const { service, sources } = metadataService(api, cache);
+    const repo: TagRepository = new DesktopTagRepository(cache, service);
+    await cache.scan("v1");
+    seedOpenDocument(sources);
+
+    await repo.setPageTags("01JABC", ["tag:前端", "tag:后端"]);
+
+    expect(patchMetadata).toHaveBeenCalledWith({
+      vaultId: "v1",
+      relativePath: "学习/React.md",
+      expectedVersionToken: TOKEN_OLD,
+      patch: { tags: ["前端", "后端"] },
+    });
+    expect(sources.get("01JABC")?.metadata.tags).toEqual(["前端", "后端"]);
+    expect(sources.get("01JABC")?.metadata.title).toBe("React 笔记");
+  });
+
+  it("外部已修改文件：DOCUMENT_CONFLICT 原样映射（进入既有冲突语义）", async () => {
+    const patchMetadata = vi.fn(async () => {
+      throw new DesktopIpcError("DOCUMENT_CONFLICT", "冲突");
+    });
+    const api = mockApi({ notePatchMetadata: patchMetadata });
+    const cache = new DesktopVaultScanCache(api);
+    const { service, sources } = metadataService(api, cache);
+    const repo: PageRepository = new DesktopPageRepository(api, cache, service);
+    await cache.scan("v1");
+    seedOpenDocument(sources);
+
+    await expect(repo.rename("01JABC", "x")).rejects.toMatchObject({
+      code: "DOCUMENT_CONFLICT",
+    });
+    // 冲突时不推进缓存与版本。
+    expect(sources.get("01JABC")?.versionToken).toBe(TOKEN_OLD);
+  });
+
+  it("transient 仅预览知识库拒写（不发起 IPC）", async () => {
+    const patchMetadata = patchOk();
+    const api = mockApi({
+      notePatchMetadata: patchMetadata,
+      scan: vi.fn(async (vaultId: string) => ({
+        vault: { vaultId, name: "预览" },
+        entries: [
+          {
+            noteId: "01T",
+            relativePath: "a.md",
+            kind: "document" as const,
+            title: "a",
+            parentPath: null,
+            tags: [],
+          },
+        ],
+      })),
+    });
+    const cache = new DesktopVaultScanCache(api);
+    const { service } = metadataService(api, cache);
+    const repo: PageRepository = new DesktopPageRepository(api, cache, service);
+    await cache.scan("transient:t-1");
+
+    await expect(repo.rename("01T", "x")).rejects.toMatchObject({
+      code: "VAULT_READ_ONLY",
+    });
+    expect(patchMetadata).not.toHaveBeenCalled();
+  });
+
+  it("页面不存在 → PAGE_NOT_FOUND", async () => {
+    const api = mockApi({ notePatchMetadata: patchOk() });
+    const cache = new DesktopVaultScanCache(api);
+    const { service } = metadataService(api, cache);
+    const repo: PageRepository = new DesktopPageRepository(api, cache, service);
+    await cache.scan("v1");
+
+    await expect(repo.rename("不存在的页面", "x")).rejects.toMatchObject({
+      code: "PAGE_NOT_FOUND",
+    });
   });
 });

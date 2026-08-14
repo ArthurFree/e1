@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 import type { VaultScanEntry } from "../../../shared/ipc/contracts";
 import {
-  DESKTOP_TAG_COLOR,
+  deterministicTagColor,
   mapOpenedVaultToWorkspace,
   mapRecentVaultToWorkspace,
   mapScanEntriesToPages,
@@ -98,13 +98,13 @@ describe("mapScanEntriesToTags", () => {
         id: "tag:前端",
         workspaceId: "vault-1",
         name: "前端",
-        color: DESKTOP_TAG_COLOR,
+        color: deterministicTagColor("前端"),
       },
       {
         id: "tag:随笔",
         workspaceId: "vault-1",
         name: "随笔",
-        color: DESKTOP_TAG_COLOR,
+        color: deterministicTagColor("随笔"),
       },
     ]);
     expect(pageTags).toEqual([

@@ -1,7 +1,7 @@
 # R007：Desktop Local Vault 产品化基础闭环
 
 - **版本**：0.1
-- **状态**：实现中（阶段 0 已完成）
+- **状态**：实现中（阶段 0–1 已完成）
 - **更新时间**：2026-08-14
 - **基线 Commit**：`623f5292c290d0843d8e7eb72a7ce11bbaf22d06`
 - **前置阶段**：R006（Electron Desktop 本地 Vault 技术验证版）
@@ -352,6 +352,7 @@ DELETE + CREATE
 1. E2E selector 修复（`e2e/desktop.assets.spec.ts` 改 `getByRole("button", { name: "插入", exact: true })`）后，E2E-01 仍失败——暴露出 selector 之下掩盖的真实缺陷：重启后打开含图文档，图片节点视图随 EditorView 创建同步装配，早于 `DocumentEditor` useEffect 的 `storage.assetServices` 注入，首屏一律误报「图片不可用」。修复为在 `onBeforeCreate` 中提前注入（`DocumentEditor.tsx`），并新增组件回归测试（无修复时变红，已验证）。
 2. §2.2 未实现操作的 NOT_IMPLEMENTED 契约断言在 `src/platform/desktop/repositories.test.ts` 已齐备（workspace/page/tag/revision/lastOpened no-op），无需新增。
 3. `docs/requirements/README.md` 索引补齐 R003–R007；R006 标记待验收，不再开 R006-C6。
+4. 已知遗留：`npm test` 存在偶发未捕获异常（react-dom 调度器在 jsdom 拆除后回调，`window is not defined`，源自组件测试拆除时序，非本次改动引入），出现时 vitest 退出码为 1 但全部用例通过；重跑即绿。根治留待后续批次。
 
 本地等价验证（对应 5 个 CI job）全绿：`npm run ci`（1018 测试）、`build:web`、`build:desktop`、`e2e/app.spec.ts + responsive.spec.ts`（24 例）、`test:e2e:desktop:golden`（3 例）。
 
@@ -380,6 +381,17 @@ e2e-desktop    green
 ---
 
 ## 阶段 1：Document Metadata Write Pipeline
+
+**状态：已完成（2026-08-14）**
+
+实际实现与偏差记录：
+
+- IPC：`note.patchMetadata({vaultId, relativePath, expectedVersionToken, patch:{title?, tags?}})` → `{versionToken, updatedAt, stableNoteId}`（`shared/ipc/contracts.ts` + `schemas.ts` 校验，patch 至少含一键）。
+- Main：`electron/main/filesystem/NoteMetadataFileSystem.ts`——readNoteFile 全套校验 → 令牌比对 → 只改 title/tags（id/created/aliases/未知键/正文逐字节保留，BOM/CRLF 跟随）→ AtomicFileWriter 二次校验 + 原子替换。冲突直接复用 `DOCUMENT_CONFLICT`（未新增 NOTE_METADATA_CONFLICT，§11 原则：UI 无需分流）。
+- Renderer：`DesktopNoteMetadataService`（乐观锁起点：已打开文档取 Source Cache，未打开先 note.read）→ IPC → Source Cache 同步（metadata + versionToken，保证下一次 autosave 序列化出新元数据）→ `DocumentVersionChannel.publish` → 扫描缓存失效。`DesktopPageRepository.rename` / `DesktopTagRepository.setPageTags` 接入。
+- 版本推进（§1.4）：`DocumentVersionChannel` port（`application/services/`，内存实现双端共用）加入 AppServices；`DocumentEditor` 订阅推进协调器版本，惰性创建协调器时经 `latest()` 取起点——「先改名后编辑」时序亦覆盖。
+- 标签模型（§1.5）：`create` 合成不持久化标签（持久化在随后的 setPageTags）；颜色按名称哈希确定性派生（`deterministicTagColor`，替代 R006 的固定灰 DESKTOP_TAG_COLOR）；`remove` 维持 NOT_IMPLEMENTED 至阶段 4。
+- 测试：Main 6 例（保留语义/BOM/CRLF/冲突/路径）、schema 校验 3 例、Renderer 契约 6 例、DocumentEditor 版本推进组件测试 1 例、桌面 golden E2E G04（rename 重启保持）/G05（tag 重启保持）2 例。
 
 ### 目标
 

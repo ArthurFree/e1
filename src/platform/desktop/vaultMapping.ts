@@ -29,8 +29,28 @@ const PATH_ID_PREFIX = "path:";
 /** 标签 id 前缀：由标签名派生（Frontmatter tags 只有名称，无稳定 id）。 */
 const TAG_ID_PREFIX = "tag:";
 
-/** Desktop 聚合标签的固定颜色（Frontmatter 不携带颜色，Web 端标签色不适用）。 */
-export const DESKTOP_TAG_COLOR = "#8A8F98";
+/**
+ * R007 阶段 1：标签颜色确定性派生——Tag.name 进 Markdown Frontmatter，
+ * Tag.color 属 E1 本地元数据（不写盘），以名称哈希稳定派生，重启不变。
+ * 调色板与 TagPicker 新建标签的轮换色一致。
+ */
+const TAG_COLOR_PALETTE = [
+  "#e16259",
+  "#dfab01",
+  "#0f7b6c",
+  "#337ea9",
+  "#6940a5",
+  "#c4554d",
+];
+
+/** 标签名 → 稳定派生色（同名同色，跨会话不变）。 */
+export function deterministicTagColor(name: string): string {
+  let hash = 0;
+  for (const ch of name) {
+    hash = (hash * 31 + (ch.codePointAt(0) ?? 0)) >>> 0;
+  }
+  return TAG_COLOR_PALETTE[hash % TAG_COLOR_PALETTE.length];
+}
 
 /** 条目的页面 id：document 优先 Frontmatter noteId，否则路径派生。 */
 export function pageIdOfEntry(entry: VaultScanEntry): string {
@@ -173,7 +193,7 @@ export function mapScanEntriesToTags(
           id: tagId,
           workspaceId: vaultId,
           name,
-          color: DESKTOP_TAG_COLOR,
+          color: deterministicTagColor(name),
         });
       }
       pageTags.push({

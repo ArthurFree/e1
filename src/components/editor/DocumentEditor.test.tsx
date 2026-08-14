@@ -6,9 +6,11 @@ import { TestApp } from "../../test/TestApp";
 import { resetDB } from "../../platform/web/persistence/db";
 import {
   assetStore,
+  contentRepository,
   pageRepository,
   workspaceRepository,
 } from "../../platform/web/persistence/repositories";
+import { createBrowserAppServices } from "../../platform/web/createBrowserServices";
 import { insertAttachmentFile } from "../../editor/attachment";
 import { DocumentEditor } from "./DocumentEditor";
 
@@ -182,4 +184,52 @@ describe("DocumentEditor 初始内容资源注入", () => {
     );
     expect(document.querySelector(".local-image--missing")).toBeNull();
   }, 10000);
+});
+
+/**
+ * R007 阶段 1（DSK-03）：元数据写入（标题/标签）落盘后经
+ * DocumentVersionChannel 推进当前文档协调器的已加载版本——
+ * 下一次正文 autosave 以新版本为乐观锁起点，不产生假冲突。
+ */
+describe("DocumentEditor 版本推进通道", () => {
+  beforeEach(async () => {
+    cleanup();
+    await resetDB();
+    host = { editor: null, pageId: null };
+    const [ws] = await workspaceRepository.list();
+    await pageRepository.create({
+      workspaceId: ws.id,
+      parentId: null,
+      kind: "document",
+      title: "版本推进",
+    });
+  });
+
+  it("通道发布后，下一次保存以发布版本为 expectedVersion", async () => {
+    const saveSpy = vi.spyOn(contentRepository, "save");
+    render(
+      <TestApp>
+        <Harness />
+      </TestApp>,
+    );
+    await waitFor(() => expect(host.editor).not.toBeNull(), { timeout: 3000 });
+
+    // 首次编辑 → 防抖保存（协调器在此创建，乐观锁起点为加载版本）。
+    host.editor!.commands.insertContent("第一段");
+    await waitFor(() => expect(saveSpy).toHaveBeenCalled(), { timeout: 4000 });
+    const firstExpected = saveSpy.mock.calls[0]![3];
+    expect(firstExpected).toBe("idb:1");
+
+    // 元数据写入落盘（标题/标签）：发布新版本令牌。
+    const services = createBrowserAppServices();
+    services.documentVersionChannel.publish(host.pageId!, "meta:v2");
+
+    // 继续编辑 → 下一次保存以发布版本为乐观锁起点。
+    host.editor!.commands.insertContent("第二段");
+    await waitFor(
+      () => expect(saveSpy.mock.calls.length).toBeGreaterThan(1),
+      { timeout: 4000 },
+    );
+    expect(saveSpy.mock.calls.at(-1)![3]).toBe("meta:v2");
+  }, 15000);
 });

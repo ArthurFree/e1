@@ -16,6 +16,7 @@ import type {
   ImportAssetSource,
   OpenRecentRequest,
   OpenSelectionRequest,
+  PatchNoteMetadataInput,
   ReadAssetInput,
   ReadNoteInput,
   SaveNoteInput,
@@ -152,6 +153,42 @@ export function parseSaveNoteInput(payload: unknown): SaveNoteInput {
     markdown: requireString(payload, "markdown"),
     // 版本令牌不透明，此处只校验类型；初始令牌为空串（尚无正文版本）。
     expectedVersionToken: requireString(payload, "expectedVersionToken"),
+  };
+}
+
+/** R007 阶段 1：note.patchMetadata 入参校验（patch 至少携带一个已知键）。 */
+export function parsePatchNoteMetadataInput(
+  payload: unknown,
+): PatchNoteMetadataInput {
+  if (!isRecord(payload)) invalid("note.patchMetadata 入参必须为对象");
+  const patch = payload.patch;
+  if (!isRecord(patch)) invalid("note.patchMetadata.patch 必须为对象");
+  const result: PatchNoteMetadataInput["patch"] = {};
+  if (patch.title !== undefined) {
+    if (typeof patch.title !== "string") {
+      invalid("note.patchMetadata.patch.title 必须为字符串");
+    }
+    result.title = patch.title;
+  }
+  if (patch.tags !== undefined) {
+    if (
+      !Array.isArray(patch.tags) ||
+      patch.tags.some((item) => typeof item !== "string")
+    ) {
+      invalid("note.patchMetadata.patch.tags 必须为字符串数组");
+    }
+    result.tags = patch.tags;
+  }
+  if (result.title === undefined && result.tags === undefined) {
+    invalid("note.patchMetadata.patch 至少包含 title 或 tags 之一");
+  }
+  return {
+    vaultId: requireString(payload, "vaultId", { nonEmpty: true }),
+    relativePath: assertRelativePath(
+      requireString(payload, "relativePath", { nonEmpty: true }),
+    ),
+    expectedVersionToken: requireString(payload, "expectedVersionToken"),
+    patch: result,
   };
 }
 

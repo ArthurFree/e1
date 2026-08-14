@@ -35,6 +35,7 @@ export const IPC_CHANNELS = {
   noteRead: "note:read",
   noteCreate: "note:create",
   noteSave: "note:save",
+  notePatchMetadata: "note:patchMetadata",
   assetPick: "asset:pick",
   assetImport: "asset:import",
   assetRead: "asset:read",
@@ -242,6 +243,32 @@ export interface SaveNoteResult {
   };
 }
 
+/**
+ * R007 阶段 1（DSK-03）：Frontmatter 元数据局部写入——只改 title/tags
+ * 已知键，保留 id/created/aliases/未知字段与正文逐字节不变；
+ * 乐观锁与正文保存同口径（expectedVersionToken 不一致即 DOCUMENT_CONFLICT）。
+ */
+export interface PatchNoteMetadataInput {
+  vaultId: string;
+  relativePath: string;
+  /** 乐观锁：read/create/上一次写返回的令牌。 */
+  expectedVersionToken: string;
+  /** 待写字段；缺省键保持原值。两个键都缺省属于调用方错误（schema 拒绝）。 */
+  patch: {
+    title?: string;
+    tags?: string[];
+  };
+}
+
+export interface PatchNoteMetadataResult {
+  /** 写入后的新令牌（供 DocumentVersionChannel 推进打开文档的乐观锁起点）。 */
+  versionToken: string;
+  /** 写后磁盘 mtime（ms 整数）。 */
+  updatedAt: number;
+  /** Frontmatter 稳定 id（无 id 文档为 null——元数据写入不做身份采纳）。 */
+  stableNoteId: string | null;
+}
+
 /* ---------------------------------- asset ---------------------------------- */
 
 export interface AssetPickRequest {
@@ -338,6 +365,10 @@ export interface E1DesktopAPI {
     read(input: ReadNoteInput): Promise<ReadNoteResult>;
     create(input: CreateNoteInput): Promise<CreateNoteResult>;
     save(input: SaveNoteInput): Promise<SaveNoteResult>;
+    /** R007 阶段 1：Frontmatter title/tags 局部写入（乐观锁同 note.save）。 */
+    patchMetadata(
+      input: PatchNoteMetadataInput,
+    ): Promise<PatchNoteMetadataResult>;
   };
   asset: {
     /** 原生文件选择；取消返回 null。不得返回绝对路径。 */

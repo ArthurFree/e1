@@ -13,6 +13,7 @@ import { DocumentSaveCoordinator } from "../../application/services/SaveCoordina
 import { WorkspaceSessionService } from "../../application/services/WorkspaceSessionService";
 import { PreferencesService } from "../../application/services/PreferencesService";
 import { BroadcastChangeChannel } from "./BroadcastChangeChannel";
+import { createInMemoryDocumentVersionChannel } from "../../application/services/DocumentVersionChannel";
 import { WebRecoveryStore } from "./webRecoveryStore";
 import { WebStorageHealthService } from "./webStorageHealth";
 import { AIConfigService } from "../../application/services/AIConfigService";
@@ -141,6 +142,9 @@ export function createBrowserAppServices(): AppServices {
     capabilities: webCapabilities,
     preferencesService,
     syncChannel,
+    // 文档版本推进通道（R007 阶段 1）：Web 元数据写与正文同一事务，
+    // 无发布方；装配同一内存实现保持容器形状一致。
+    documentVersionChannel: createInMemoryDocumentVersionChannel(),
     recoveryStore,
     secretStore,
     aiConfigService,

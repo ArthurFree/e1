@@ -23,6 +23,8 @@ import {
   type OpenedVault,
   type OpenRecentRequest,
   type OpenSelectionRequest,
+  type PatchNoteMetadataInput,
+  type PatchNoteMetadataResult,
   type PickedFile,
   type ReadAssetInput,
   type ReadNoteInput,
@@ -74,6 +76,8 @@ const api: E1DesktopAPI = {
       invoke<CreateNoteResult>(IPC_CHANNELS.noteCreate, input),
     save: (input: SaveNoteInput) =>
       invoke<SaveNoteResult>(IPC_CHANNELS.noteSave, input),
+    patchMetadata: (input: PatchNoteMetadataInput) =>
+      invoke<PatchNoteMetadataResult>(IPC_CHANNELS.notePatchMetadata, input),
   },
   asset: {
     pick: (input?: AssetPickRequest) =>
