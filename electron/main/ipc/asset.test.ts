@@ -21,6 +21,7 @@ import {
 import { initializeVault } from "../filesystem/VaultFileSystem.js";
 import { TransientVaultStore } from "../transientVaults.js";
 import { VaultRegistry } from "../vaultRegistry.js";
+import { SelfWriteRegistry } from "../watcher/SelfWriteRegistry.js";
 import type { FileDialogLike } from "./asset.js";
 import { registerAssetHandlers } from "./asset.js";
 import type { IpcMainLike } from "./handler.js";
@@ -253,5 +254,37 @@ describe("asset.read / resolveUrl", () => {
     if (!url.ok) return;
     expect(url.value).toMatch(/^e1-asset:\/\//);
     expect(String(url.value)).not.toContain(vaultRoot);
+  });
+});
+
+describe("R007 阶段 3：import 成功登记自写（watcher 回声抑制挂点）", () => {
+  it("asset.import 成功 → 以结果 relativePath 记录（无 token）", async () => {
+    const selfWrites = new SelfWriteRegistry();
+    handlers = new Map();
+    registerAssetHandlers(bus, {
+      registry,
+      transients,
+      fileTokens,
+      openDialog,
+      selfWrites,
+    });
+    const vaultId = await registerVault();
+    const imported = await call(IPC_CHANNELS.assetImport, {
+      vaultId,
+      fileName: "回声.png",
+      mimeType: "image/png",
+      source: { kind: "bytes", data: new Uint8Array([1]) },
+    });
+    expect(imported.ok).toBe(true);
+    if (!imported.ok) return;
+    const value = imported.value as ImportedAsset;
+    expect(value.relativePath).toBe("assets/回声.png");
+    // 无 token 记录：命中即抑制（消费语义：第二次 false）。
+    expect(selfWrites.shouldSuppress(vaultId, "assets/回声.png", null)).toBe(
+      true,
+    );
+    expect(selfWrites.shouldSuppress(vaultId, "assets/回声.png", null)).toBe(
+      false,
+    );
   });
 });

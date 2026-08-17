@@ -1,8 +1,8 @@
 # R007：Desktop Local Vault 产品化基础闭环
 
 - **版本**：0.1
-- **状态**：实现中（阶段 0–2 已完成）
-- **更新时间**：2026-08-14
+- **状态**：实现中（阶段 0–3 已完成）
+- **更新时间**：2026-08-17
 - **基线 Commit**：`623f5292c290d0843d8e7eb72a7ce11bbaf22d06`
 - **前置阶段**：R006（Electron Desktop 本地 Vault 技术验证版）
 - **目标分支**：建议从 `main` 建立独立 R007 feature branch，按阶段提交，不一次性大改
@@ -648,6 +648,20 @@ DesktopPageRepository.setLastOpened
 ---
 
 ## 阶段 3：External Change Watcher
+
+**状态：已完成（2026-08-17）**
+
+实际实现与偏差记录：
+
+- Main（`electron/main/watcher/`）：`VaultWatcher`/`VaultWatcherService`（chokidar 4，`ignoreInitial` + `awaitWriteFinish` 200ms，scan 成功后按 vaultId 幂等启动，transient 同监听，before-quit 关闭）+ `WatchEventCoalescer`（150ms 静止窗口去重合并，单批超 500 降级 rescan-required）+ `SelfWriteRegistry`（TTL 10s，note 按落盘 sha256 比对消费一次回声，asset import 无 token 按路径+有效期抑制）。
+- 忽略规则：`.` 开头段（天然覆盖 AtomicFileWriter 临时文件）放行 `.e1/vault.json`；`node_modules`、`*.tmp`。受管 assets 目录下变化归 `asset-changed`；vault.json 变化整批降级 rescan-required。
+- 自写登记挂点：`note.create/save/patchMetadata` 与 `asset.import` 成功后 record；watcher 启动失败/error 只 console.warn + rescan-required，handler 永不 throw 口径不变。
+- IPC：首个 Main→Renderer 单向通道 `events:vaultChanges`（payload 为 `VaultFsEvent[]` 批次，只含 vaultId+relativePath）；preload `events.subscribeVaultChanges`（schema 校验后投递，非法批次丢弃）。
+- Renderer（§3.3）：`application/services/ExternalVaultChangeService` 契约 + `platform/desktop/DesktopExternalVaultChangeService`（200ms 静止窗口 → 按 vault 串行 scan 旧快照/rescan 新快照 → stable-id diff + watcher 事实归并 → created/modified/moved/deleted；asset-changed/rescan-required 只触发重扫不通知）。**偏差 1**：`modified` 不携带 versionToken——消费方（reload/冲突面板）一律经 getContent/openDocument 重读磁盘拿新令牌，事件带令牌只会过期。
+- 当前文档策略（§3.4）：clean+modified/moved 自动重载 + 5s 轻量提示；dirty 复用冲突面板；clean+deleted 正文区替换为「源文件已被删除」错误块（重新扫描/返回知识库）；dirty+deleted 保留编辑器内存 + 另存副本/复制出口；同 stable id 外部重建（created 命中删除态）按外部修改处理。**偏差 2**：`DocumentScreen` 幽灵页保活——外部删除当前文档后 pages 镜像移除该页，保留最后一个已知 page 对象让会话/编辑器/错误块继续工作（E2E 暴露的原始缺口：直接落空态导致错误块不可达、dirty 内存被卸载）。
+- moved 发布前同步 `DesktopDocumentSourceCache.updateRelativePath`（含 Adoption 别名的 path:* 缓存键），避免下次保存写回旧路径。
+- 能力（§3.6）：`desktopCapabilities.fileWatching` 翻 true；`capabilities.matrix.test` 与 `docs/architecture/runtime-boundaries.md` 同步。
+- 测试：watcher 单测 34 例 + 真 chokidar 集成 5 例；Renderer 服务 16 例；文档策略组件测试 7 例（含幽灵页回归）；桌面 E2E `desktop.watcher.spec.ts` 9 例覆盖验收 1–7（含扩展的 dirty 删除与复苏场景）全绿。**已知不绿**：`desktop.assets` E2E-03/04 与 `desktop.saving` 新建文档 3 例在阶段 3 之前的基线提交上即失败（环境相关，基线对照实验证实），非本阶段引入，待单独排查。
 
 ### 目标
 

@@ -47,11 +47,14 @@ beforeEach(() => {
 });
 
 describe("registerIpcHandlers 注册", () => {
-  it("全部 channel 注册（vault 5 + note 3 + asset 3）", () => {
+  it("全部 request/response channel 注册（vault 5 + note 4 + asset 4 + vaultState 2）", () => {
     registerIpcHandlers({ ipc: bus });
-    expect([...handlers.keys()].sort()).toEqual(
-      Object.values(IPC_CHANNELS).sort(),
+    // events:vaultChanges 是 Main→Renderer 单向推送通道（R007 阶段 3），
+    // 不注册 ipcMain.handle，从断言集中排除。
+    const requestChannels = Object.values(IPC_CHANNELS).filter(
+      (channel) => channel !== IPC_CHANNELS.eventsVaultChanges,
     );
+    expect([...handlers.keys()].sort()).toEqual(requestChannels.sort());
   });
 });
 

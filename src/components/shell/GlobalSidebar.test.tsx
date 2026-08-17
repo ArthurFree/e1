@@ -96,7 +96,14 @@ function mockDesktopApi(overrides: {
       })),
     },
     note: { read: vi.fn(), create: vi.fn(), save: vi.fn() },
-    asset: { pick: vi.fn(), import: vi.fn(), read: vi.fn(), resolveUrl: vi.fn() },
+    asset: {
+      pick: vi.fn(),
+      import: vi.fn(),
+      read: vi.fn(),
+      resolveUrl: vi.fn(),
+    },
+    // R007 阶段 3：外部变更事件订阅（测试不推送事件，空订阅即可）。
+    events: { subscribeVaultChanges: vi.fn(() => () => {}) },
   } as unknown as E1DesktopAPI;
   return { api, openRecent, openSelection };
 }

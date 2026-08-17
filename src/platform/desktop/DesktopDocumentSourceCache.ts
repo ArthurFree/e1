@@ -94,6 +94,17 @@ export class DesktopDocumentSourceCache {
     });
   }
 
+  /**
+   * 外部移动后同步来源路径（R007 阶段 3 §3.4）：保存目标路径与
+   * Mention/资源的相对路径解析都以缓存的 relativePath 为准，外部移动
+   * 后不更新会把下次保存写回旧路径（在旧位置重建文件）。
+   */
+  updateRelativePath(pageId: string, relativePath: string): void {
+    const existing = this.byPageId.get(pageId);
+    if (!existing) return;
+    this.byPageId.set(pageId, { ...existing, relativePath });
+  }
+
   remove(pageId: string): void {
     this.byPageId.delete(pageId);
   }

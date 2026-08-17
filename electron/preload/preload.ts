@@ -1,6 +1,8 @@
 // R006 阶段 1：预加载脚本——contextBridge 暴露完整 E1DesktopAPI。
 // R006 阶段 2：vault 组扩展 listRecent（channel 与信封语义不变）。
 // R006-C2.1：vault.open 删除，替换为 openSelection / openRecent（FR-01/02）。
+// R007 阶段 3：新增 events 组——首个 Main→Renderer 单向事件通道
+// （ipcRenderer.on + 返回取消订阅函数；payload 经 schema 校验后投递）。
 // sandbox 预加载只支持 CJS（构建产物 dist-electron/preload.cjs）。
 //
 // 错误传递策略（与 src/platform/desktop/desktopApi.ts 注释共同锁定）：
@@ -35,9 +37,11 @@ import {
   type SaveNoteResult,
   type SelectedVault,
   type VaultScanResult,
+  type VaultFsEvent,
   type VaultState,
 } from "../../shared/ipc/contracts.js";
 import { DesktopIpcError, isIpcErrorPayload } from "../../shared/errors.js";
+import { parseVaultFsEvents } from "../../shared/ipc/schemas.js";
 
 async function invoke<T>(channel: string, payload?: unknown): Promise<T> {
   const result = (await ipcRenderer.invoke(channel, payload)) as IpcResult<T>;
@@ -95,6 +99,22 @@ const api: E1DesktopAPI = {
       invoke<AssetReadResult>(IPC_CHANNELS.assetRead, input),
     resolveUrl: (assetId) =>
       invoke<string>(IPC_CHANNELS.assetResolveUrl, assetId),
+  },
+  events: {
+    subscribeVaultChanges: (listener: (events: VaultFsEvent[]) => void) => {
+      const wrapped = (_event: unknown, payload: unknown) => {
+        try {
+          listener(parseVaultFsEvents(payload));
+        } catch {
+          // 形状非法的推送直接丢弃：事件通道是单向事实流，
+          // 无法向 Main 回报错误，也不应打断 Renderer。
+        }
+      };
+      ipcRenderer.on(IPC_CHANNELS.eventsVaultChanges, wrapped);
+      return () => {
+        ipcRenderer.removeListener(IPC_CHANNELS.eventsVaultChanges, wrapped);
+      };
+    },
   },
 };
 

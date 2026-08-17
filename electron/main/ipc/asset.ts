@@ -35,6 +35,7 @@ import {
 import { importAssetFile, readAssetFile } from "../filesystem/AssetFileSystem.js";
 import { inferMimeFromFileName } from "../filesystem/assetFileName.js";
 import { resolveVaultRoot, type VaultRootDeps } from "../vaultRoots.js";
+import type { SelfWriteRegistry } from "../watcher/SelfWriteRegistry.js";
 import { handleRequest, type IpcMainLike } from "./handler.js";
 
 export interface FileDialogLike {
@@ -46,6 +47,8 @@ export interface FileDialogLike {
 export interface AssetHandlerDeps extends VaultRootDeps {
   openDialog?: FileDialogLike;
   fileTokens?: CapabilityTokenStore<PendingFileSelection>;
+  /** R007 阶段 3：import 成功后登记自写（无 token），抑制 watcher 回声。 */
+  selfWrites?: SelfWriteRegistry;
 }
 
 function filtersFromAccept(accept?: string[]): OpenDialogOptions["filters"] {
@@ -139,13 +142,19 @@ export function registerAssetHandlers(
                 ).absolutePath,
               }
             : { kind: "bytes" as const, data: input.source.data };
-        return importAssetFile({
+        const imported = await importAssetFile({
           vaultRoot: root.absolutePath,
           vaultId: input.vaultId,
           fileName: input.fileName,
           mimeType: input.mimeType,
           source,
         });
+        // R007 阶段 3：登记自写（无 token），抑制 watcher 的 asset-changed 回声。
+        deps.selfWrites?.record({
+          vaultId: input.vaultId,
+          relativePath: imported.relativePath,
+        });
+        return imported;
       },
     ),
   );

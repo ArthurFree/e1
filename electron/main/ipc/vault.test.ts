@@ -426,6 +426,68 @@ describe("vault.scan 双通道（注册表 + transient）", () => {
   });
 });
 
+describe("R007 阶段 3：vault.scan 成功后启动文件监听", () => {
+  it("注册表通道：scan 成功 → ensureWatching(vaultId, absolutePath)，幂等", async () => {
+    const dir = await makeVaultDir("监听库");
+    await writeVaultJson(dir, "v-监听");
+    await registry.touch({
+      vaultId: "v-监听",
+      absolutePath: dir,
+      displayName: "监听库",
+    });
+    const calls: Array<[string, string]> = [];
+    handlers = new Map();
+    registerVaultHandlers(bus, {
+      openDialog: { showOpenDialog: vi.fn() },
+      registry,
+      selectionTokens: tokens,
+      transients,
+      watchers: {
+        ensureWatching: (vaultId, absolutePath) => {
+          calls.push([vaultId, absolutePath]);
+        },
+      },
+    });
+
+    const first = await call(IPC_CHANNELS.vaultScan, "v-监听");
+    expect(first.ok).toBe(true);
+    expect(calls).toEqual([["v-监听", dir]]);
+  });
+
+  it("transient 通道同样监听；scan 失败（VAULT_NOT_FOUND）不启动监听", async () => {
+    const dir = await makeVaultDir("预览监听库");
+    const selected = await selectDir(dir);
+    const opened = await call(IPC_CHANNELS.vaultOpenSelection, {
+      selectionToken: selected.selectionToken,
+      initialize: false,
+    });
+    if (!opened.ok) throw new Error("openSelection 应成功");
+    const { vaultId } = opened.value as OpenedVault;
+
+    const calls: Array<[string, string]> = [];
+    handlers = new Map();
+    registerVaultHandlers(bus, {
+      openDialog: { showOpenDialog: vi.fn() },
+      registry,
+      selectionTokens: tokens,
+      transients,
+      watchers: {
+        ensureWatching: (id, path) => {
+          calls.push([id, path]);
+        },
+      },
+    });
+
+    const scanned = await call(IPC_CHANNELS.vaultScan, vaultId);
+    expect(scanned.ok).toBe(true);
+    expect(calls).toEqual([[vaultId, dir]]);
+
+    const failed = await call(IPC_CHANNELS.vaultScan, "v-未登记");
+    expect(failed.ok).toBe(false);
+    expect(calls).toHaveLength(1);
+  });
+});
+
 describe("vault.listRecent", () => {
   it("空表 → ok([])；openRecent 后含登记条目", async () => {
     const empty = await call(IPC_CHANNELS.vaultListRecent);

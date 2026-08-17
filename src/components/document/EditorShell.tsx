@@ -69,9 +69,10 @@ export function EditorShell({
   children,
 }: EditorShellProps) {
   const services = useAppServices();
-  const { renamePage, togglePageFavorite } = useWorkspaceCommands();
+  const { renamePage, togglePageFavorite, refreshCurrentWorkspace } =
+    useWorkspaceCommands();
   const { titleFocusPageId } = useNavigationState();
-  const { clearTitleFocus } = useNavigationCommands();
+  const { clearTitleFocus, showWorkspaceHome } = useNavigationCommands();
   const { preferences, setTheme } = usePreferences();
   const { openTreeDrawer } = useOverlay();
   const [tocOpen, setTocOpen] = useState(false);
@@ -86,6 +87,14 @@ export function EditorShell({
 
   const toggleTheme = () => {
     void setTheme(preferences.theme === "dark" ? "light" : "dark");
+  };
+
+  // R007 阶段 3 §3.4：「源文件已删除」错误块的重新扫描——失效扫描缓存
+  // 并刷新页面树/标签镜像（同 WorkspaceHome 的 rescanVault 口径）。
+  const rescanExternalDeleted = async () => {
+    if (!page) return;
+    await services.vaultMaintenance?.rescan(page.workspaceId);
+    await refreshCurrentWorkspace();
   };
 
   return (
@@ -257,6 +266,43 @@ export function EditorShell({
                     </Button>
                   </div>
                 )}
+              {conflict.externalReloadNotice && (
+                // R007 阶段 3 §3.4：外部修改/移动后自动重载的轻量提示，
+                // 约 5 秒自动消失，也可手动关闭。
+                <div className="recovery-banner" role="status">
+                  <span className="recovery-banner__text">
+                    文件已由其他程序更新，已自动重新载入。
+                  </span>
+                  <Button
+                    variant="ghost"
+                    onClick={conflict.dismissExternalReloadNotice}
+                  >
+                    关闭
+                  </Button>
+                </div>
+              )}
+              {conflict.externalDeleted === "dirty" && (
+                // R007 阶段 3 §3.4：源文件被外部删除且本地有未保存修改——
+                // 保留编辑器内存，提供另存副本/复制内容出口。
+                <div className="recovery-banner conflict-banner" role="alert">
+                  <IconAlertTriangle size={16} />
+                  <span className="recovery-banner__text">
+                    源文件已被其他程序删除，当前编辑内容仍保留在内存中。
+                  </span>
+                  <Button
+                    variant="primary"
+                    onClick={() => void conflict.saveConflictCopy()}
+                  >
+                    另存副本
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={conflict.copyConflictContent}
+                  >
+                    复制当前内容
+                  </Button>
+                </div>
+              )}
               {conflict.conflictVisible && (
                 <div className="recovery-banner conflict-banner" role="alert">
                   <span className="recovery-banner__text">
@@ -321,7 +367,35 @@ export function EditorShell({
                 />
                 <TagPicker pageId={page.id} />
               </div>
-              <div className="doc-body">{children}</div>
+              <div className="doc-body">
+                {conflict.externalDeleted === "clean" ? (
+                  // R007 阶段 3 §3.4：源文件被外部删除且本地无未保存修改——
+                  // 正文区替换为错误块（样式复用打开链路的 content-error）。
+                  <div className="content-error" role="alert">
+                    <div className="content-error__icon" aria-hidden="true">
+                      <IconAlertTriangle size={20} />
+                    </div>
+                    <h2 className="content-error__title">源文件已被删除</h2>
+                    <p className="content-error__description">
+                      这篇 Markdown
+                      已被其他程序从知识库目录中删除。你可以重新扫描知识库，或返回知识库首页。
+                    </p>
+                    <div className="content-error__actions">
+                      <Button
+                        variant="primary"
+                        onClick={() => void rescanExternalDeleted()}
+                      >
+                        重新扫描知识库
+                      </Button>
+                      <Button variant="secondary" onClick={showWorkspaceHome}>
+                        返回知识库
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  children
+                )}
+              </div>
             </div>
             {tocOpen && editor && <TocPanel editor={editor} />}
           </div>

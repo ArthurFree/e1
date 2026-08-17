@@ -21,6 +21,7 @@ import type {
   ReadAssetInput,
   ReadNoteInput,
   SaveNoteInput,
+  VaultFsEvent,
   VaultPageStatePatch,
 } from "./contracts.js";
 
@@ -332,4 +333,39 @@ export function parseResolveAssetUrlInput(payload: unknown): string {
     invalid("asset.resolveUrl 入参必须为非空 assetId 字符串");
   }
   return payload;
+}
+
+/**
+ * R007 阶段 3：events:vaultChanges 推送 payload 校验（Preload 侧）。
+ *
+ * 与请求校验方向相反——这里校验的是 Main 推送的事件批次，Preload 在
+ * 投递给 Renderer 回调前调用；形状非法抛 IpcFailure 由订阅方决定丢弃。
+ */
+const VAULT_FS_EVENT_TYPES = new Set([
+  "note-created",
+  "note-changed",
+  "note-removed",
+  "asset-changed",
+  "rescan-required",
+]);
+
+export function parseVaultFsEvents(payload: unknown): VaultFsEvent[] {
+  if (!Array.isArray(payload)) {
+    invalid("events:vaultChanges payload 必须为事件数组");
+  }
+  return payload.map((item, index): VaultFsEvent => {
+    if (!isRecord(item)) invalid(`事件[${index}] 必须为对象`);
+    const type = item.type;
+    if (typeof type !== "string" || !VAULT_FS_EVENT_TYPES.has(type)) {
+      invalid(`事件[${index}].type 非法`);
+    }
+    const vaultId = requireString(item, "vaultId", { nonEmpty: true });
+    if (type === "rescan-required") {
+      return { type, vaultId };
+    }
+    const relativePath = requireString(item, "relativePath", {
+      nonEmpty: true,
+    });
+    return { type, vaultId, relativePath } as VaultFsEvent;
+  });
 }

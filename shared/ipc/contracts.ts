@@ -9,6 +9,8 @@
  * R006-C3-A（FR-12，r006-c3 §20）：note.read 落地，ReadNoteResult 改形——
  * noteId → stableNoteId（Frontmatter id，缺失为 null，Main 不创建），
  * 新增 source{modifiedAt,sizeBytes}。
+ * R007 阶段 3（DSK-01）：新增首个 Main→Renderer 单向事件通道
+ * events:vaultChanges（VaultFsEvent 批次）与 events.subscribeVaultChanges。
  *
  * shared/ 为 Renderer（src/platform/desktop）与 Electron Main/Preload 共用
  * 的唯一契约来源：channel 常量、请求/响应类型、E1DesktopAPI 形状。
@@ -42,6 +44,7 @@ export const IPC_CHANNELS = {
   assetImport: "asset:import",
   assetRead: "asset:read",
   assetResolveUrl: "asset:resolveUrl",
+  eventsVaultChanges: "events:vaultChanges",
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
@@ -373,6 +376,28 @@ export interface AssetReadResult {
   data: Uint8Array;
 }
 
+/* ---------------------------------- events ---------------------------------- */
+
+/**
+ * R007 阶段 3（DSK-01/DSK-02）：Main→Renderer 单向文件系统事件。
+ *
+ * Watcher 只产生事实（哪个相对路径发生了什么），不携带 absolutePath、
+ * 不携带文件内容；如何 reconciliation（重扫/diff/冲突）由 Renderer 决定。
+ * 事件在 Main 侧经 coalescing 去重后按批次推送（payload 为数组）。
+ *
+ * - note-created / note-changed / note-removed：*.md 笔记文件；
+ * - asset-changed：受管 assets/ 下资源新增/修改/删除（不区分细类，
+ *   消费方按需重新解析）；
+ * - rescan-required：.e1/vault.json 变化或事件量异常等无法精确归因时，
+ *   要求 Renderer 全量重扫。
+ */
+export type VaultFsEvent =
+  | { type: "note-created"; vaultId: string; relativePath: string }
+  | { type: "note-changed"; vaultId: string; relativePath: string }
+  | { type: "note-removed"; vaultId: string; relativePath: string }
+  | { type: "asset-changed"; vaultId: string; relativePath: string }
+  | { type: "rescan-required"; vaultId: string };
+
 /* --------------------------------- 桥接 API --------------------------------- */
 
 /**
@@ -438,6 +463,16 @@ export interface E1DesktopAPI {
     read(input: ReadAssetInput): Promise<AssetReadResult>;
     /** 解析为 e1-asset:// URL（不含字节）。 */
     resolveUrl(assetId: string): Promise<string>;
+  };
+  /**
+   * R007 阶段 3：Main→Renderer 单向事件订阅（唯一推送通道）。
+   * 订阅 Vault 文件系统变化（Watcher 事实批次）；返回取消订阅函数。
+   * Renderer 不得经其它途径拿 ipcRenderer 本体。
+   */
+  events: {
+    subscribeVaultChanges(
+      listener: (events: VaultFsEvent[]) => void,
+    ): () => void;
   };
 }
 

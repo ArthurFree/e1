@@ -40,10 +40,14 @@ import {
   sanitizeMarkdownStem,
 } from "../filesystem/markdownFileName.js";
 import { resolveVaultRoot, type VaultRootDeps } from "../vaultRoots.js";
+import type { SelfWriteRegistry } from "../watcher/SelfWriteRegistry.js";
 import { handleRequest, type IpcMainLike } from "./handler.js";
 
 /** note 组 handler 依赖：与 vault 组共享同一 registry/transients（index.ts 注入）。 */
-export type NoteHandlerDeps = VaultRootDeps;
+export interface NoteHandlerDeps extends VaultRootDeps {
+  /** R007 阶段 3：写成功后登记自写，抑制 watcher 回声（reload loop 防线）。 */
+  selfWrites?: SelfWriteRegistry;
+}
 
 /** 扩展名必须为 .md（大小写不敏感）。 */
 const MARKDOWN_EXTENSION = /\.md$/i;
@@ -179,10 +183,17 @@ export function registerNoteHandlers(
       });
 
       const st = await stat(created.absolutePath);
+      const versionToken = sha256Token(bytes);
+      // R007 阶段 3：登记自写（exclusive create 落盘内容即 bytes）。
+      deps.selfWrites?.record({
+        vaultId: input.vaultId,
+        relativePath: created.relativePath,
+        versionToken,
+      });
       return {
         noteId: ensured.noteId,
         relativePath: created.relativePath,
-        versionToken: sha256Token(bytes),
+        versionToken,
         source: {
           modifiedAt: st.mtimeMs,
           sizeBytes: st.size,
@@ -203,12 +214,19 @@ export function registerNoteHandlers(
             "仅预览知识库不能修改文件。",
           );
         }
-        return patchNoteMetadataFile({
+        const patched = await patchNoteMetadataFile({
           vaultRoot: root.absolutePath,
           relativePath: input.relativePath,
           expectedVersionToken: input.expectedVersionToken,
           patch: input.patch,
         });
+        // R007 阶段 3：登记自写，抑制 watcher 回声。
+        deps.selfWrites?.record({
+          vaultId: input.vaultId,
+          relativePath: input.relativePath,
+          versionToken: patched.versionToken,
+        });
+        return patched;
       },
     ),
   );
@@ -260,6 +278,13 @@ export function registerNoteHandlers(
           targetPath,
           bytes,
           expectedVersionToken: input.expectedVersionToken,
+        });
+        // R007 阶段 3：登记自写（written.versionToken 为落盘后的真实 hash），
+        // 抑制 watcher 回声（自动保存不触发 reload loop）。
+        deps.selfWrites?.record({
+          vaultId: input.vaultId,
+          relativePath: input.relativePath,
+          versionToken: written.versionToken,
         });
         return {
           versionToken: written.versionToken,

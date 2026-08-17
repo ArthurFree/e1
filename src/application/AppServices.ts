@@ -33,6 +33,7 @@ import type { RecoveryStore } from "./services/RecoveryStore";
 import type { SecretStore } from "./services/SecretStore";
 import type { AIConfigService } from "./services/AIConfigService";
 import type { StorageHealthService } from "./services/StorageHealthService";
+import type { ExternalVaultChangeService } from "./services/ExternalVaultChangeService";
 import type { RuntimeCapabilities } from "../runtime/RuntimeCapabilities";
 
 /**
@@ -146,6 +147,15 @@ export interface AppServices {
    * 纯本地状态切换。
    */
   documentSafety?: DocumentSafetyPort;
+  /**
+   * 外部 Vault 变更服务（可选，R007 阶段 3）：承载「Main Watcher →
+   * Renderer reconciliation」后的归一化文档变更流（created/modified/
+   * moved/deleted），由以本地目录为真相且具备文件监听的运行时装配
+   * （Desktop）；Web/内存容器不装配本字段。UI 一律以
+   * `capabilities.fileWatching && services.externalVaultChanges` 门控
+   * （DUAL-01：只判断能力与服务是否存在，不判断平台名称）。
+   */
+  externalVaultChanges?: ExternalVaultChangeService;
   /**
    * 命令服务（R005 批次 1）：业务写编排入口，状态层经此触发仓储写、
    * 搜索索引同步与跨标签页广播。

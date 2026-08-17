@@ -4,6 +4,11 @@
  * 承载保存状态机的组件侧镜像、其他标签页正文落盘事件的三种接收分支，
  * 以及冲突面板的四个处理选项（重新载入 / 另存副本 / 强制覆盖 / 复制内容）。
  * 正文替换本身由 useDocumentSession 拥有，经 onContentReloaded 注入。
+ *
+ * R007 阶段 3 §3.4「当前文档策略」：Desktop 装配 externalVaultChanges 时，
+ * 外部修改/移动——本地干净自动重载 + 轻量提示，本地 dirty 复用冲突面板；
+ * 外部删除——dirty 保留内存并允许另存副本，clean 进入「源文件已删除」
+ * 错误块。相关状态均按 Document Session 归属，切换文档自然失效。
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -19,10 +24,23 @@ import type { SaveState } from "../../editor/DocumentEditor";
 /** DocumentEditor 注册的冲突处理动作；null 表示注销（编辑器已销毁）。 */
 type ConflictActions = { forceOverwrite(): void } | null;
 
+/** 外部重载轻量提示的自动消失时长（ms，R007 §3.4）。 */
+const EXTERNAL_RELOAD_NOTICE_MS = 5000;
+
 export interface DocumentConflict {
   saveState: SaveState;
   /** 冲突提示条是否可见（乐观锁冲突或其他标签页保存 + 本地未保存修改）。 */
   conflictVisible: boolean;
+  /** 外部修改/移动已自动重载的轻量提示（R007 §3.4，仅 Desktop 出现）。 */
+  externalReloadNotice: boolean;
+  /** 关闭外部重载轻量提示。 */
+  dismissExternalReloadNotice(): void;
+  /**
+   * 当前文档源文件被外部删除的状态（R007 §3.4）：
+   * "clean" → 正文区替换为「源文件已删除」错误块；
+   * "dirty" → 保留编辑器内存，提示条提供「另存副本」入口。
+   */
+  externalDeleted: "clean" | "dirty" | null;
   onSaveStateChange(state: SaveState): void;
   onRegisterRetry(retry: () => void): void;
   onRegisterConflictActions(actions: ConflictActions): void;
@@ -68,6 +86,19 @@ export function useDocumentConflict(input: {
   const [remoteConflictFor, setRemoteConflictFor] = useState<string | null>(
     null,
   );
+  // R007 阶段 3 §3.4：外部变更状态（仅 Desktop 装配 externalVaultChanges
+  // 时产生）。与 remoteConflictFor 同口径按 Document Session 归属，
+  // 切换文档 / 重试加载即自然失效。
+  const [externalReloadNoticeFor, setExternalReloadNoticeFor] = useState<
+    string | null
+  >(null);
+  const [externalDeletedFor, setExternalDeletedFor] = useState<{
+    sessionKey: string;
+    kind: "clean" | "dirty";
+  } | null>(null);
+  // 供外部变更订阅回调读取最新值（订阅本身保持稳定引用）。
+  const externalDeletedForRef = useRef(externalDeletedFor);
+  externalDeletedForRef.current = externalDeletedFor;
 
   const retrySaveRef = useRef<(() => void) | null>(null);
   // 冲突处理动作（R004 阶段 7）：由 DocumentEditor 注册「强制覆盖」。
@@ -79,6 +110,40 @@ export function useDocumentConflict(input: {
   pageRef.current = page;
   const sessionKeyRef = useRef(sessionKey);
   sessionKeyRef.current = sessionKey;
+  // 外部重载轻量提示的自动消失计时器（约 5 秒，R007 §3.4）。
+  const reloadNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+
+  /** 显示外部重载轻量提示并重置自动消失计时。 */
+  const showExternalReloadNotice = useCallback((key: string) => {
+    setExternalReloadNoticeFor(key);
+    if (reloadNoticeTimerRef.current !== null) {
+      clearTimeout(reloadNoticeTimerRef.current);
+    }
+    reloadNoticeTimerRef.current = setTimeout(() => {
+      reloadNoticeTimerRef.current = null;
+      setExternalReloadNoticeFor(null);
+    }, EXTERNAL_RELOAD_NOTICE_MS);
+  }, []);
+
+  const dismissExternalReloadNotice = useCallback(() => {
+    if (reloadNoticeTimerRef.current !== null) {
+      clearTimeout(reloadNoticeTimerRef.current);
+      reloadNoticeTimerRef.current = null;
+    }
+    setExternalReloadNoticeFor(null);
+  }, []);
+
+  // 卸载时清理提示计时器。
+  useEffect(
+    () => () => {
+      if (reloadNoticeTimerRef.current !== null) {
+        clearTimeout(reloadNoticeTimerRef.current);
+      }
+    },
+    [],
+  );
 
   const onSaveStateChange = useCallback((state: SaveState) => {
     setSaveState(state);
@@ -182,6 +247,60 @@ export function useDocumentConflict(input: {
     });
   }, [services, reloadFromDisk]);
 
+  // 外部 Vault 变更（R007 阶段 3 §3.4，仅 Desktop 装配该服务；Web 行为
+  // 不变）：只处理当前编辑文档的变更——
+  // modified/moved：本地干净自动重载 + 轻量提示，dirty 复用冲突面板；
+  // deleted：dirty 保留编辑器内存（另存副本入口），clean 进入错误块；
+  // created：仅当当前文档处于「外部删除」状态（同 stable id 被外部重建）
+  // 时按外部修改处理，其余忽略。
+  useEffect(() => {
+    const external = services.externalVaultChanges;
+    if (!external) return;
+    return external.subscribe((changes) => {
+      const current = pageRef.current;
+      if (!current || current.kind !== "document") return;
+      for (const change of changes) {
+        if (change.pageId !== current.id) continue;
+        if (change.type === "modified" || change.type === "moved") {
+          setExternalDeletedFor(null);
+          if (saveStateRef.current.status === "saved") {
+            showExternalReloadNotice(sessionKeyRef.current);
+            void reloadFromDisk();
+          } else {
+            setRemoteConflictFor(sessionKeyRef.current);
+          }
+        } else if (change.type === "deleted") {
+          dismissExternalReloadNotice();
+          setExternalDeletedFor({
+            sessionKey: sessionKeyRef.current,
+            kind: saveStateRef.current.status === "saved" ? "clean" : "dirty",
+          });
+        } else if (change.type === "created") {
+          // 被外部删除的当前文档又被外部重建（同 stable id 回到树中）：
+          // 视为一次外部修改——清除删除状态，clean 自动重载 / dirty 进冲突；
+          // 与当前文档无关的 created 忽略。
+          if (
+            externalDeletedForRef.current?.sessionKey !== sessionKeyRef.current
+          ) {
+            continue;
+          }
+          setExternalDeletedFor(null);
+          if (saveStateRef.current.status === "saved") {
+            showExternalReloadNotice(sessionKeyRef.current);
+            void reloadFromDisk();
+          } else {
+            setRemoteConflictFor(sessionKeyRef.current);
+          }
+        }
+      }
+    });
+  }, [
+    services,
+    reloadFromDisk,
+    showExternalReloadNotice,
+    dismissExternalReloadNotice,
+  ]);
+
   // 乐观锁冲突（本地保存撞版本）或其他标签页保存了当前文档且本地 dirty：
   // 两种来源汇合为同一冲突面板（R004 阶段 7）。
   const conflictVisible =
@@ -190,9 +309,20 @@ export function useDocumentConflict(input: {
     (remoteConflictFor === sessionKey ||
       (saveState.status === "error" && saveState.errorKind === "conflict"));
 
+  // 外部变更状态按 sessionKey 归属换算为当前会话的展示值。
+  const externalReloadNotice =
+    externalReloadNoticeFor !== null && externalReloadNoticeFor === sessionKey;
+  const externalDeleted =
+    externalDeletedFor?.sessionKey === sessionKey
+      ? externalDeletedFor.kind
+      : null;
+
   return {
     saveState,
     conflictVisible,
+    externalReloadNotice,
+    dismissExternalReloadNotice,
+    externalDeleted,
     onSaveStateChange,
     onRegisterRetry,
     onRegisterConflictActions,

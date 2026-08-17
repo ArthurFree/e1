@@ -20,10 +20,10 @@ describe("RuntimeCapabilities matrix（锁定 architecture/runtime-boundaries.md
     });
   });
 
-  it("desktopCapabilities：localDirectory + persistentAssetPaths + documentPersistence 为 true", () => {
+  it("desktopCapabilities：localDirectory + fileWatching + persistentAssetPaths + documentPersistence 为 true", () => {
     expect(desktopCapabilities).toEqual({
       localDirectory: true,
-      fileWatching: false,
+      fileWatching: true,
       revealInFileManager: false,
       nativeMenu: false,
       nativeSecrets: false,

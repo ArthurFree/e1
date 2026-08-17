@@ -107,6 +107,8 @@ function makeApi(overrides: {
       read: vi.fn(),
       resolveUrl: vi.fn(),
     },
+    // R007 阶段 3：外部变更事件订阅（测试不推送事件，空订阅即可）。
+    events: { subscribeVaultChanges: vi.fn(() => () => {}) },
   } as unknown as E1DesktopAPI;
 }
 

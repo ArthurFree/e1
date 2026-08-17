@@ -50,6 +50,7 @@ import { SelectionTokenStore } from "../SelectionTokenStore.js";
 import { TransientVaultStore } from "../transientVaults.js";
 import type { VaultRegistry } from "../vaultRegistry.js";
 import { resolveVaultRoot } from "../vaultRoots.js";
+import type { VaultWatcherService } from "../watcher/VaultWatcher.js";
 import { handleRequest, type IpcMainLike } from "./handler.js";
 
 /** dialog.showOpenDialog 的最小结构视图（测试可注入 mock）。 */
@@ -67,6 +68,11 @@ export interface VaultHandlerDeps {
   selectionTokens?: SelectionTokenStore;
   /** transient 仅预览会话存储（缺省新建）。 */
   transients?: TransientVaultStore;
+  /**
+   * R007 阶段 3：vault.scan 成功后启动该 vault 的文件监听（幂等）；
+   * transient 仅预览会话同样监听（外部变化只读刷新，不产生写入）。
+   */
+  watchers?: Pick<VaultWatcherService, "ensureWatching">;
 }
 
 export function registerVaultHandlers(
@@ -195,7 +201,15 @@ export function registerVaultHandlers(
       parseVaultScanRequest,
       async (vaultId): Promise<VaultScanResult> => {
         const root = await resolveVaultRoot(vaultId, { registry, transients });
-        return scanVault(root.absolutePath);
+        const scan = await scanVault(root.absolutePath);
+        // R007 阶段 3：扫描成功即视为 vault 已被使用，启动外部变化监听
+        // （幂等；watcher 内部失败只 warn + rescan-required，不影响 scan）。
+        try {
+          deps.watchers?.ensureWatching(vaultId, root.absolutePath);
+        } catch (error) {
+          console.warn(`[watcher] ensureWatching 失败 vaultId=${vaultId}:`, error);
+        }
+        return scan;
       },
     ),
   );

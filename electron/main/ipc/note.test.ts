@@ -18,6 +18,7 @@ import {
 } from "../../../shared/ipc/contracts.js";
 import { TransientVaultStore } from "../transientVaults.js";
 import { VaultRegistry } from "../vaultRegistry.js";
+import { SelfWriteRegistry } from "../watcher/SelfWriteRegistry.js";
 import type { IpcMainLike } from "./handler.js";
 import { registerNoteHandlers } from "./note.js";
 
@@ -380,5 +381,91 @@ describe("note.create / note.save 真实实现（R006-C4）", () => {
     });
     expect(save.ok).toBe(false);
     if (!save.ok) expect(save.error.code).toBe("DOCUMENT_TOO_LARGE");
+  });
+});
+
+describe("R007 阶段 3：写成功登记自写（watcher 回声抑制挂点）", () => {
+  function withSelfWrites(): SelfWriteRegistry {
+    const selfWrites = new SelfWriteRegistry();
+    handlers = new Map();
+    registerNoteHandlers(bus, { registry, transients, selfWrites });
+    return selfWrites;
+  }
+
+  it("note.save 成功 → 以入参 relativePath + 新 versionToken 记录", async () => {
+    const selfWrites = withSelfWrites();
+    const vaultId = await registerVault();
+    await writeFile(join(vaultRoot, "a.md"), "# 旧\n", "utf8");
+    const read = await readNote(vaultId, "a.md");
+    if (!read.ok) throw new Error("read 应成功");
+    const save = await call(IPC_CHANNELS.noteSave, {
+      vaultId,
+      relativePath: "a.md",
+      markdown: "# 新\n",
+      expectedVersionToken: (read.value as ReadNoteResult).versionToken,
+    });
+    expect(save.ok).toBe(true);
+    if (!save.ok) return;
+    const newToken = (save.value as { versionToken: string }).versionToken;
+    // 记录命中即抑制（消费语义：第二次 false）。
+    expect(selfWrites.shouldSuppress(vaultId, "a.md", newToken)).toBe(true);
+    expect(selfWrites.shouldSuppress(vaultId, "a.md", newToken)).toBe(false);
+  });
+
+  it("note.create 成功 → 以结果 relativePath + versionToken 记录", async () => {
+    const selfWrites = withSelfWrites();
+    const vaultId = await registerVault();
+    const create = await call(IPC_CHANNELS.noteCreate, {
+      vaultId,
+      directory: "",
+      title: "回声",
+    });
+    expect(create.ok).toBe(true);
+    if (!create.ok) return;
+    const created = create.value as {
+      relativePath: string;
+      versionToken: string;
+    };
+    expect(
+      selfWrites.shouldSuppress(
+        vaultId,
+        created.relativePath,
+        created.versionToken,
+      ),
+    ).toBe(true);
+  });
+
+  it("note.patchMetadata 成功 → 记录；保存失败（冲突）不记录", async () => {
+    const selfWrites = withSelfWrites();
+    const vaultId = await registerVault();
+    await writeFile(
+      join(vaultRoot, "m.md"),
+      "---\nid: n-m\ntitle: 旧标题\n---\n\n正文\n",
+      "utf8",
+    );
+    const read = await readNote(vaultId, "m.md");
+    if (!read.ok) throw new Error("read 应成功");
+    const token = (read.value as ReadNoteResult).versionToken;
+
+    const patch = await call(IPC_CHANNELS.notePatchMetadata, {
+      vaultId,
+      relativePath: "m.md",
+      expectedVersionToken: token,
+      patch: { title: "新标题" },
+    });
+    expect(patch.ok).toBe(true);
+    if (!patch.ok) return;
+    const newToken = (patch.value as { versionToken: string }).versionToken;
+    expect(selfWrites.shouldSuppress(vaultId, "m.md", newToken)).toBe(true);
+
+    // 冲突失败不写盘也不登记。
+    const conflict = await call(IPC_CHANNELS.noteSave, {
+      vaultId,
+      relativePath: "m.md",
+      markdown: "# x\n",
+      expectedVersionToken: `sha256:${"0".repeat(64)}`,
+    });
+    expect(conflict.ok).toBe(false);
+    expect(selfWrites.size).toBe(0);
   });
 });

@@ -44,7 +44,8 @@ R005 将项目划分为四层运行时边界：Shared UI、Shared Application、
 - 授权边界（C2.1）：Renderer 全程不接触 absolutePath（一次性 selectionToken + `openRecent` + transient 仅预览，SEC-01）；未初始化目录经三选项确认框后才初始化。
 - **文档读写已真实**：`note.read` / `note.create` / `note.save` 经 PathGuard、NoteFileSystem、AtomicFileWriter；Renderer 侧 `DesktopContentRepository` + `DesktopMarkdownWriteService`（Source/Identity/Output Gate、Frontmatter 保留、Stable ID Adoption）；`documentPersistence: true`，编辑走共享 SaveCoordinator。
 - **附件已真实（C5）**：`asset.pick` / `import` / `read`、`DesktopAssetStore` / Registry / Access、`e1-asset://` 协议、Markdown Hydration 与相对路径写出；`persistentAssetPaths: true`。
-- 能力矩阵见下表（`src/platform/desktop/desktopCapabilities.ts`）：`localDirectory`、`documentPersistence`、`persistentAssetPaths` 为 true；`fileWatching` / `revealInFileManager` / `nativeMenu` / `nativeSecrets` 仍为 false（未实现，不得写「未来全 true」）。
+- 能力矩阵见下表（`src/platform/desktop/desktopCapabilities.ts`）：`localDirectory`、`documentPersistence`、`persistentAssetPaths`、`fileWatching` 为 true；`revealInFileManager` / `nativeMenu` / `nativeSecrets` 仍为 false（未实现，不得写「未来全 true」）。
+- **外部文件监听已真实（R007 阶段 3）**：Main 侧 `electron/main/watcher/`（chokidar + coalescing + 自写抑制）经首个单向事件通道 `events:vaultChanges` 推送 `VaultFsEvent` 批次；Renderer 侧 `ExternalVaultChangeService`（application 契约 + Desktop 实现）做静止窗口合并 → 重扫 → stable-id diff → 归一化变更；页面树经 `ExternalVaultChangeBridge` 刷新，当前文档按 clean 自动重载 / dirty 冲突面板 / 外部删除提示处理。
 - 平台专属能力经**平台无关的可选 port** 注入（PR5，原 `AppServices.desktopExtras` PoC 通道已删除）：`AppServices.vaultMaintenance`（`rescan(vaultId)`，FR-26 重新扫描）与 `AppServices.documentSafety`（`approveLossySource` / `approveLossyOutput` / `approveIdentityAdoption` 会话级门闸）。Web/内存容器不装配这两个字段；UI 一律以「能力矩阵字段 + port 是否存在」门控（DUAL-01，不判断平台名称）。
 
 职责：Renderer 侧经 IPC Client 实现同一组 port；Electron Main 负责目录选择、路径安全校验、Markdown 文件读写、临时文件原子替换、附件复制、自定义资源协议、文件 hash、IPC 参数校验。Desktop 以 Markdown 文件为真实数据源（DUAL-04）。
@@ -78,7 +79,7 @@ R005 将项目划分为四层运行时边界：Shared UI、Shared Application、
 | 字段                   | 语义                                                                                    | Web | Desktop |
 | ---------------------- | --------------------------------------------------------------------------------------- | :-: | :-----: |
 | `localDirectory`       | 能以本地目录作为 Vault 直接读写（文件夹即页面树）                                      | 否  |   是    |
-| `fileWatching`         | 能监听真实数据源的外部变更并触发刷新/冲突提示                                          | 否  |   否    |
+| `fileWatching`         | 能监听真实数据源的外部变更并触发刷新/冲突提示                                          | 否  |   是    |
 | `revealInFileManager`  | 能在系统文件管理器中显示笔记或附件文件                                                 | 否  |   否    |
 | `nativeMenu`           | 能使用系统原生菜单（应用菜单/上下文菜单）                                              | 否  |   否    |
 | `nativeSecrets`        | 能使用系统级安全存储保存 AI 密钥等机密                                                 | 否  |   否    |

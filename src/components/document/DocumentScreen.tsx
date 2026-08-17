@@ -14,6 +14,7 @@ import {
   type ReactNode,
 } from "react";
 import type { Editor } from "@tiptap/core";
+import type { Page } from "../../domain/types";
 import type { DocumentEditorController } from "../../application/services/DocumentEditorController";
 import { useAppServices } from "../../state/AppServicesProvider";
 import {
@@ -39,7 +40,45 @@ export function DocumentScreen() {
   const { markOpened, refreshCurrentWorkspace } = useWorkspaceCommands();
   const { selectedPageId } = useNavigationState();
   const { showWorkspaceHome } = useNavigationCommands();
-  const page = pages.find((p) => p.id === selectedPageId) ?? null;
+  const foundPage = pages.find((p) => p.id === selectedPageId) ?? null;
+
+  // R007 阶段 3 §3.4：当前文档被外部删除后，Workspace 刷新会把该页从
+  // pages 镜像移除；此处保留最后一个已知 page 对象（幽灵页），让文档
+  // 会话、编辑器内存与「源文件已删除」错误块/提示条继续工作，直到用户
+  // 离开或文件被外部恢复（created/moved 使 foundPage 重新出现）。
+  const lastPageRef = useRef<Page | null>(null);
+  if (foundPage) lastPageRef.current = foundPage;
+  const [externallyDeletedIds, setExternallyDeletedIds] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
+  useEffect(() => {
+    const external = services.externalVaultChanges;
+    if (!external) return;
+    return external.subscribe((changes) => {
+      setExternallyDeletedIds((prev) => {
+        let next: Set<string> | null = null;
+        for (const change of changes) {
+          if (change.type === "deleted") {
+            next = next ?? new Set(prev);
+            next.add(change.pageId);
+          } else if (change.type === "created" || change.type === "moved") {
+            if (prev.has(change.pageId)) {
+              next = next ?? new Set(prev);
+              next.delete(change.pageId);
+            }
+          }
+        }
+        return next ?? prev;
+      });
+    });
+  }, [services]);
+  const page =
+    foundPage ??
+    (selectedPageId !== null &&
+    externallyDeletedIds.has(selectedPageId) &&
+    lastPageRef.current?.id === selectedPageId
+      ? lastPageRef.current
+      : null);
 
   const [editor, setEditor] = useState<Editor | null>(null);
   const [editorController, setEditorController] =

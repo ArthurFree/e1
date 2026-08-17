@@ -72,4 +72,17 @@ describe("DesktopDocumentSourceCache", () => {
     cache.set("p1", sample());
     expect(cache.get("p1")?.writeSession.identityAdoptionApproved).toBe(false);
   });
+
+  it("updateRelativePath 只改路径（R007 §3.4 外部移动），未知 pageId 为 no-op", () => {
+    const cache = new DesktopDocumentSourceCache();
+    cache.set("01JABC", sample());
+    cache.updateRelativePath("01JABC", "归档/React.md");
+    const ctx = cache.get("01JABC");
+    expect(ctx?.relativePath).toBe("归档/React.md");
+    // 其余字段（含 versionToken / metadata）保持不变。
+    expect(ctx?.metadata.title).toBe("React");
+    expect(ctx?.versionToken).toBe(`sha256:${"a".repeat(64)}`);
+    cache.updateRelativePath("不存在", "x.md");
+    expect(cache.get("不存在")).toBeNull();
+  });
 });

@@ -7,9 +7,17 @@
  * 会话）为进程级共享单例，在此构造并注入 vault 组与 note 组 handler
  * （R006-C3-A note.read 经同一 transients 双通道解析 vaultId）。
  * R006-C5：返回 registry/transients 供 e1-asset 协议与 asset 组共用。
+ * R007 阶段 3：构造 watcher 单例（SelfWriteRegistry + VaultWatcherService）
+ * 注入 vault/note/asset 三组 handler——vault.scan 成功后启动监听，
+ * note/asset 写成功后登记自写抑制回声；watcher 批次经 broadcastVaultEvents
+ * （缺省实现遍历全部窗口 webContents.send events:vaultChanges）推给 Renderer。
  */
-import { app, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { join } from "node:path";
+import {
+  IPC_CHANNELS,
+  type VaultFsEvent,
+} from "../../../shared/ipc/contracts.js";
 import { registerVaultHandlers } from "./vault.js";
 import { registerNoteHandlers } from "./note.js";
 import { registerAssetHandlers } from "./asset.js";
@@ -22,6 +30,8 @@ import {
   CapabilityTokenStore,
   type PendingFileSelection,
 } from "../CapabilityTokenStore.js";
+import { SelfWriteRegistry } from "../watcher/SelfWriteRegistry.js";
+import { VaultWatcherService } from "../watcher/VaultWatcher.js";
 import type { IpcMainLike } from "./handler.js";
 import type { OpenDialogLike } from "./vault.js";
 import type { FileDialogLike } from "./asset.js";
@@ -37,11 +47,29 @@ export interface RegisterIpcHandlersDeps {
   selectionTokens?: SelectionTokenStore;
   transients?: TransientVaultStore;
   fileTokens?: CapabilityTokenStore<PendingFileSelection>;
+  /** R007 阶段 3：自写注册表（缺省新建；注入可与 handler 测试共用实例）。 */
+  selfWrites?: SelfWriteRegistry;
+  /** R007 阶段 3：watcher 服务（缺省以 broadcastVaultEvents 为出口新建）。 */
+  watchers?: VaultWatcherService;
+  /** R007 阶段 3：事件广播出口（缺省遍历全部窗口推送 events:vaultChanges）。 */
+  broadcastVaultEvents?: (events: VaultFsEvent[]) => void;
+}
+
+/** registerIpcHandlers 返回值：vault 根解析依赖 + R007 阶段 3 watcher 句柄。 */
+export interface RegisteredIpcHandlers extends VaultRootDeps {
+  watchers: VaultWatcherService;
+}
+
+/** 缺省广播：向全部窗口推送 VaultFsEvent 批次。 */
+function broadcastToAllWindows(events: VaultFsEvent[]): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send(IPC_CHANNELS.eventsVaultChanges, events);
+  }
 }
 
 export function registerIpcHandlers(
   deps: RegisterIpcHandlersDeps = {},
-): VaultRootDeps {
+): RegisteredIpcHandlers {
   const bus = deps.ipc ?? ipcMain;
   const registry =
     deps.registry ??
@@ -51,13 +79,21 @@ export function registerIpcHandlers(
     new DesktopVaultStateStore(join(app.getPath("userData"), "vault-state"));
   const transients = deps.transients ?? new TransientVaultStore();
   const openDialog = deps.openDialog ?? dialog;
+  const selfWrites = deps.selfWrites ?? new SelfWriteRegistry();
+  const watchers =
+    deps.watchers ??
+    new VaultWatcherService({
+      onEvents: deps.broadcastVaultEvents ?? broadcastToAllWindows,
+      selfWrites,
+    });
   registerVaultHandlers(bus, {
     openDialog,
     registry,
     selectionTokens: deps.selectionTokens ?? new SelectionTokenStore(),
     transients,
+    watchers,
   });
-  registerNoteHandlers(bus, { registry, transients });
+  registerNoteHandlers(bus, { registry, transients, selfWrites });
   registerVaultStateHandlers(bus, {
     store: vaultStateStore,
     registry,
@@ -68,6 +104,7 @@ export function registerIpcHandlers(
     registry,
     transients,
     fileTokens: deps.fileTokens ?? new CapabilityTokenStore(),
+    selfWrites,
   });
-  return { registry, transients };
+  return { registry, transients, watchers };
 }

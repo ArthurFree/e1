@@ -2,6 +2,7 @@
 import { app, BrowserWindow } from "electron";
 import { createMainWindow } from "./window.js";
 import { registerIpcHandlers } from "./ipc/index.js";
+import type { VaultWatcherService } from "./watcher/VaultWatcher.js";
 import {
   registerE1AssetProtocol,
   registerE1AssetScheme,
@@ -17,8 +18,12 @@ if (process.env.E1_USER_DATA_DIR) {
   app.setPath("userData", process.env.E1_USER_DATA_DIR);
 }
 
+// R007 阶段 3：watcher 句柄提升为模块级，before-quit 时关闭全部监听。
+let vaultWatchers: VaultWatcherService | null = null;
+
 void app.whenReady().then(() => {
   const vaultRoots = registerIpcHandlers();
+  vaultWatchers = vaultRoots.watchers;
   registerE1AssetProtocol(vaultRoots);
   createMainWindow();
 
@@ -31,4 +36,9 @@ void app.whenReady().then(() => {
 // macOS 惯例：非 darwin 平台全部窗口关闭即退出。
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
+});
+
+// 退出前关闭全部 vault 监听（chokidar 句柄不随进程退出自动 await）。
+app.on("before-quit", () => {
+  void vaultWatchers?.closeAll();
 });

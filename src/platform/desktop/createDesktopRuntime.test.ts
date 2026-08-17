@@ -67,6 +67,10 @@ function mockApi(
       read: vi.fn(),
       resolveUrl: vi.fn(),
     },
+    // R007 阶段 3：事件组（createDesktopRuntime 装配即 start 订阅）。
+    events: {
+      subscribeVaultChanges: vi.fn(() => () => {}),
+    },
   } as unknown as E1DesktopAPI;
 }
 
@@ -204,5 +208,12 @@ describe("createDesktopRuntime（IPC-backed）", () => {
       "approveLossyOutput",
       "approveLossySource",
     ]);
+  });
+
+  it("externalVaultChanges：装配即订阅 Main 事件通道（R007 阶段 3）", () => {
+    const api = mockApi();
+    const { services } = createDesktopRuntime(api);
+    expect(services.externalVaultChanges).toBeDefined();
+    expect(api.events.subscribeVaultChanges).toHaveBeenCalledTimes(1);
   });
 });

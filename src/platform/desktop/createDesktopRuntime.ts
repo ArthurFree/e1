@@ -51,6 +51,7 @@ import { DesktopIdentityAliasRegistry } from "./DesktopIdentityAliasRegistry";
 import { DesktopMarkdownWriteService } from "./DesktopMarkdownWriteService";
 import { DesktopNoteMetadataService } from "./DesktopNoteMetadataService";
 import { DesktopVaultStateClient } from "./DesktopVaultStateClient";
+import { DesktopExternalVaultChangeService } from "./DesktopExternalVaultChangeService";
 import { createInMemoryDocumentVersionChannel } from "../../application/services/DocumentVersionChannel";
 import { DesktopAssetRegistry } from "./DesktopAssetRegistry";
 import { DesktopAssetStore } from "./DesktopAssetStore";
@@ -240,6 +241,17 @@ export function createDesktopRuntime(api: E1DesktopAPI): DesktopRuntime {
       }
     },
   };
+  // R007 阶段 3：外部 Vault 变更 reconciliation——订阅 Main Watcher 事件
+  //（events:vaultChanges），静止窗口批量合并 + 扫描快照 diff 后向 UI
+  // 发布归一化文档变更；页面树刷新桥（ExternalVaultChangeBridge）消费。
+  const externalVaultChanges = new DesktopExternalVaultChangeService({
+    api,
+    scans,
+    // R007 §3.4：moved 变更发布前同步来源缓存的过期路径（含 Adoption 会话别名）。
+    sources,
+    aliases,
+  });
+  externalVaultChanges.start();
   const services: AppServices = {
     assets: assetsServices,
     capabilities: desktopCapabilities,
@@ -248,6 +260,8 @@ export function createDesktopRuntime(api: E1DesktopAPI): DesktopRuntime {
     vaultMaintenance,
     // 会话级保存门闸（PR5：DocumentSafetyPort）。
     documentSafety,
+    // 外部 Vault 变更流（R007 阶段 3；消费侧以 capabilities.fileWatching 门控）。
+    externalVaultChanges,
     preferencesService,
     syncChannel,
     documentVersionChannel,
