@@ -39,8 +39,10 @@ import {
 } from "./assetServices";
 import { AssetCommandService } from "../../application/assets/AssetCommandService";
 import { webCapabilities } from "../../platform/web/webCapabilities";
+import { webOperations } from "../../platform/web/webOperations";
 import { BrowserMemorySearchIndex } from "../../platform/web/search/BrowserMemorySearchIndex";
 import type { RuntimeCapabilities } from "../../runtime/RuntimeCapabilities";
+import type { RuntimeOperations } from "../../runtime/RuntimeOperations";
 
 export interface InMemoryAppServicesOptions {
   /** 预置数据；缺省为全新空库。 */
@@ -58,6 +60,11 @@ export interface InMemoryAppServicesOptions {
    * 语义）；Desktop fake adapter 经本参数注入 desktopCapabilities。
    */
   capabilities?: RuntimeCapabilities;
+  /**
+   * 操作支持矩阵覆盖（R007 阶段 4 §9）：缺省 webOperations（全 true，
+   * 测试环境即 Web 语义）；Desktop 门控用例经本参数注入裁剪矩阵。
+   */
+  operations?: RuntimeOperations;
 }
 
 /**
@@ -144,6 +151,8 @@ export function createInMemoryAppServices(
     // 运行时能力矩阵（R005 阶段 2）：缺省 webCapabilities（测试环境即 Web
     // 语义）；R006 阶段 1 起 Desktop fake adapter 经 options 覆盖。
     capabilities: options.capabilities ?? webCapabilities,
+    // 操作支持矩阵（R007 阶段 4 §9）：缺省 webOperations（全 true）。
+    operations: options.operations ?? webOperations,
     // 命令/查询服务（R005 批次 1）：与生产容器同装配。
     commands: {
       workspace: new WorkspaceCommandService({

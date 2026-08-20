@@ -67,17 +67,24 @@ test.describe("桌面冒烟", () => {
     expect(bridge).toEqual({
       platform: "desktop",
       // R006-C2.1：vault 组 open 删除，替换为 openSelection / openRecent。
+      // R007 阶段 4：createDirectory/trash/listTrash/restore/purgeTrash（文件操作闭环）。
       vault: [
+        "createDirectory",
         "listRecent",
+        "listTrash",
         "openRecent",
         "openSelection",
+        "purgeTrash",
+        "restore",
         "scan",
         "selectDirectory",
+        "trash",
       ],
       // R007 阶段 2：设备级交互状态组。
       vaultState: ["get", "patch"],
       // R007 阶段 1：patchMetadata（Frontmatter title/tags 局部写入）。
-      note: ["create", "patchMetadata", "read", "save"],
+      // R007 阶段 4：move/renameFile（文件操作闭环）。
+      note: ["create", "move", "patchMetadata", "read", "renameFile", "save"],
       asset: ["import", "pick", "read", "resolveUrl"],
       // R007 阶段 3：Main→Renderer 单向事件组（Watcher 事实订阅）。
       events: ["subscribeVaultChanges"],

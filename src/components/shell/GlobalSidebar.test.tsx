@@ -94,6 +94,8 @@ function mockDesktopApi(overrides: {
           },
         ],
       })),
+      // R007 阶段 4：回收站读取（缺省空表，避免 listByWorkspace 降级告警）。
+      listTrash: vi.fn(async () => ({ entries: [] })),
     },
     note: { read: vi.fn(), create: vi.fn(), save: vi.fn() },
     asset: {

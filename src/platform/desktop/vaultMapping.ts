@@ -20,6 +20,7 @@ import type { Page, PageTag, Tag, Workspace } from "../../domain/types";
 import type {
   OpenedVault,
   RecentVault,
+  TrashEntry,
   VaultScanEntry,
   VaultState,
 } from "../../../shared/ipc/contracts";
@@ -82,6 +83,64 @@ export function resolveSessionPageId(
 /** 标签名 → 标签 id（同名标签在同一库内共享一个 id）。 */
 export function tagIdOfName(name: string): string {
   return `${TAG_ID_PREFIX}${name}`;
+}
+
+/**
+ * 回收站条目的页面 id（R007 阶段 4）：`trash:<vaultId>/<operationId>`。
+ * 命令层 restore/purge 只传页面 id，仓储据此解析回 vaultId + operationId
+ * （TrashEntry.operationId 是 restore/purgeTrash IPC 的定位键）。
+ * 前缀与 Frontmatter noteId / path:* 不可能冲突。
+ */
+export function trashPageId(vaultId: string, operationId: string): string {
+  return `trash:${vaultId}/${operationId}`;
+}
+
+/** 回收站页面 id → 定位信息；非回收站 id 返回 null。 */
+export function parseTrashPageId(
+  id: string,
+): { vaultId: string; operationId: string } | null {
+  if (!id.startsWith("trash:")) return null;
+  const rest = id.slice("trash:".length);
+  const slash = rest.lastIndexOf("/");
+  if (slash <= 0 || slash === rest.length - 1) return null;
+  return { vaultId: rest.slice(0, slash), operationId: rest.slice(slash + 1) };
+}
+
+/**
+ * 回收站条目（vault.listTrash）→ deletedAt 非空的 Page[]（R007 阶段 4）：
+ * 合并进 listByWorkspace 结果，TrashPanel 据此展示/恢复/永久删除。
+ * parentId 置 null（回收站根——原父级可能已不存在，TrashPanel 只展示根）；
+ * title 取原路径 basename（document 去 .md 后缀）；kind 按原路径是否 .md
+ * 推断（目录即分组）。恢复后的页面身份由重新扫描的真实条目承担。
+ */
+export function mapTrashEntriesToPages(
+  vaultId: string,
+  entries: TrashEntry[],
+  fallbackNow: number,
+): Page[] {
+  return entries.map((entry) => {
+    const deletedAt = parseIso(entry.deletedAt, fallbackNow);
+    const isDocument = entry.originalRelativePath
+      .toLowerCase()
+      .endsWith(".md");
+    const basename =
+      entry.originalRelativePath.split("/").pop() ??
+      entry.originalRelativePath;
+    return {
+      id: trashPageId(vaultId, entry.operationId),
+      workspaceId: vaultId,
+      parentId: null,
+      kind: isDocument ? "document" : "group",
+      title: isDocument ? basename.replace(/\.md$/i, "") : basename,
+      icon: null,
+      position: 0,
+      favoriteAt: null,
+      lastOpenedAt: null,
+      deletedAt,
+      createdAt: deletedAt,
+      updatedAt: deletedAt,
+    };
+  });
 }
 
 /** ISO 时间戳 → 毫秒；非法值回退 fallback。 */

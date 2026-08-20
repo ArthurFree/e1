@@ -22,6 +22,7 @@ import {
   useWorkspaceCommands,
   useWorkspaceData,
 } from "../state/WorkspaceSessionContext";
+import { useAppServices } from "../state/AppServicesProvider";
 import {
   useNavigationCommands,
   useNavigationState,
@@ -68,6 +69,14 @@ interface PageTreeBodyProps {
   onPick(): void;
   /** 请求某页面进入行内重命名（新建分组后立即改名）。 */
   renameRequest?: Page | null;
+  /**
+   * 操作支持矩阵（R007 阶段 4 §9，AppServices.operations.page）：
+   * false 的动作隐藏入口（而不是点了抛 NOT_IMPLEMENTED）。
+   */
+  canCreateDocument: boolean;
+  canRenameTitle: boolean;
+  canTrash: boolean;
+  canMove: boolean;
 }
 
 /**
@@ -87,6 +96,10 @@ const PageTreeBody = memo(function PageTreeBody({
   onActionError,
   onPick,
   renameRequest,
+  canCreateDocument,
+  canRenameTitle,
+  canTrash,
+  canMove,
 }: PageTreeBodyProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -194,7 +207,7 @@ const PageTreeBody = memo(function PageTreeBody({
     } else if (event.key === "ArrowLeft" && page) {
       event.preventDefault();
       if (!collapsed.has(page.id)) toggleCollapse(page.id);
-    } else if (event.key === "F2" && page) {
+    } else if (event.key === "F2" && page && canRenameTitle) {
       event.preventDefault();
       startRename(page);
     }
@@ -211,7 +224,7 @@ const PageTreeBody = memo(function PageTreeBody({
         aria-expanded={children.length > 0 ? !isCollapsed : undefined}
         data-page-id={page.id}
         tabIndex={0}
-        draggable
+        draggable={canMove}
         onDragStart={(event) => {
           dragIdRef.current = page.id;
           event.dataTransfer.setData(DND_MIME, page.id);
@@ -289,42 +302,48 @@ const PageTreeBody = memo(function PageTreeBody({
           </span>
         )}
         <span className="tree-row__actions">
-          <button
-            type="button"
-            className="tree-row__action"
-            aria-label={`在「${page.title || "无标题"}」下新建文档`}
-            title="新建子文档"
-            onClick={(event) => {
-              event.stopPropagation();
-              void createPage("document", page.id).catch(reportActionError);
-            }}
-          >
-            <IconPlus size={14} />
-          </button>
-          <button
-            type="button"
-            className="tree-row__action"
-            aria-label={`重命名「${page.title || "无标题"}」`}
-            title="重命名"
-            onClick={(event) => {
-              event.stopPropagation();
-              startRename(page);
-            }}
-          >
-            <IconPencil size={14} />
-          </button>
-          <button
-            type="button"
-            className="tree-row__action"
-            aria-label={`删除「${page.title || "无标题"}」`}
-            title="删除"
-            onClick={(event) => {
-              event.stopPropagation();
-              void deletePage(page.id).catch(reportActionError);
-            }}
-          >
-            <IconTrash size={14} />
-          </button>
+          {canCreateDocument && (
+            <button
+              type="button"
+              className="tree-row__action"
+              aria-label={`在「${page.title || "无标题"}」下新建文档`}
+              title="新建子文档"
+              onClick={(event) => {
+                event.stopPropagation();
+                void createPage("document", page.id).catch(reportActionError);
+              }}
+            >
+              <IconPlus size={14} />
+            </button>
+          )}
+          {canRenameTitle && (
+            <button
+              type="button"
+              className="tree-row__action"
+              aria-label={`重命名「${page.title || "无标题"}」`}
+              title="重命名"
+              onClick={(event) => {
+                event.stopPropagation();
+                startRename(page);
+              }}
+            >
+              <IconPencil size={14} />
+            </button>
+          )}
+          {canTrash && (
+            <button
+              type="button"
+              className="tree-row__action"
+              aria-label={`删除「${page.title || "无标题"}」`}
+              title="删除"
+              onClick={(event) => {
+                event.stopPropagation();
+                void deletePage(page.id).catch(reportActionError);
+              }}
+            >
+              <IconTrash size={14} />
+            </button>
+          )}
         </span>
       </div>
     );
@@ -389,6 +408,7 @@ const PageTreeBody = memo(function PageTreeBody({
 
 /** 文档树侧栏：层级展示、新建、重命名、删除、拖拽移动、标签筛选、Markdown 导入。 */
 export function PageTreeSidebar() {
+  const { operations } = useAppServices();
   const { pages, tags, pageTags, workspace } = useWorkspaceData();
   const {
     createPage,
@@ -498,40 +518,44 @@ export function PageTreeSidebar() {
           >
             <IconImport />
           </button>
-          <button
-            type="button"
-            className="icon-button"
-            aria-label="新建文档"
-            title="新建文档"
-            onClick={() =>
-              void createPage("document", null).catch((err: unknown) =>
-                setActionError(
-                  err instanceof Error ? err.message : "操作失败，请重试。",
-                ),
-              )
-            }
-          >
-            <IconPlus />
-          </button>
-          <button
-            type="button"
-            className="icon-button"
-            aria-label="新建分组"
-            title="新建分组"
-            onClick={() => {
-              // 创建后立即进入重命名状态（经 renamingSeed 通知树主体）。
-              void (async () => {
-                const page = await createPage("group", null);
-                if (page) setRenamingSeed(page);
-              })().catch((err: unknown) =>
-                setActionError(
-                  err instanceof Error ? err.message : "操作失败，请重试。",
-                ),
-              );
-            }}
-          >
-            <IconFolderPlus />
-          </button>
+          {operations.page.createDocument && (
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="新建文档"
+              title="新建文档"
+              onClick={() =>
+                void createPage("document", null).catch((err: unknown) =>
+                  setActionError(
+                    err instanceof Error ? err.message : "操作失败，请重试。",
+                  ),
+                )
+              }
+            >
+              <IconPlus />
+            </button>
+          )}
+          {operations.page.createGroup && (
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="新建分组"
+              title="新建分组"
+              onClick={() => {
+                // 创建后立即进入重命名状态（经 renamingSeed 通知树主体）。
+                void (async () => {
+                  const page = await createPage("group", null);
+                  if (page) setRenamingSeed(page);
+                })().catch((err: unknown) =>
+                  setActionError(
+                    err instanceof Error ? err.message : "操作失败，请重试。",
+                  ),
+                );
+              }}
+            >
+              <IconFolderPlus />
+            </button>
+          )}
         </span>
         <input
           ref={fileInputRef}
@@ -572,6 +596,10 @@ export function PageTreeSidebar() {
         onActionError={setActionError}
         onPick={closeTreeDrawer}
         renameRequest={renamingSeed}
+        canCreateDocument={operations.page.createDocument}
+        canRenameTitle={operations.page.renameTitle}
+        canTrash={operations.page.trash}
+        canMove={operations.page.move}
       />
       <div className="tree-tags" aria-label="标签筛选">
         <span className="tree-tags__label">标签</span>

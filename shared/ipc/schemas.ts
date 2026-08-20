@@ -11,16 +11,23 @@
 import { IpcFailure } from "../errors.js";
 import type {
   AssetPickRequest,
+  CreateDirectoryInput,
   CreateNoteInput,
   ImportAssetInput,
   ImportAssetSource,
+  ListTrashInput,
+  MoveNoteInput,
   OpenRecentRequest,
   OpenSelectionRequest,
   PatchNoteMetadataInput,
   PatchVaultStateInput,
+  PurgeTrashInput,
   ReadAssetInput,
   ReadNoteInput,
+  RenameNoteFileInput,
+  RestoreTrashInput,
   SaveNoteInput,
+  TrashInput,
   VaultFsEvent,
   VaultPageStatePatch,
 } from "./contracts.js";
@@ -282,12 +289,129 @@ export function parsePatchVaultStateInput(
   };
 }
 
+/** 目录路径字段：允许空串（Vault 根），非空按相对路径校验。 */
+function parseDirectoryPath(
+  record: Record<string, unknown>,
+  field: string,
+): string {
+  const dir = requireString(record, field);
+  return dir === "" ? dir : assertRelativePath(dir, field);
+}
+
+/**
+ * 单段名称的静态校验（文件/目录名共用）：拒绝空、路径分隔符与
+ * "." / ".." 段；非法字符/保留设备名/长度等完整校验由 Main 侧
+ * PathGuard.assertSafeFileName 复查（需与文件系统口径一致，不在 shared 层）。
+ */
+function assertSingleSegmentName(value: string, field: string): string {
+  if (value.trim() === "") invalid(`字段 ${field} 不能为空`);
+  if (value === "." || value === ".." || /[\\/]/.test(value)) {
+    invalid(`字段 ${field} 必须为单段名称（不含路径分隔符）`);
+  }
+  return value;
+}
+
+/** R007 阶段 4（§4.1）：vault.createDirectory 入参校验。 */
+export function parseCreateDirectoryInput(
+  payload: unknown,
+): CreateDirectoryInput {
+  if (!isRecord(payload)) invalid("vault.createDirectory 入参必须为对象");
+  return {
+    vaultId: requireString(payload, "vaultId", { nonEmpty: true }),
+    parentRelativePath: parseDirectoryPath(payload, "parentRelativePath"),
+    name: assertSingleSegmentName(
+      requireString(payload, "name", { nonEmpty: true }),
+      "name",
+    ),
+  };
+}
+
+/** R007 阶段 4（§4.2）：vault.trash 入参校验（文件/目录同形）。 */
+export function parseTrashInput(payload: unknown): TrashInput {
+  if (!isRecord(payload)) invalid("vault.trash 入参必须为对象");
+  return {
+    vaultId: requireString(payload, "vaultId", { nonEmpty: true }),
+    relativePath: assertRelativePath(
+      requireString(payload, "relativePath", { nonEmpty: true }),
+    ),
+  };
+}
+
+/** R007 阶段 4：vault.listTrash 入参校验。 */
+export function parseListTrashInput(payload: unknown): ListTrashInput {
+  if (!isRecord(payload)) invalid("vault.listTrash 入参必须为对象");
+  return { vaultId: requireString(payload, "vaultId", { nonEmpty: true }) };
+}
+
+/** R007 阶段 4：vault.restore 入参校验。 */
+export function parseRestoreTrashInput(payload: unknown): RestoreTrashInput {
+  if (!isRecord(payload)) invalid("vault.restore 入参必须为对象");
+  return {
+    vaultId: requireString(payload, "vaultId", { nonEmpty: true }),
+    operationId: requireString(payload, "operationId", { nonEmpty: true }),
+  };
+}
+
+/** R007 阶段 4：vault.purgeTrash 入参校验（operationId 缺省 = 清空全部）。 */
+export function parsePurgeTrashInput(payload: unknown): PurgeTrashInput {
+  if (!isRecord(payload)) invalid("vault.purgeTrash 入参必须为对象");
+  const input: PurgeTrashInput = {
+    vaultId: requireString(payload, "vaultId", { nonEmpty: true }),
+  };
+  if (payload.operationId !== undefined) {
+    if (
+      typeof payload.operationId !== "string" ||
+      payload.operationId.trim() === ""
+    ) {
+      invalid("字段 operationId 必须为非空字符串");
+    }
+    input.operationId = payload.operationId;
+  }
+  return input;
+}
+
+/** R007 阶段 4（§4.3）：note.move 入参校验。 */
+export function parseMoveNoteInput(payload: unknown): MoveNoteInput {
+  if (!isRecord(payload)) invalid("note.move 入参必须为对象");
+  return {
+    vaultId: requireString(payload, "vaultId", { nonEmpty: true }),
+    relativePath: assertRelativePath(
+      requireString(payload, "relativePath", { nonEmpty: true }),
+    ),
+    targetDirectory: parseDirectoryPath(payload, "targetDirectory"),
+  };
+}
+
+/** R007 阶段 4（§4.4）：note.renameFile 入参校验（newName 单段且 .md 结尾）。 */
+export function parseRenameNoteFileInput(
+  payload: unknown,
+): RenameNoteFileInput {
+  if (!isRecord(payload)) invalid("note.renameFile 入参必须为对象");
+  const newName = assertSingleSegmentName(
+    requireString(payload, "newName", { nonEmpty: true }),
+    "newName",
+  );
+  if (!/\.md$/i.test(newName)) {
+    invalid("字段 newName 必须以 .md 结尾（只支持重命名 Markdown 文件）");
+  }
+  return {
+    vaultId: requireString(payload, "vaultId", { nonEmpty: true }),
+    relativePath: assertRelativePath(
+      requireString(payload, "relativePath", { nonEmpty: true }),
+    ),
+    newName,
+  };
+}
+
 export function parseAssetPickInput(payload: unknown): AssetPickRequest {
   if (payload === undefined || payload === null) return {};
   if (!isRecord(payload)) invalid("asset.pick 入参必须为对象");
   const accept = payload.accept;
   if (accept === undefined) return {};
-  if (!Array.isArray(accept) || accept.some((item) => typeof item !== "string")) {
+  if (
+    !Array.isArray(accept) ||
+    accept.some((item) => typeof item !== "string")
+  ) {
     invalid("asset.pick.accept 必须为字符串数组");
   }
   return { accept };

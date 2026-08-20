@@ -11,6 +11,10 @@
  * 新增 source{modifiedAt,sizeBytes}。
  * R007 阶段 3（DSK-01）：新增首个 Main→Renderer 单向事件通道
  * events:vaultChanges（VaultFsEvent 批次）与 events.subscribeVaultChanges。
+ * R007 阶段 4（文件操作闭环）：vault.createDirectory / vault.trash /
+ * vault.listTrash / vault.restore / vault.purgeTrash（.e1/trash 回收站）与
+ * note.move / note.renameFile（纯文件系统 rename，Frontmatter 不动、
+ * stable note id 不变）。
  *
  * shared/ 为 Renderer（src/platform/desktop）与 Electron Main/Preload 共用
  * 的唯一契约来源：channel 常量、请求/响应类型、E1DesktopAPI 形状。
@@ -40,6 +44,13 @@ export const IPC_CHANNELS = {
   noteCreate: "note:create",
   noteSave: "note:save",
   notePatchMetadata: "note:patchMetadata",
+  noteMove: "note:move",
+  noteRenameFile: "note:renameFile",
+  vaultCreateDirectory: "vault:createDirectory",
+  vaultTrash: "vault:trash",
+  vaultListTrash: "vault:listTrash",
+  vaultRestore: "vault:restore",
+  vaultPurgeTrash: "vault:purgeTrash",
   assetPick: "asset:pick",
   assetImport: "asset:import",
   assetRead: "asset:read",
@@ -170,6 +181,85 @@ export interface VaultScanResult {
    * localeCompare("zh-CN") 排序——r006 §8 文件名排序，比较器选择在此锁定）。
    */
   entries: VaultScanEntry[];
+}
+
+/* ------------------------- 阶段 4：文件操作（vault 组） ------------------------- */
+
+/**
+ * R007 阶段 4（§4.1）：新建分组 = 真实目录。
+ * name 为单段目录名（Main 侧 assertSafeFileName 复核）；根级保留名
+ * （.e1 / 受管 assetsDirectory，大小写不敏感）拒绝（VAULT_RESERVED_PATH）。
+ * 与既有目录同名时确定性递增改名（"name (2)"），与 note.create 同口径。
+ */
+export interface CreateDirectoryInput {
+  vaultId: string;
+  /** 父目录相对路径；空串为 Vault 根。 */
+  parentRelativePath: string;
+  /** 新目录名（单段，不含路径分隔符）。 */
+  name: string;
+}
+
+export interface CreateDirectoryResult {
+  /** 实际创建的目录相对路径（冲突已确定性递增）。 */
+  relativePath: string;
+}
+
+/**
+ * R007 阶段 4（§4.2）：移入回收站——rename 进 .e1/trash/<operationId>/，
+ * 绝不直接 unlink；文件与目录（分组）均支持。
+ */
+export interface TrashInput {
+  vaultId: string;
+  relativePath: string;
+}
+
+export interface TrashResult {
+  /** 回收站操作 id（restore/purgeTrash 的定位键）。 */
+  operationId: string;
+}
+
+/** vault.listTrash 请求：payload 即 { vaultId }。 */
+export interface ListTrashInput {
+  vaultId: string;
+}
+
+/** 回收站条目（meta.json 的契约投影；deletedAt 倒序返回）。 */
+export interface TrashEntry {
+  operationId: string;
+  /** 删除前的原相对路径（POSIX 风格）。 */
+  originalRelativePath: string;
+  /** 删除时间（ISO 字符串）。 */
+  deletedAt: string;
+  /** 文件为 .md 且 Frontmatter 含 id 时携带；目录/无 id 文档缺省。 */
+  stableNoteId?: string;
+}
+
+export interface TrashListResult {
+  entries: TrashEntry[];
+}
+
+/**
+ * R007 阶段 4（§4.2）：从回收站恢复到原路径；原父目录缺失时递归重建；
+ * 原路径已被占用时确定性改名恢复（"name (2).ext" 递增），返回实际路径。
+ */
+export interface RestoreTrashInput {
+  vaultId: string;
+  operationId: string;
+}
+
+export interface RestoreTrashResult {
+  /** 实际恢复到的相对路径（可能因冲突被确定性改名）。 */
+  relativePath: string;
+}
+
+/** 永久删除：缺省 operationId 时清空整个回收站；返回物理删除的条目数。 */
+export interface PurgeTrashInput {
+  vaultId: string;
+  operationId?: string;
+}
+
+export interface PurgeTrashResult {
+  purged: number;
 }
 
 /* -------------------------------- vaultState -------------------------------- */
@@ -324,6 +414,41 @@ export interface PatchNoteMetadataResult {
   stableNoteId: string | null;
 }
 
+/**
+ * R007 阶段 4（§4.3）：移动文档到目标目录——纯文件系统 rename，
+ * Frontmatter 逐字节不动，stable note id 不变。第一版只支持
+ * document → directory（源必须是 .md 文件）；目标路径冲突报错
+ * （VAULT_PATH_COLLISION，由 UI 决定是否提示改名），不做自动改名。
+ */
+export interface MoveNoteInput {
+  vaultId: string;
+  relativePath: string;
+  /** 目标目录相对路径；空串为 Vault 根。 */
+  targetDirectory: string;
+}
+
+export interface MoveNoteResult {
+  /** 移动后的新相对路径。 */
+  relativePath: string;
+}
+
+/**
+ * R007 阶段 4（§4.4「重命名文件」）：物理文件名 rename（目录不变、
+ * 扩展名必须为 .md），与 Title rename（note.patchMetadata）是两个独立
+ * 概念。同名冲突报错（VAULT_PATH_COLLISION）。
+ */
+export interface RenameNoteFileInput {
+  vaultId: string;
+  relativePath: string;
+  /** 新文件名（单段，必须 .md 结尾）。 */
+  newName: string;
+}
+
+export interface RenameNoteFileResult {
+  /** 重命名后的新相对路径。 */
+  relativePath: string;
+}
+
 /* ---------------------------------- asset ---------------------------------- */
 
 export interface AssetPickRequest {
@@ -346,8 +471,7 @@ export interface PickedFile {
 }
 
 export type ImportAssetSource =
-  | { kind: "pick-token"; token: string }
-  | { kind: "bytes"; data: Uint8Array };
+  { kind: "pick-token"; token: string } | { kind: "bytes"; data: Uint8Array };
 
 export interface ImportAssetInput {
   vaultId: string;
@@ -437,6 +561,27 @@ export interface E1DesktopAPI {
      * transient 仅预览会话（R006-C2.1）。
      */
     scan(vaultId: string): Promise<VaultScanResult>;
+    /**
+     * R007 阶段 4（§4.1）：新建分组目录；同名确定性递增，
+     * 保留名拒绝（VAULT_RESERVED_PATH）。transient 拒写（VAULT_READ_ONLY）。
+     */
+    createDirectory(
+      input: CreateDirectoryInput,
+    ): Promise<CreateDirectoryResult>;
+    /**
+     * R007 阶段 4（§4.2）：移入回收站（rename 进 .e1/trash，非 unlink）；
+     * 文件与目录均支持。transient 拒写。
+     */
+    trash(input: TrashInput): Promise<TrashResult>;
+    /** R007 阶段 4：回收站条目列表（deletedAt 倒序）；只读，transient 返回空表。 */
+    listTrash(input: ListTrashInput): Promise<TrashListResult>;
+    /**
+     * R007 阶段 4：恢复到原路径（父目录缺失递归重建；冲突确定性改名，
+     * 返回实际路径）。transient 拒写。
+     */
+    restore(input: RestoreTrashInput): Promise<RestoreTrashResult>;
+    /** R007 阶段 4：永久删除——单个 operationId 或缺省清空整个回收站。transient 拒写。 */
+    purgeTrash(input: PurgeTrashInput): Promise<PurgeTrashResult>;
   };
   /**
    * R007 阶段 2：设备级交互状态（收藏/最近打开），存 userData/vault-state/，
@@ -455,6 +600,16 @@ export interface E1DesktopAPI {
     patchMetadata(
       input: PatchNoteMetadataInput,
     ): Promise<PatchNoteMetadataResult>;
+    /**
+     * R007 阶段 4（§4.3）：移动文档到目标目录（纯 rename，stable id 不变）；
+     * 冲突报 VAULT_PATH_COLLISION。transient 拒写。
+     */
+    move(input: MoveNoteInput): Promise<MoveNoteResult>;
+    /**
+     * R007 阶段 4（§4.4「重命名文件」）：物理文件名 rename（必须 .md 结尾）；
+     * 冲突报 VAULT_PATH_COLLISION。transient 拒写。
+     */
+    renameFile(input: RenameNoteFileInput): Promise<RenameNoteFileResult>;
   };
   asset: {
     /** 原生文件选择；取消返回 null。不得返回绝对路径。 */

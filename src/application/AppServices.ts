@@ -35,6 +35,7 @@ import type { AIConfigService } from "./services/AIConfigService";
 import type { StorageHealthService } from "./services/StorageHealthService";
 import type { ExternalVaultChangeService } from "./services/ExternalVaultChangeService";
 import type { RuntimeCapabilities } from "../runtime/RuntimeCapabilities";
+import type { RuntimeOperations } from "../runtime/RuntimeOperations";
 
 /**
  * 知识库维护 port（PR5）：主动重新扫描知识库（只读，不修改任何文件）。
@@ -132,6 +133,14 @@ export interface AppServices {
    * 其余六字段全 false）。
    */
   capabilities: RuntimeCapabilities;
+  /**
+   * 运行时操作支持矩阵（R007 阶段 4 §9，G4 收口）：UI 是否显示某个操作
+   * 入口（Operation = 当前产品允许用户做什么），与 capabilities
+   *（底层平台能力）分离，避免能力矩阵膨胀成几十个字段。组件经
+   * useAppServices().operations 门控，不判断平台名称；未实现的操作
+   * 必须 false（入口隐藏，而不是点了抛 NOT_IMPLEMENTED）。
+   */
+  operations: RuntimeOperations;
   /**
    * 知识库维护 port（可选，PR5：替代原 `desktopExtras` PoC 过渡通道）：
    * 由能提供「主动重新扫描」语义的运行时装配（本地目录型后端），

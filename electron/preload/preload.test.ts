@@ -5,12 +5,13 @@
  * （源码 TS；构建产物才是 CJS）验证：
  * - 暴露键与 E1DesktopAPI 形状（platform/versions + vault/note/asset）；
  * - 每个方法的 channel 名与负载透传；
- * - IpcResult 信封解包语义：ok 取值（含 null），error 拒签为
- *   带 code 的 DesktopIpcError，畸形信封拒签 INTERNAL。
+ * - IpcResult 信封解包语义：ok 取值（含 null），error 拒签为编码进
+ *   message 的桥错误（跨 contextBridge 自定义属性丢失，载荷经
+ *   decodeIpcBridgeError 还原），畸形信封拒签 INTERNAL。
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { IPC_CHANNELS, type E1DesktopAPI } from "../../shared/ipc/contracts.js";
-import { DesktopIpcError } from "../../shared/errors.js";
+import { decodeIpcBridgeError } from "../../shared/errors.js";
 
 const exposeInMainWorld = vi.fn();
 const invoke = vi.fn();
@@ -20,8 +21,8 @@ vi.mock("electron", () => ({
   ipcRenderer: { invoke },
 }));
 
-// preload 只做一次模块级暴露（resetModules 会让 DesktopIpcError 类身份
-// 与测试 import 的类不一致，instanceof 断言失效），故整个文件共用一份
+// preload 只做一次模块级暴露（resetModules 会让共享错误类身份
+// 与测试 import 的类不一致），故整个文件共用一份
 // 暴露产物；invoke 在调用时取值，用例间 mockReset 即可隔离。
 let api: E1DesktopAPI;
 
@@ -40,16 +41,23 @@ describe("preload 暴露形状", () => {
     expect(api.platform).toBe("desktop");
     expect(api.versions).toBeTypeOf("object");
     expect(Object.keys(api.vault).sort()).toEqual([
+      "createDirectory",
       "listRecent",
+      "listTrash",
       "openRecent",
       "openSelection",
+      "purgeTrash",
+      "restore",
       "scan",
       "selectDirectory",
+      "trash",
     ]);
     expect(Object.keys(api.note).sort()).toEqual([
       "create",
+      "move",
       "patchMetadata",
       "read",
+      "renameFile",
       "save",
     ]);
     expect(Object.keys(api.asset).sort()).toEqual([
@@ -185,21 +193,23 @@ describe("IpcResult 信封解包", () => {
     await expect(api.vault.selectDirectory()).resolves.toEqual(vault);
   });
 
-  it("error 信封拒签为带 code 的 DesktopIpcError", async () => {
+  it("error 信封拒签为桥编码错误（载荷可解码还原）", async () => {
     invoke.mockResolvedValue({
       ok: false,
       error: { code: "NOT_IMPLEMENTED", message: "阶段 2 实现" },
     });
     const err = await api.vault.scan("v1").catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(DesktopIpcError);
-    expect((err as DesktopIpcError).code).toBe("NOT_IMPLEMENTED");
-    expect((err as DesktopIpcError).message).toBe("阶段 2 实现");
+    expect(err).toBeInstanceOf(Error);
+    const payload = decodeIpcBridgeError(err);
+    expect(payload).not.toBeNull();
+    expect(payload?.code).toBe("NOT_IMPLEMENTED");
+    expect(payload?.message).toBe("阶段 2 实现");
   });
 
   it("畸形信封拒签 INTERNAL", async () => {
     invoke.mockResolvedValue({ unexpected: true });
     const err = await api.asset.pick().catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(DesktopIpcError);
-    expect((err as DesktopIpcError).code).toBe("INTERNAL");
+    const payload = decodeIpcBridgeError(err);
+    expect(payload?.code).toBe("INTERNAL");
   });
 });

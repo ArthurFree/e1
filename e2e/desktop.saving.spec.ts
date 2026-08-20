@@ -309,7 +309,9 @@ test.describe("桌面冒烟：Markdown 创建与安全保存（R006-C4）", () =
     const app = await launch(fixture.userDataDir);
     try {
       const window = await app.firstWindow();
-      await window.getByRole("button", { name: "新建文档" }).click();
+      await window
+        .getByRole("button", { name: "新建文档", exact: true })
+        .click();
       await expect(window.locator(".editor__content .ProseMirror")).toBeVisible({
         timeout: 5000,
       });

@@ -6,17 +6,24 @@ import { describe, expect, it } from "vitest";
 import { IpcFailure } from "../errors.js";
 import {
   assertRelativePath,
+  parseCreateDirectoryInput,
   parseCreateNoteInput,
   parseImportAssetInput,
+  parseListTrashInput,
+  parseMoveNoteInput,
   parseNoInput,
   parseOpenRecentRequest,
   parseOpenSelectionRequest,
   parsePatchNoteMetadataInput,
   parsePatchVaultStateInput,
+  parsePurgeTrashInput,
   parseVaultStateGetInput,
   parseReadNoteInput,
+  parseRenameNoteFileInput,
   parseResolveAssetUrlInput,
+  parseRestoreTrashInput,
   parseSaveNoteInput,
+  parseTrashInput,
   parseVaultScanRequest,
 } from "./schemas.js";
 
@@ -434,5 +441,177 @@ describe("parseResolveAssetUrlInput", () => {
   it("空串/非字符串 INVALID_INPUT", () => {
     expectFailure(() => parseResolveAssetUrlInput(""), "INVALID_INPUT");
     expectFailure(() => parseResolveAssetUrlInput({}), "INVALID_INPUT");
+  });
+});
+
+describe("R007 阶段 4：文件操作入参校验", () => {
+  describe("parseCreateDirectoryInput", () => {
+    it("合法入参通过（parentRelativePath 空串 = 根目录）", () => {
+      expect(
+        parseCreateDirectoryInput({
+          vaultId: "v-1",
+          parentRelativePath: "",
+          name: "学习",
+        }),
+      ).toEqual({ vaultId: "v-1", parentRelativePath: "", name: "学习" });
+      expect(
+        parseCreateDirectoryInput({
+          vaultId: "v-1",
+          parentRelativePath: "学习/前端",
+          name: "React",
+        }).parentRelativePath,
+      ).toBe("学习/前端");
+    });
+
+    it("name 含路径分隔符 / 为 . 或 .. / 为空 → INVALID_INPUT", () => {
+      for (const name of ["a/b", "a\\b", ".", "..", "", "  "]) {
+        expectFailure(
+          () =>
+            parseCreateDirectoryInput({
+              vaultId: "v-1",
+              parentRelativePath: "",
+              name,
+            }),
+          "INVALID_INPUT",
+        );
+      }
+    });
+
+    it("parentRelativePath 逃逸形态 → PATH_ESCAPE", () => {
+      expectFailure(
+        () =>
+          parseCreateDirectoryInput({
+            vaultId: "v-1",
+            parentRelativePath: "../etc",
+            name: "x",
+          }),
+        "PATH_ESCAPE",
+      );
+    });
+  });
+
+  describe("parseTrashInput / parseListTrashInput", () => {
+    it("合法入参通过", () => {
+      expect(
+        parseTrashInput({ vaultId: "v-1", relativePath: "学习/React.md" }),
+      ).toEqual({ vaultId: "v-1", relativePath: "学习/React.md" });
+      expect(parseListTrashInput({ vaultId: "v-1" })).toEqual({
+        vaultId: "v-1",
+      });
+    });
+
+    it("relativePath 逃逸形态 → PATH_ESCAPE；缺 vaultId → INVALID_INPUT", () => {
+      expectFailure(
+        () => parseTrashInput({ vaultId: "v-1", relativePath: "/abs/a.md" }),
+        "PATH_ESCAPE",
+      );
+      expectFailure(() => parseListTrashInput({}), "INVALID_INPUT");
+    });
+  });
+
+  describe("parseRestoreTrashInput / parsePurgeTrashInput", () => {
+    it("合法入参通过（purge 缺省 operationId = 清空全部）", () => {
+      expect(
+        parseRestoreTrashInput({ vaultId: "v-1", operationId: "op-1" }),
+      ).toEqual({ vaultId: "v-1", operationId: "op-1" });
+      expect(parsePurgeTrashInput({ vaultId: "v-1" })).toEqual({
+        vaultId: "v-1",
+      });
+      expect(
+        parsePurgeTrashInput({ vaultId: "v-1", operationId: "op-1" }),
+      ).toEqual({ vaultId: "v-1", operationId: "op-1" });
+    });
+
+    it("operationId 空串 / 非字符串 → INVALID_INPUT", () => {
+      expectFailure(
+        () => parseRestoreTrashInput({ vaultId: "v-1", operationId: "" }),
+        "INVALID_INPUT",
+      );
+      expectFailure(
+        () => parsePurgeTrashInput({ vaultId: "v-1", operationId: 1 }),
+        "INVALID_INPUT",
+      );
+    });
+  });
+
+  describe("parseMoveNoteInput", () => {
+    it("合法入参通过（targetDirectory 空串 = 根目录）", () => {
+      expect(
+        parseMoveNoteInput({
+          vaultId: "v-1",
+          relativePath: "React.md",
+          targetDirectory: "学习",
+        }),
+      ).toEqual({
+        vaultId: "v-1",
+        relativePath: "React.md",
+        targetDirectory: "学习",
+      });
+      expect(
+        parseMoveNoteInput({
+          vaultId: "v-1",
+          relativePath: "学习/React.md",
+          targetDirectory: "",
+        }).targetDirectory,
+      ).toBe("");
+    });
+
+    it("relativePath 逃逸 → PATH_ESCAPE；缺 targetDirectory → INVALID_INPUT", () => {
+      expectFailure(
+        () =>
+          parseMoveNoteInput({
+            vaultId: "v-1",
+            relativePath: "a//b.md",
+            targetDirectory: "",
+          }),
+        "PATH_ESCAPE",
+      );
+      expectFailure(
+        () => parseMoveNoteInput({ vaultId: "v-1", relativePath: "React.md" }),
+        "INVALID_INPUT",
+      );
+    });
+  });
+
+  describe("parseRenameNoteFileInput", () => {
+    it("合法入参通过", () => {
+      expect(
+        parseRenameNoteFileInput({
+          vaultId: "v-1",
+          relativePath: "学习/React.md",
+          newName: "React 18.md",
+        }),
+      ).toEqual({
+        vaultId: "v-1",
+        relativePath: "学习/React.md",
+        newName: "React 18.md",
+      });
+    });
+
+    it("newName 非 .md 结尾 / 含分隔符 / 为空 → INVALID_INPUT", () => {
+      for (const newName of ["a.txt", "a/b.md", "", "  "]) {
+        expectFailure(
+          () =>
+            parseRenameNoteFileInput({
+              vaultId: "v-1",
+              relativePath: "a.md",
+              newName,
+            }),
+          "INVALID_INPUT",
+        );
+      }
+    });
+
+    it("relativePath 逃逸 → PATH_ESCAPE", () => {
+      expectFailure(
+        () =>
+          parseRenameNoteFileInput({
+            vaultId: "v-1",
+            relativePath: "../a.md",
+            newName: "b.md",
+          }),
+        "PATH_ESCAPE",
+      );
+    });
   });
 });

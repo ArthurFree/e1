@@ -45,6 +45,7 @@ import { InMemoryStorageHealthService } from "../../infrastructure/memory/storag
 import { createOpenAICompatibleProvider } from "../../infrastructure/aiProvider";
 import { createMarkdownCodec } from "../../editor/markdown/codec";
 import { desktopCapabilities } from "./desktopCapabilities";
+import { desktopOperations } from "./desktopOperations";
 import type { E1DesktopAPI } from "./desktopApi";
 import { DesktopDocumentSourceCache } from "./DesktopDocumentSourceCache";
 import { DesktopIdentityAliasRegistry } from "./DesktopIdentityAliasRegistry";
@@ -109,6 +110,7 @@ export function createDesktopRuntime(api: E1DesktopAPI): DesktopRuntime {
     scans,
     noteMetadata,
     vaultState,
+    sources,
   );
   const contentRepository = new DesktopContentRepository(
     api,
@@ -255,6 +257,8 @@ export function createDesktopRuntime(api: E1DesktopAPI): DesktopRuntime {
   const services: AppServices = {
     assets: assetsServices,
     capabilities: desktopCapabilities,
+    // 操作支持矩阵（R007 阶段 4 §9）：未实现的操作 false，入口隐藏。
+    operations: desktopOperations,
     // FR-26「重新扫描知识库」（PR5：VaultMaintenancePort）：缓存失效 +
     // 新快照预热；页面树/标签镜像刷新由 UI 经 refreshCurrentWorkspace 完成。
     vaultMaintenance,

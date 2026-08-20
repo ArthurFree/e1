@@ -11,6 +11,8 @@
  * 注入 vault/note/asset 三组 handler——vault.scan 成功后启动监听，
  * note/asset 写成功后登记自写抑制回声；watcher 批次经 broadcastVaultEvents
  * （缺省实现遍历全部窗口 webContents.send events:vaultChanges）推给 Renderer。
+ * R007 阶段 4：files 组 handler（目录/回收站/move/renameFile）共用同一
+ * selfWrites——trash/restore/move/renameFile 成功后登记路径级自写抑制。
  */
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { join } from "node:path";
@@ -20,6 +22,7 @@ import {
 } from "../../../shared/ipc/contracts.js";
 import { registerVaultHandlers } from "./vault.js";
 import { registerNoteHandlers } from "./note.js";
+import { registerFileHandlers } from "./files.js";
 import { registerAssetHandlers } from "./asset.js";
 import { registerVaultStateHandlers } from "./vaultState.js";
 import { VaultRegistry } from "../vaultRegistry.js";
@@ -94,6 +97,7 @@ export function registerIpcHandlers(
     watchers,
   });
   registerNoteHandlers(bus, { registry, transients, selfWrites });
+  registerFileHandlers(bus, { registry, transients, selfWrites });
   registerVaultStateHandlers(bus, {
     store: vaultStateStore,
     registry,

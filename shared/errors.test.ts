@@ -4,8 +4,10 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  decodeIpcBridgeError,
   DesktopIpcError,
   domainCodeFromIpc,
+  encodeIpcBridgeError,
   IpcFailure,
   ipcErrorFromDomain,
   isIpcErrorPayload,
@@ -133,5 +135,35 @@ describe("DesktopIpcError", () => {
     expect(err).toBeInstanceOf(Error);
     expect(err.code).toBe("NOTE_NOT_FOUND");
     expect(err.name).toBe("DesktopIpcError");
+  });
+});
+
+describe("contextBridge 错误编解码", () => {
+  it("编码后载荷完整存活于 message，可解码往返（含 details）", () => {
+    const err = encodeIpcBridgeError({
+      code: "DOCUMENT_CONFLICT",
+      message: "磁盘版本不一致",
+      details: { diskToken: "abc" },
+    });
+    // 模拟 contextBridge 重建：只保留 message 的 plain Error
+    const rebuilt = new Error(err.message);
+    const payload = decodeIpcBridgeError(rebuilt);
+    expect(payload).toEqual({
+      code: "DOCUMENT_CONFLICT",
+      message: "磁盘版本不一致",
+      details: { diskToken: "abc" },
+    });
+  });
+
+  it("非桥编码错误与畸形载荷解码为 null", () => {
+    expect(decodeIpcBridgeError(new Error("普通错误"))).toBeNull();
+    expect(decodeIpcBridgeError("not an error")).toBeNull();
+    expect(decodeIpcBridgeError(null)).toBeNull();
+    expect(
+      decodeIpcBridgeError(new Error("E1_IPC_ERROR:{invalid json")),
+    ).toBeNull();
+    expect(
+      decodeIpcBridgeError(new Error('E1_IPC_ERROR:{"foo":1}')),
+    ).toBeNull();
   });
 });

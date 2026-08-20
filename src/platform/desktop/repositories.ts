@@ -66,6 +66,8 @@ import {
   mapRecentVaultToWorkspace,
   mapScanEntriesToPages,
   mapScanEntriesToTags,
+  mapTrashEntriesToPages,
+  parseTrashPageId,
   deterministicTagColor,
   tagIdOfName,
 } from "./vaultMapping";
@@ -92,6 +94,37 @@ function notImplemented(feature: string, stage: string): DomainError {
     "NOT_IMPLEMENTED",
     `桌面端暂不支持${feature}（将在 R006 ${stage}支持）。`,
   );
+}
+
+/**
+ * R007 阶段 4：文件操作 IPC 错误 → DomainError。
+ * DesktopIpcError.code 保留原码可分流；映射口径（shared/errors.ts 契约）：
+ * VAULT_PATH_COLLISION/VAULT_RESERVED_PATH/VAULT_RESTORE_COLLISION →
+ * INVALID_INPUT；VAULT_TRASH_NOT_FOUND → PAGE_NOT_FOUND；其余与
+ * 正文写入同语义（VAULT_READ_ONLY 等复用 mapNoteWriteError）。
+ */
+function mapFileOpError(err: unknown): never {
+  if (err instanceof DesktopIpcError) {
+    switch (err.code) {
+      case "VAULT_PATH_COLLISION":
+      case "VAULT_RESERVED_PATH":
+      case "VAULT_RESTORE_COLLISION":
+        throw new DomainError("INVALID_INPUT", err.message);
+      case "VAULT_TRASH_NOT_FOUND":
+        throw new DomainError(
+          "PAGE_NOT_FOUND",
+          "回收站中找不到这条记录，它可能已经被恢复或清理。",
+        );
+      case "NOTE_NOT_FOUND":
+        throw new DomainError(
+          "PAGE_NOT_FOUND",
+          "这个页面已经不存在，它可能已经被其他程序移动或删除。",
+        );
+      default:
+        mapNoteWriteError(err);
+    }
+  }
+  throw err;
 }
 
 /**
@@ -210,25 +243,44 @@ export class DesktopWorkspaceRepository implements WorkspaceRepository {
   }
 }
 
-/** 页面仓储：listByWorkspace/listAll 真实（扫描映射 + vault-state 合并）。 */
+/** 页面仓储：listByWorkspace/listAll 真实（扫描映射 + vault-state 合并 + 回收站合并）。 */
 export class DesktopPageRepository implements PageRepository {
   constructor(
     private readonly api: E1DesktopAPI,
     private readonly scans: DesktopVaultScanCache,
     private readonly metadata: DesktopNoteMetadataService,
     private readonly vaultState: DesktopVaultStateClient,
+    /**
+     * R007 阶段 4：move 后同步已打开文档的来源缓存（relativePath），
+     * 否则下一次保存会写回旧路径（在旧位置重建文件）。可选——
+     * 不注入时跳过同步（仅影响未装配 Source Cache 的测试场景）。
+     */
+    private readonly sources?: DesktopDocumentSourceCache,
   ) {}
 
   async listByWorkspace(vaultId: string): Promise<Page[]> {
     const snapshot = await this.scans.scan(vaultId);
     const state = await this.vaultState.get(vaultId);
-    return mapScanEntriesToPages(
+    const pages = mapScanEntriesToPages(
       vaultId,
       snapshot.result.entries,
       snapshot.scannedAt,
       this.scans.aliases,
       state,
     );
+    // R007 阶段 4：合并回收站条目（deletedAt 非空的合成 Page，
+    // id 携带 operationId 供 restore/purge 反查）。回收站读取失败
+    // 不拖垮页面树——告警并以空表降级。
+    try {
+      const trash = await this.api.vault.listTrash({ vaultId });
+      return [
+        ...pages,
+        ...mapTrashEntriesToPages(vaultId, trash.entries, snapshot.scannedAt),
+      ];
+    } catch (err) {
+      console.warn("读取回收站失败，已按空回收站降级", err);
+      return pages;
+    }
   }
 
   /**
@@ -251,7 +303,7 @@ export class DesktopPageRepository implements PageRepository {
 
   async create(input: CreatePageInput): Promise<Page> {
     if (input.kind !== "document") {
-      throw notImplemented("新建分组", "后续阶段（目录即分组）");
+      return this.createGroup(input);
     }
     if (isTransientVaultId(input.workspaceId)) {
       throw new DomainError(
@@ -295,6 +347,56 @@ export class DesktopPageRepository implements PageRepository {
     };
   }
 
+  /**
+   * 新建分组 = 真实目录（R007 阶段 4 §4.1）：vault.createDirectory，
+   * 同名确定性递增（"name (2)"）与保留名拒绝在 Main 完成。
+   * 父级为文档时建在其所在目录（与文档 create 同口径）。
+   */
+  private async createGroup(input: CreatePageInput): Promise<Page> {
+    if (isTransientVaultId(input.workspaceId)) {
+      throw new DomainError(
+        "VAULT_READ_ONLY",
+        "当前知识库处于仅预览模式，E1 不会在这个文件夹中创建目录。",
+      );
+    }
+    const parentRelativePath = this.resolveCreateDirectory(
+      input.workspaceId,
+      input.parentId,
+    );
+    const name = input.title.trim() === "" ? "新建分组" : input.title.trim();
+    let created;
+    try {
+      created = await this.api.vault.createDirectory({
+        vaultId: input.workspaceId,
+        parentRelativePath,
+        name,
+      });
+    } catch (err) {
+      mapFileOpError(err);
+    }
+    this.scans.invalidate(input.workspaceId);
+    const pages = await this.listByWorkspace(input.workspaceId);
+    const groupId = `path:${created.relativePath}`;
+    const found = pages.find((p) => p.id === groupId);
+    if (found) return found;
+    // 扫描偶发未收录时回退合成（与文档 create 同口径）。
+    const now = Date.now();
+    return {
+      id: groupId,
+      workspaceId: input.workspaceId,
+      parentId: input.parentId,
+      kind: "group",
+      title: created.relativePath.split("/").pop() ?? name,
+      icon: input.icon ?? null,
+      position: pages.length,
+      favoriteAt: null,
+      lastOpenedAt: null,
+      deletedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+  }
+
   /** parentId → note.create 的 directory（根=""；path:学习 → 学习）。 */
   private resolveCreateDirectory(
     vaultId: string,
@@ -318,6 +420,15 @@ export class DesktopPageRepository implements PageRepository {
    * 文件名不随标题改动（Title rename ≠ File rename，R007 §4.4）。
    */
   async rename(pageId: string, title: string): Promise<void> {
+    // 分组（目录）改名：Main 契约暂无目录 rename IPC（note.renameFile 仅
+    // .md），诚实失败待契约补充；文档标题重命名走 Frontmatter 通道。
+    const doc = await this.scans.findDocument(pageId);
+    if (!doc) {
+      const any = await this.scans.findEntry(pageId);
+      if (any?.entry.kind === "group") {
+        throw notImplemented("重命名分组（目录改名）", "后续批次");
+      }
+    }
     await this.metadata.patch(pageId, { title });
   }
 
@@ -375,27 +486,150 @@ export class DesktopPageRepository implements PageRepository {
     return { vaultId: found.vaultId, key: pathKey };
   }
 
-  async move(): Promise<void> {
-    throw notImplemented(
-      "拖拽移动页面",
-      "后续阶段（桌面端拖拽排序暂时关闭，r006 §8）",
+  /**
+   * 移动文档到目标目录（R007 阶段 4 §4.3，P1）：纯文件系统 rename，
+   * stable note id 与 Frontmatter 不变；第一版仅 document → directory，
+   * 目标路径冲突报 INVALID_INPUT（VAULT_PATH_COLLISION），不做自动改名。
+   * Desktop 无 position 概念（文件名排序即展示顺序），index 参数忽略。
+   * 成功后同步已打开文档的来源缓存路径（含 Adoption 会话别名），
+   * 否则下一次保存会写回旧路径重建文件。
+   */
+  async move(
+    id: string,
+    newParentId: string | null,
+    // Desktop 无 position 概念（文件名排序即展示顺序），index 忽略。
+    _index?: number,
+  ): Promise<void> {
+    void _index;
+    const found = await this.scans.findDocument(id);
+    if (!found) {
+      const any = await this.scans.findEntry(id);
+      if (any?.entry.kind === "group") {
+        throw notImplemented(
+          "移动分组（目录移动）",
+          "后续批次（本版仅支持文档移入目录）",
+        );
+      }
+      throw new DomainError(
+        "PAGE_NOT_FOUND",
+        "这个页面已经不存在，它可能已经被其他程序移动或删除。",
+      );
+    }
+    if (isTransientVaultId(found.vaultId)) {
+      throw new DomainError(
+        "VAULT_READ_ONLY",
+        "当前知识库处于仅预览模式，E1 不会修改这个文件夹中的任何内容。",
+      );
+    }
+    const targetDirectory = this.resolveCreateDirectory(
+      found.vaultId,
+      newParentId,
     );
+    let moved;
+    try {
+      moved = await this.api.note.move({
+        vaultId: found.vaultId,
+        relativePath: found.entry.relativePath,
+        targetDirectory,
+      });
+    } catch (err) {
+      mapFileOpError(err);
+    }
+    // 来源缓存同步（同 DesktopExternalVaultChangeService.syncMovedSourcePath
+    // 口径）：保存目标与 Mention/资源相对路径解析都以缓存路径为准。
+    if (this.sources) {
+      this.sources.updateRelativePath(id, moved.relativePath);
+      const alias = this.scans.aliases.getByStableNoteId(id);
+      if (alias) {
+        this.sources.updateRelativePath(alias.sessionPageId, moved.relativePath);
+      }
+    }
+    this.scans.invalidate(found.vaultId);
   }
 
-  async remove(): Promise<void> {
-    throw notImplemented("删除页面", "后续阶段（r006：删除禁用）");
+  /**
+   * 移入回收站（R007 阶段 4 §4.2，P0）：rename 进 .e1/trash/<operationId>/
+   * （Main 完成，绝不直接 unlink）；文档与分组（目录）均可。当前打开
+   * 文档的 Source Cache 清理由 Provider exitDocumentIfSelected 链路
+   * 处理，仓储只负责使扫描缓存失效。
+   */
+  async remove(id: string): Promise<void> {
+    const found = await this.scans.findEntry(id);
+    if (!found) {
+      throw new DomainError(
+        "PAGE_NOT_FOUND",
+        "这个页面已经不存在，它可能已经被其他程序移动或删除。",
+      );
+    }
+    if (isTransientVaultId(found.vaultId)) {
+      throw new DomainError(
+        "VAULT_READ_ONLY",
+        "当前知识库处于仅预览模式，E1 不会修改这个文件夹中的任何内容。",
+      );
+    }
+    try {
+      await this.api.vault.trash({
+        vaultId: found.vaultId,
+        relativePath: found.entry.relativePath,
+      });
+    } catch (err) {
+      mapFileOpError(err);
+    }
+    this.scans.invalidate(found.vaultId);
   }
 
-  async restore(): Promise<void> {
-    throw notImplemented("恢复页面", "后续阶段");
+  /**
+   * 从回收站恢复（R007 阶段 4 §4.2，P0）：trash:<vaultId>/<operationId>
+   * 页面 id 解析回定位键；原父目录缺失递归重建、原路径冲突确定性改名
+   * 均在 Main 完成。恢复后页面身份由重新扫描的真实条目承担。
+   */
+  async restore(id: string): Promise<void> {
+    const target = parseTrashPageId(id);
+    if (!target) {
+      throw new DomainError(
+        "PAGE_NOT_FOUND",
+        "回收站中找不到这条记录，它可能已经被恢复或清理。",
+      );
+    }
+    try {
+      await this.api.vault.restore({
+        vaultId: target.vaultId,
+        operationId: target.operationId,
+      });
+    } catch (err) {
+      mapFileOpError(err);
+    }
+    this.scans.invalidate(target.vaultId);
   }
 
-  async purge(): Promise<void> {
-    throw notImplemented("彻底删除页面", "后续阶段");
+  /** 永久删除单条回收站记录（R007 阶段 4 §4.2，P0）：物理删除，不可恢复。 */
+  async purge(id: string): Promise<void> {
+    const target = parseTrashPageId(id);
+    if (!target) {
+      throw new DomainError(
+        "PAGE_NOT_FOUND",
+        "回收站中找不到这条记录，它可能已经被恢复或清理。",
+      );
+    }
+    try {
+      await this.api.vault.purgeTrash({
+        vaultId: target.vaultId,
+        operationId: target.operationId,
+      });
+    } catch (err) {
+      mapFileOpError(err);
+    }
+    this.scans.invalidate(target.vaultId);
   }
 
-  async purgeTrashed(): Promise<void> {
-    throw notImplemented("清空回收站", "后续阶段");
+  /** 清空回收站（R007 阶段 4 §4.2，P0）：缺省 operationId 即整站物理清除。 */
+  async purgeTrashed(workspaceId: string): Promise<void> {
+    try {
+      await this.api.vault.purgeTrash({ vaultId: workspaceId });
+    } catch (err) {
+      mapFileOpError(err);
+    }
+    this.scans.invalidate(workspaceId);
   }
 }
 

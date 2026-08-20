@@ -83,7 +83,13 @@ function mockApi(overrides: {
   openRecent?: E1DesktopAPI["vault"]["openRecent"];
   openSelection?: E1DesktopAPI["vault"]["openSelection"];
   scan?: E1DesktopAPI["vault"]["scan"];
+  createDirectory?: E1DesktopAPI["vault"]["createDirectory"];
+  trash?: E1DesktopAPI["vault"]["trash"];
+  listTrash?: E1DesktopAPI["vault"]["listTrash"];
+  restore?: E1DesktopAPI["vault"]["restore"];
+  purgeTrash?: E1DesktopAPI["vault"]["purgeTrash"];
   noteRead?: E1DesktopAPI["note"]["read"];
+  noteMove?: E1DesktopAPI["note"]["move"];
   notePatchMetadata?: E1DesktopAPI["note"]["patchMetadata"];
   vaultStateGet?: E1DesktopAPI["vaultState"]["get"];
   vaultStatePatch?: E1DesktopAPI["vaultState"]["patch"];
@@ -105,6 +111,12 @@ function mockApi(overrides: {
         }),
       listRecent: overrides.listRecent ?? vi.fn(async () => []),
       scan: overrides.scan ?? vi.fn(async () => SCAN),
+      createDirectory: overrides.createDirectory ?? vi.fn(),
+      trash: overrides.trash ?? vi.fn(async () => ({ operationId: "op-1" })),
+      listTrash: overrides.listTrash ?? vi.fn(async () => ({ entries: [] })),
+      restore:
+        overrides.restore ?? vi.fn(async () => ({ relativePath: "x.md" })),
+      purgeTrash: overrides.purgeTrash ?? vi.fn(async () => ({ purged: 1 })),
     },
     vaultState: {
       get:
@@ -122,6 +134,7 @@ function mockApi(overrides: {
       create: vi.fn(),
       save: vi.fn(),
       patchMetadata: overrides.notePatchMetadata ?? vi.fn(),
+      move: overrides.noteMove ?? vi.fn(),
     },
     asset: {
       pick: vi.fn(),
@@ -423,7 +436,7 @@ describe("DesktopPageRepository", () => {
     expect(scan).not.toHaveBeenCalledWith("gone");
   });
 
-  it("create 文档走 note.create 并刷新扫描；其余写操作仍 NOT_IMPLEMENTED", async () => {
+  it("create 文档走 note.create 并刷新扫描", async () => {
     const create = vi.fn(async () => ({
       noteId: "01NEW",
       relativePath: "无标题.md",
@@ -464,26 +477,6 @@ describe("DesktopPageRepository", () => {
       title: "无标题",
     });
     expect(scan).toHaveBeenCalled();
-
-    const remaining: Array<() => Promise<unknown>> = [
-      () =>
-        repo.create({
-          workspaceId: "v1",
-          parentId: null,
-          kind: "group",
-          title: "x",
-        }),
-      () => repo.move("p", null, 0),
-      () => repo.remove("p"),
-      () => repo.restore("p"),
-      () => repo.purge("p"),
-      () => repo.purgeTrashed("v1"),
-    ];
-    for (const run of remaining) {
-      const err = await run().catch((e: unknown) => e);
-      expect(err).toBeInstanceOf(DomainError);
-      expect((err as DomainError).code).toBe("NOT_IMPLEMENTED");
-    }
   });
 
   it("transient Vault 上 create 抛 VAULT_READ_ONLY", async () => {
@@ -516,6 +509,226 @@ describe("DesktopPageRepository", () => {
     // markOpened 产生 unhandled rejection）。
     await expect(repo.setLastOpened("p", Date.now())).resolves.toBeUndefined();
     expect(api.vaultState.patch).not.toHaveBeenCalled();
+  });
+
+  /* -------------------- R007 阶段 4：文件操作闭环 -------------------- */
+
+  /** 阶段 4 测试装配：仓储 + 共享扫描缓存 + 来源缓存（move 同步断言用）。 */
+  function pageRepo(api: E1DesktopAPI) {
+    const cache = new DesktopVaultScanCache(api);
+    const sources = new DesktopDocumentSourceCache();
+    const repo = new DesktopPageRepository(
+      api,
+      cache,
+      metadataService(api, cache, sources).service,
+      stateClient(api),
+      sources,
+    );
+    return { repo, cache, sources };
+  }
+
+  it("create 分组 = vault.createDirectory 真实目录，返回 path: 页面并刷新扫描", async () => {
+    const createDirectory = vi.fn(async () => ({
+      relativePath: "新建分组",
+    }));
+    const scan = vi.fn(async () => ({
+      vault: { vaultId: "v1", name: "我的笔记" },
+      entries: [
+        {
+          noteId: null,
+          relativePath: "新建分组",
+          kind: "group" as const,
+          title: "新建分组",
+          parentPath: null,
+          tags: [],
+        },
+      ],
+    }));
+    const api = mockApi({ createDirectory, scan });
+    const { repo } = pageRepo(api);
+    const page = await repo.create({
+      workspaceId: "v1",
+      parentId: null,
+      kind: "group",
+      title: "新建分组",
+    });
+    expect(createDirectory).toHaveBeenCalledWith({
+      vaultId: "v1",
+      parentRelativePath: "",
+      name: "新建分组",
+    });
+    expect(page.id).toBe("path:新建分组");
+    expect(page.kind).toBe("group");
+    expect(scan).toHaveBeenCalledTimes(1);
+  });
+
+  it("create 分组到分组下：parentRelativePath 取父目录相对路径", async () => {
+    const createDirectory = vi.fn(async () => ({
+      relativePath: "学习/子分组",
+    }));
+    const api = mockApi({ createDirectory });
+    const { repo } = pageRepo(api);
+    await repo.listByWorkspace("v1"); // 预热扫描缓存（path:学习 条目）
+    await repo.create({
+      workspaceId: "v1",
+      parentId: "path:学习",
+      kind: "group",
+      title: "子分组",
+    });
+    expect(createDirectory).toHaveBeenCalledWith({
+      vaultId: "v1",
+      parentRelativePath: "学习",
+      name: "子分组",
+    });
+  });
+
+  it("remove 文档与分组都走 vault.trash（rename 进回收站），并使扫描失效", async () => {
+    const trash = vi.fn(async () => ({ operationId: "op-9" }));
+    const scan = vi.fn(async () => SCAN);
+    const api = mockApi({ trash, scan });
+    const { repo } = pageRepo(api);
+    await repo.listByWorkspace("v1"); // 预热缓存
+    await repo.remove("01JABC");
+    expect(trash).toHaveBeenCalledWith({
+      vaultId: "v1",
+      relativePath: "学习/React.md",
+    });
+    // 写后扫描缓存失效：下一次 listByWorkspace 重新扫描（第二次）。
+    await repo.listByWorkspace("v1");
+    await repo.remove("path:学习");
+    expect(trash).toHaveBeenCalledWith({
+      vaultId: "v1",
+      relativePath: "学习",
+    });
+    await repo.listByWorkspace("v1");
+    expect(scan).toHaveBeenCalledTimes(3);
+  });
+
+  it("remove/transient：仅预览 Vault 拒写（VAULT_READ_ONLY），不调 IPC", async () => {
+    const trash = vi.fn(async () => ({ operationId: "op-1" }));
+    const api = mockApi({ trash });
+    const { repo } = pageRepo(api);
+    await repo.listByWorkspace("transient:t-1"); // 以 transient 键缓存快照
+    await expect(repo.remove("01JABC")).rejects.toMatchObject({
+      code: "VAULT_READ_ONLY",
+    });
+    expect(trash).not.toHaveBeenCalled();
+  });
+
+  it("listByWorkspace 合并回收站条目：trash: id + deletedAt 非空 + basename 标题", async () => {
+    const listTrash = vi.fn(async () => ({
+      entries: [
+        {
+          operationId: "op-1",
+          originalRelativePath: "学习/React.md",
+          deletedAt: "2026-08-15T10:00:00.000Z",
+          stableNoteId: "01JABC",
+        },
+        {
+          operationId: "op-2",
+          originalRelativePath: "旧目录",
+          deletedAt: "2026-08-14T10:00:00.000Z",
+        },
+      ],
+    }));
+    const api = mockApi({ listTrash });
+    const { repo } = pageRepo(api);
+    const pages = await repo.listByWorkspace("v1");
+    const trashed = pages.filter((p) => p.deletedAt !== null);
+    expect(trashed.map((p) => [p.id, p.title, p.kind, p.parentId])).toEqual([
+      ["trash:v1/op-1", "React", "document", null],
+      ["trash:v1/op-2", "旧目录", "group", null],
+    ]);
+    expect(trashed[0].deletedAt).toBe(
+      Date.parse("2026-08-15T10:00:00.000Z"),
+    );
+  });
+
+  it("restore/purge 从 trash: id 解析 operationId；purgeTrashed 缺省清空", async () => {
+    const restore = vi.fn(async () => ({ relativePath: "学习/React.md" }));
+    const purgeTrash = vi.fn(async () => ({ purged: 1 }));
+    const api = mockApi({ restore, purgeTrash });
+    const { repo } = pageRepo(api);
+    await repo.restore("trash:v1/op-1");
+    expect(restore).toHaveBeenCalledWith({
+      vaultId: "v1",
+      operationId: "op-1",
+    });
+    await repo.purge("trash:v1/op-2");
+    expect(purgeTrash).toHaveBeenCalledWith({
+      vaultId: "v1",
+      operationId: "op-2",
+    });
+    await repo.purgeTrashed("v1");
+    expect(purgeTrash).toHaveBeenCalledWith({ vaultId: "v1" });
+    // 非回收站 id：诚实失败 PAGE_NOT_FOUND，不调 IPC。
+    await expect(repo.restore("01JABC")).rejects.toMatchObject({
+      code: "PAGE_NOT_FOUND",
+    });
+    await expect(repo.purge("01JABC")).rejects.toMatchObject({
+      code: "PAGE_NOT_FOUND",
+    });
+  });
+
+  it("move 文档到目标目录：note.move + 来源缓存路径同步 + 扫描失效", async () => {
+    const noteMove = vi.fn(async () => ({ relativePath: "React.md" }));
+    const scan = vi.fn(async () => SCAN);
+    const api = mockApi({ noteMove, scan });
+    const { repo, sources } = pageRepo(api);
+    const updatePath = vi.spyOn(sources, "updateRelativePath");
+    await repo.listByWorkspace("v1"); // 预热缓存
+    await repo.move("01JABC", null, 0);
+    expect(noteMove).toHaveBeenCalledWith({
+      vaultId: "v1",
+      relativePath: "学习/React.md",
+      targetDirectory: "",
+    });
+    // 已打开文档的来源缓存路径同步（否则下次保存写回旧路径重建文件）。
+    expect(updatePath).toHaveBeenCalledWith("01JABC", "React.md");
+    await repo.listByWorkspace("v1");
+    expect(scan).toHaveBeenCalledTimes(2);
+  });
+
+  it("move 冲突：VAULT_PATH_COLLISION → DomainError INVALID_INPUT", async () => {
+    const noteMove = vi.fn(async () => {
+      throw new DesktopIpcError(
+        "VAULT_PATH_COLLISION",
+        "目标位置已存在同名文件。",
+      );
+    });
+    const api = mockApi({ noteMove });
+    const { repo } = pageRepo(api);
+    await repo.listByWorkspace("v1");
+    const err = await repo.move("01JABC", null, 0).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(DomainError);
+    expect((err as DomainError).code).toBe("INVALID_INPUT");
+  });
+
+  it("move/rename 分组：Main 契约暂无目录 IPC，诚实 NOT_IMPLEMENTED", async () => {
+    const api = mockApi({});
+    const { repo } = pageRepo(api);
+    await repo.listByWorkspace("v1");
+    await expect(repo.move("path:学习", null, 0)).rejects.toMatchObject({
+      code: "NOT_IMPLEMENTED",
+    });
+    await expect(repo.rename("path:学习", "新名字")).rejects.toMatchObject({
+      code: "NOT_IMPLEMENTED",
+    });
+    expect(api.note.move).not.toHaveBeenCalled();
+  });
+
+  it("回收站不存在记录：VAULT_TRASH_NOT_FOUND → PAGE_NOT_FOUND", async () => {
+    const restore = vi.fn(async () => {
+      throw new DesktopIpcError(
+        "VAULT_TRASH_NOT_FOUND",
+        "回收站记录不存在。",
+      );
+    });
+    const api = mockApi({ restore });
+    const { repo } = pageRepo(api);
+    await expect(repo.restore("trash:v1/gone")).rejects.toMatchObject({
+      code: "PAGE_NOT_FOUND",
+    });
   });
 });
 

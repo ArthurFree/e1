@@ -55,6 +55,14 @@ export type IpcErrorCode =
   | "PATH_ESCAPE"
   /** 保存乐观锁冲突：expectedVersionToken 与磁盘当前 hash 不一致。 */
   | "DOCUMENT_CONFLICT"
+  /** R007 阶段 4：文件操作目标路径已存在（move/renameFile 冲突报错口径）。 */
+  | "VAULT_PATH_COLLISION"
+  /** R007 阶段 4：操作触及保留路径（.e1/ 或受管 assetsDirectory）。 */
+  | "VAULT_RESERVED_PATH"
+  /** R007 阶段 4：回收站操作不存在（operationId 未找到）。 */
+  | "VAULT_TRASH_NOT_FOUND"
+  /** R007 阶段 4：恢复时确定性改名仍无法分配不冲突路径（递增耗尽）。 */
+  | "VAULT_RESTORE_COLLISION"
   /** 未分类的 Main 侧内部错误。 */
   | "INTERNAL";
 
@@ -102,6 +110,33 @@ export function isIpcErrorPayload(value: unknown): value is IpcErrorPayload {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;
   return typeof v.code === "string" && typeof v.message === "string";
+}
+
+/**
+ * contextBridge 线格式前缀：sandbox 开启时，preload 抛出的自定义 Error
+ * 跨桥进入 Renderer 主世界会被重建为 plain Error，name/code 等自有属性
+ * 全部丢失（Electron 43 实测），只有 message 存活。因此 preload 把错误载荷
+ * 编码进 message，Renderer 侧（desktopApi）再解码还原为 DesktopIpcError。
+ */
+export const IPC_BRIDGE_ERROR_PREFIX = "E1_IPC_ERROR:";
+
+/** preload 侧：把 IPC 错误载荷编码为可跨 contextBridge 存活的 Error。 */
+export function encodeIpcBridgeError(payload: IpcErrorPayload): Error {
+  return new Error(IPC_BRIDGE_ERROR_PREFIX + JSON.stringify(payload));
+}
+
+/** Renderer 侧：解码跨桥错误；非桥编码错误返回 null（本地错误原样抛出）。 */
+export function decodeIpcBridgeError(error: unknown): IpcErrorPayload | null {
+  if (!(error instanceof Error)) return null;
+  if (!error.message.startsWith(IPC_BRIDGE_ERROR_PREFIX)) return null;
+  try {
+    const parsed: unknown = JSON.parse(
+      error.message.slice(IPC_BRIDGE_ERROR_PREFIX.length),
+    );
+    return isIpcErrorPayload(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -177,6 +212,12 @@ const IPC_TO_DOMAIN: Partial<Record<IpcErrorCode, string>> = {
   ASSET_WRITE_PERMISSION_DENIED: "ASSET_WRITE_PERMISSION_DENIED",
   ASSET_WRITE_IO_ERROR: "ASSET_WRITE_IO_ERROR",
   ASSET_SOURCE_NOT_FOUND: "ASSET_SOURCE_NOT_FOUND",
+  // R007 阶段 4（§11）：文件操作新码尽量映射回既有 domain 码，不为其新增
+  // DomainError code——UI 需要分流时直接读 DesktopIpcError.code（IPC 原码）。
+  VAULT_PATH_COLLISION: "INVALID_INPUT",
+  VAULT_RESERVED_PATH: "INVALID_INPUT",
+  VAULT_TRASH_NOT_FOUND: "PAGE_NOT_FOUND",
+  VAULT_RESTORE_COLLISION: "INVALID_INPUT",
 };
 
 /** DomainError → IPC 错误载荷；未识别的 domain code 归一为 INTERNAL。 */

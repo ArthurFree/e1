@@ -134,6 +134,27 @@ export class DesktopVaultScanCache {
     return found?.entry ?? null;
   }
 
+  /**
+   * 按页面 id 反查任意类型条目（R007 阶段 4：分组删除/移动定位用——
+   * findDocument 只认 document，group 恒以 path:<dir> 为 id，经
+   * pageIdOfEntry 匹配即可）。不解析 Session Alias（分组无 Adoption）。
+   */
+  async findEntry(
+    pageId: string,
+  ): Promise<{ vaultId: string; entry: VaultScanEntry } | null> {
+    const doc = await this.findDocument(pageId);
+    if (doc) return doc;
+    for (const [vaultId, pending] of this.snapshots) {
+      const snapshot = await pending.catch(() => null);
+      if (!snapshot) continue;
+      const entry = snapshot.result.entries.find(
+        (e) => pageIdOfEntry(e) === pageId,
+      );
+      if (entry) return { vaultId, entry };
+    }
+    return null;
+  }
+
   /** 同步取页面相对路径（mention 解析；未扫描到返回 null）。Vault 隔离。 */
   getRelativePathSync(vaultId: string, pageId: string): string | null {
     return this.pageRelativePathsByVault.get(vaultId)?.get(pageId) ?? null;

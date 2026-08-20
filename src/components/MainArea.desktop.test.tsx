@@ -91,6 +91,8 @@ function makeApi(overrides: {
         },
       ]),
       scan: vi.fn(async () => SCAN),
+      // R007 阶段 4：回收站读取（缺省空表）。
+      listTrash: vi.fn(async () => ({ entries: [] })),
     },
     note: {
       read:
@@ -192,11 +194,13 @@ describe("MainArea Desktop 打开链路（R006-C3 §42）", () => {
     expect(
       screen.getByRole("button", { name: "允许本次编辑" }),
     ).toBeInTheDocument();
-    // 只读禁止项（§29.2）：不可输入、无常驻格式工具栏、版本历史禁用。
+    // 只读禁止项（§29.2）：不可输入、无常驻格式工具栏；
+    // 版本历史入口按 operations.revision.read=false 整体隐藏（R007 §8，
+    // Desktop 版本历史为空实现，不显示入口让用户误以为有版本功能）。
     expect(editorEl()?.getAttribute("contenteditable")).toBe("false");
     expect(document.querySelector(".format-toolbar")).toBeNull();
     expect(coordinatorSpy).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "版本历史" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "版本历史" })).toBeNull();
   });
 
   it("查看详情 → unsupported 明细弹层，Escape 可关（FR-20 §28.1）", async () => {

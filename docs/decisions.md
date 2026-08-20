@@ -72,6 +72,7 @@
 | 写入链路加固与身份一致性（R006-C4.1）              | `DesktopMarkdownWriteService` 为 Desktop Markdown 内容写唯一实现（save / replaceContent 共用 Gate）；`DesktopIdentityAliasRegistry` 仅内存：Adoption 后同 Session `Page.id` 保持 path:*，重启后磁盘 stable id 生效；Scan Cache 路径索引按 Vault 隔离；`ensureFrontmatterId` 保证 `note.create` 的 noteId 等于磁盘 Frontmatter id；AtomicFileWriter 第二次 SHA 经测试 hook 覆盖真竞态 | C4 验收缺口：replaceContent 曾绕过 Gate；Adoption + 重扫会切身份；第二次 SHA 测试未真正覆盖 rename 前窗口 |
 | Desktop 本地附件闭环（R006-C5）                    | 新资源只写 `vault.json` 的 `assetsDirectory`；Markdown 只写相对路径；Renderer 不见绝对路径（`pickToken` / `authorized-ref`）；`DesktopAssetStore` + `e1-asset://` 协议；Hydration 把受管相对图/整段附件链升级为节点；删除节点不 `unlink`；`persistentAssetPaths=true`；zip 导入仍走 Renderer 字节通道 | C4 后图片/附件仍是桩，第三方工具看不到真实文件；Web Object URL 不能作为 Desktop 持久化真相 |
 | R006 功能冻结 / 复杂度收敛（fix_001）              | 本轮只做收敛与债务收口（文档事实同步、能力矩阵锁定、unowned async、层内拆分等），**不开 R007**、不新增大产品能力；Desktop 技术验证版以 C5 为功能冻结边界 | 代码能力已超架构文档；继续加功能会放大层内巨石与文档漂移；先把现状锁死再谈产品化 |
+| 操作支持矩阵 RuntimeOperations（R007 阶段 4 §9）    | 新增 `AppServices.operations`（workspace/page/tag/revision 四组 boolean）承载「UI 是否显示操作入口」，与 `RuntimeCapabilities`（底层平台能力）严格分离；未实现的操作 false 隐藏入口，不再点了抛 NOT_IMPLEMENTED；Desktop 文件操作（回收站/新建分组/移动）走统一 IPC，`trash:<vaultId>/<operationId>` 页面 id 携带恢复定位键 | 避免能力矩阵膨胀成几十个字段；Operation=产品允许做什么、Capability=runtime 能做什么；回收站条目无扫描快照可依托，id 自带定位键使命令层零改动 |
 
 重大架构决策另有 ADR 详述（背景/替代方案），见 [adr/](./adr/)。
 

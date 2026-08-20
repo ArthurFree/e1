@@ -55,6 +55,8 @@ function mockApi(
         },
       ]),
       scan: vi.fn(async () => SCAN),
+      // R007 阶段 4：回收站读取（缺省空表）。
+      listTrash: vi.fn(async () => ({ entries: [] })),
     },
     vaultState: {
       get: vi.fn(async () => createEmptyVaultState()),

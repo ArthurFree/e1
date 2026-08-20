@@ -29,6 +29,7 @@ import { createId } from "../../infrastructure/id";
 import { setStorageConnectionCallbacks } from "./persistence/db";
 import { secretStore } from "./persistence/secretStore";
 import { webCapabilities } from "./webCapabilities";
+import { webOperations } from "./webOperations";
 import { WebAssetAccessService } from "./webAssetAccess";
 import { WebAssetPicker } from "./webAssetPicker";
 import { WebNotificationService } from "./webNotification";
@@ -140,6 +141,8 @@ export function createBrowserAppServices(): AppServices {
     // 运行时能力矩阵（R005 阶段 2）：写死在容器内部而非 spread 合并，
     // 保持模块级单例的引用相等（TestApp/消费者依赖同一实例身份）。
     capabilities: webCapabilities,
+    // 操作支持矩阵（R007 阶段 4 §9）：Web 全部操作已实现，全 true。
+    operations: webOperations,
     preferencesService,
     syncChannel,
     // 文档版本推进通道（R007 阶段 1）：Web 元数据写与正文同一事务，

@@ -141,7 +141,7 @@ export function EditorShell({
             {page.favoriteAt === null ? <IconStar /> : <IconStarFilled />}
           </button>
         )}
-        {isDocument && (
+        {isDocument && services.operations.revision.read && (
           <button
             type="button"
             className="icon-button"

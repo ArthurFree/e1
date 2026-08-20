@@ -238,6 +238,9 @@ test.describe("桌面冒烟：本地附件与资源闭环（R006-C5）", () => {
       await expect(window.locator(".local-image__img")).toHaveCount(1, {
         timeout: 15_000,
       });
+      // 第一次插入后图片处于节点选择态，先点击正文收起选区，
+      // 否则第二次插入会替换已选中的节点而不是追加。
+      await window.getByText("正文。").click();
       await insertFromToolbar(window, "图片");
       await expect(window.locator(".local-image__img")).toHaveCount(2, {
         timeout: 15_000,
@@ -312,10 +315,21 @@ test.describe("桌面冒烟：本地附件与资源闭环（R006-C5）", () => {
           });
           return { ok: true, code: "UNEXPECTED_OK" };
         } catch (err) {
-          return {
-            ok: false,
-            code: (err as { code?: string }).code ?? String(err),
-          };
+          // 跨 contextBridge 错误为 plain Error，载荷编码在 message 前缀里
+          // （shared/errors 的 encodeIpcBridgeError 线格式）。
+          const message = err instanceof Error ? err.message : String(err);
+          const prefix = "E1_IPC_ERROR:";
+          if (message.startsWith(prefix)) {
+            try {
+              const payload = JSON.parse(message.slice(prefix.length)) as {
+                code?: string;
+              };
+              return { ok: false, code: payload.code ?? "NO_CODE" };
+            } catch {
+              return { ok: false, code: "MALFORMED_WIRE_ERROR" };
+            }
+          }
+          return { ok: false, code: message };
         }
       });
       expect(imported.ok).toBe(false);

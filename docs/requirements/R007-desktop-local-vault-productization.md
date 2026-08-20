@@ -1,8 +1,8 @@
 # R007：Desktop Local Vault 产品化基础闭环
 
 - **版本**：0.1
-- **状态**：实现中（阶段 0–3 已完成）
-- **更新时间**：2026-08-17
+- **状态**：实现中（阶段 0–4 已完成）
+- **更新时间**：2026-08-20
 - **基线 Commit**：`623f5292c290d0843d8e7eb72a7ce11bbaf22d06`
 - **前置阶段**：R006（Electron Desktop 本地 Vault 技术验证版）
 - **目标分支**：建议从 `main` 建立独立 R007 feature branch，按阶段提交，不一次性大改
@@ -552,7 +552,7 @@ color = deterministicColor(tagName)
 - `DesktopPageRepository.setLastOpened` 写失败只告警不抛出（fire-and-forget 非关键路径，与阶段 0 的 no-op 约定兼容）。
 - 测试：store 9 例 + handler 4 例 + schema 3 例 + Renderer 5 例（含 transient 不发起 IPC、path 键、迁移清空）+ preload 透传；桌面 golden E2E G06（收藏重启保持 + Markdown 逐字节不变）/G07（最近重启保持）2 例。
 - 偏差 1：修复阶段 1 引入的 CI flake——`DocumentEditor.test.tsx` 版本推进用例在慢机上「发布落在于飞保存完成之前、被保存结果覆盖」，改为经 `onSaveStateChange` 等待「saving 之后的 saved」再发布（本地连跑 6/6 通过）。
-- 偏差 2：`desktop.saving`/`desktop.assets` 4 例（E2E-03/04、外部修改冲突、新建文档）在 macOS 本地确定性失败（strict mode 双匹配等时序问题），已用 HEAD 源码 + HEAD 产物复现确认**非本阶段引入**（CI xvfb 的 e2e-desktop 任务为绿）；属阶段 0 遗留的本地环境差异，本阶段不处理。
+- 偏差 2：`desktop.saving`/`desktop.assets` 4 例（E2E-03/04、外部修改冲突、新建文档）在 macOS 本地确定性失败（strict mode 双匹配等时序问题），已用 HEAD 源码 + HEAD 产物复现确认**非本阶段引入**（CI xvfb 的 e2e-desktop 任务为绿）；属阶段 0 遗留的本地环境差异，本阶段不处理。**（2026-08-20 阶段 4 批次已根治，真实根因见阶段 4 记录：本机缺 chokidar + contextBridge 错误码丢失 + 两处测试自身问题。）**
 - 偏差 3：`desktop.smoke` 的桥形状断言补齐 vaultState 组（顺带补齐阶段 1 漏更的 patchMetadata/asset.read——该用例不在 golden 集合，阶段 1 本地未跑到）。
 
 ### 目标
@@ -661,7 +661,7 @@ DesktopPageRepository.setLastOpened
 - 当前文档策略（§3.4）：clean+modified/moved 自动重载 + 5s 轻量提示；dirty 复用冲突面板；clean+deleted 正文区替换为「源文件已被删除」错误块（重新扫描/返回知识库）；dirty+deleted 保留编辑器内存 + 另存副本/复制出口；同 stable id 外部重建（created 命中删除态）按外部修改处理。**偏差 2**：`DocumentScreen` 幽灵页保活——外部删除当前文档后 pages 镜像移除该页，保留最后一个已知 page 对象让会话/编辑器/错误块继续工作（E2E 暴露的原始缺口：直接落空态导致错误块不可达、dirty 内存被卸载）。
 - moved 发布前同步 `DesktopDocumentSourceCache.updateRelativePath`（含 Adoption 别名的 path:* 缓存键），避免下次保存写回旧路径。
 - 能力（§3.6）：`desktopCapabilities.fileWatching` 翻 true；`capabilities.matrix.test` 与 `docs/architecture/runtime-boundaries.md` 同步。
-- 测试：watcher 单测 34 例 + 真 chokidar 集成 5 例；Renderer 服务 16 例；文档策略组件测试 7 例（含幽灵页回归）；桌面 E2E `desktop.watcher.spec.ts` 9 例覆盖验收 1–7（含扩展的 dirty 删除与复苏场景）全绿。**已知不绿**：`desktop.assets` E2E-03/04 与 `desktop.saving` 新建文档 3 例在阶段 3 之前的基线提交上即失败（环境相关，基线对照实验证实），非本阶段引入，待单独排查。
+- 测试：watcher 单测 34 例 + 真 chokidar 集成 5 例；Renderer 服务 16 例；文档策略组件测试 7 例（含幽灵页回归）；桌面 E2E `desktop.watcher.spec.ts` 9 例覆盖验收 1–7（含扩展的 dirty 删除与复苏场景）全绿。**已知不绿**：`desktop.assets` E2E-03/04 与 `desktop.saving` 新建文档 3 例在阶段 3 之前的基线提交上即失败（环境相关，基线对照实验证实），非本阶段引入，待单独排查。**（2026-08-20 阶段 4 批次已根治，真实根因见阶段 4 记录。）**
 
 ### 目标
 
@@ -858,6 +858,21 @@ fileWatching: true
 ---
 
 ## 阶段 4：文件操作闭环
+
+**状态：已完成（2026-08-20）**
+
+实际实现与偏差记录：
+
+- Main（另一批次交付，本阶段冻结未改）：`electron/main/filesystem/VaultFileOperations.ts`（createDirectory 同名确定性递增 + 保留名拒绝；note.move / note.renameFile 纯 rename，冲突报 VAULT_PATH_COLLISION 不自动改名）+ `VaultTrashFileSystem.ts`（`.e1/trash/<operationId>/{payload,meta.json}`，删除一律 rename 不 unlink；restore 父目录缺失递归重建、冲突确定性改名；purgeTrash 单条/整站）+ `electron/main/ipc/files.ts`；自写回声已登记（Renderer 无 watcher 噪声）。
+- Renderer：`DesktopPageRepository` 全面接通——create 分组 = `vault.createDirectory` 真实目录（父级为文档时建在其所在目录）；remove 文档/分组均走 `vault.trash`；restore/purge/purgeTrashed 经 `trash:<vaultId>/<operationId>` 页面 id 反解定位键；move 仅 document → directory（index 忽略，Desktop 无 position），成功后同步 `DesktopDocumentSourceCache.updateRelativePath`（含 Adoption 会话别名，口径同 §3.4 syncMovedSourcePath）。每次写后 `scans.invalidate`。
+- 回收站合并：`listByWorkspace` 合并 `vault.listTrash` 条目为 deletedAt 非空的合成 Page（id 携带 operationId；parentId 置 null 回收站根；kind 按原路径是否 .md 推断；**标题取原文件名 basename**——TrashEntry 契约不含 Frontmatter 标题，恢复后树中标题仍以 Frontmatter 为准）；listTrash 失败告警降级空表，不拖垮页面树。TrashPanel 组件零改动。
+- 错误映射（`mapFileOpError`）：VAULT_PATH_COLLISION/VAULT_RESERVED_PATH/VAULT_RESTORE_COLLISION → INVALID_INPUT；VAULT_TRASH_NOT_FOUND → PAGE_NOT_FOUND；其余复用 mapNoteWriteError 口径；transient 仅预览全部写操作在 Renderer 前置 VAULT_READ_ONLY（Main 同口径拒写兜底）。
+- RuntimeOperations（§9，G4 收口）：`src/runtime/RuntimeOperations.ts` + `AppServices.operations`；Web（`webOperations`）与内存容器缺省全 true；Desktop（`desktopOperations`）workspace.rename=false（无 UI 入口，本来就没有）、page.renameFile=false、revision.read/write=false，其余 true。UI 门控最小侵入：PageTreeSidebar 行内新建/重命名/删除/拖拽与头部新建文档/新建分组按 operations.page.* 隐藏；EditorShell 版本历史入口按 operations.revision.read 隐藏（§8：不显示空版本列表）。`MainArea.desktop.test` 的「版本历史禁用」断言同步改为「入口隐藏」。
+- **偏差 1（P1 rename group 未实现）**：Main 契约无目录 rename/move IPC（note.move 仅 .md 源）——分组重命名/移动在仓储层诚实 NOT_IMPLEMENTED，UI 入口保留、点击出错误条；新建分组后的行内重命名在 Desktop 会触发该错误（Esc 取消无妨）。契约补充属后续 Main 批次。
+- **偏差 2（P2 renameFile 未接线）**：Main IPC（note.renameFile）已就绪，但领域 PageRepository 接口无此方法、UI 入口（§4.4「重命名文件」须与标题分开）属后续批次；operations.page.renameFile 置 false，本批不接线，保持最小改动。
+- 移动前「相对本地链接」提示（§4.3 可选项）未做——R007 本来就不承诺全库链接重写，提示属增强，留后续。
+- 测试：`repositories.test.ts` 阶段 4 行为断言 9 例（createDirectory/trash/listTrash 合并/restore/purge/move/冲突映射/分组 NOT_IMPLEMENTED/transient 拒写）；`desktopOperations.test.ts` 装配矩阵 3 例；`PageTreeSidebar.test.tsx` 门控 5 例；桌面 E2E `desktop.files.spec.ts` 3 例全绿——**@golden G08 删除→回收站→恢复**（树消失/`.e1/trash/<opId>/payload/` 落盘/TrashPanel 条目/恢复回原文且 stable id 不变）+ 新建分组落真实目录 + 拖拽移动文档到目录路径正确。
+- **同批根治基线遗留的 3 例本地桌面 E2E 失败**（阶段 0–3 记录为「环境相关，待单独排查」，实为三个独立根因叠加）：① 本机 node_modules 缺 chokidar（package.json 已声明但本地未装，`dist-electron/main.mjs` 加载即抛 ERR_MODULE_NOT_FOUND → `electron.launch` 挂起 → 30s 超时），`npm install` 补齐即解；② **contextBridge 错误码丢失（真实产品缺陷）**——sandbox 下 preload 抛出的 DesktopIpcError 跨桥被重建为 plain Error，code/details 全部丢失（Electron 43 实测探针确认），Renderer 所有 `err instanceof DesktopIpcError` 分支运行时恒 false（保存时 DOCUMENT_CONFLICT 冲突面板、VAULT_READ_ONLY 分流全部静默失效，此前未被 E2E 捕获是因为 watcher 链路走事件触发冲突面板、不经过保存错误码）；修复为 preload 把错误载荷编码进 message（shared/errors `encodeIpcBridgeError`/`decodeIpcBridgeError`），`desktopApi.getDesktopApi()` 统一解码还原为带 code 的 DesktopIpcError；③ 两个测试自身问题——saving「新建文档」按钮 strict mode 双匹配（侧栏图标按钮 vs 开始页快捷卡片，加 `exact: true`）、assets E2E-03 第一次插入后图片处于节点选择态、第二次插入替换了已选节点（先点击正文收起选区再插）。另补 desktop.smoke 桥形状断言的阶段 4 新方法（与阶段 1 漏更 patchMetadata 同类）。修复后全量桌面 E2E 37/37 本地全绿。
 
 ### 目标
 
