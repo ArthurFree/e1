@@ -56,6 +56,34 @@ jobs:
             dist-electron
           if-no-files-found: error
 
+  # R008 Stage 0（§7.4）：production 裁剪后的 runtime 依赖 sanity——
+  # Main bundle 的 external（chokidar 等）必须在 dependencies 中，
+  # prune --omit=dev 后仍可解析（不启动 GUI，只做 module resolution）。
+  # prune 会改动 node_modules，故独立 job，不影响其他 job。
+  desktop-runtime-deps:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build:desktop
+      - run: npm prune --omit=dev
+      - name: 验证 Main bundle 全部 external runtime dependency 可解析
+        run: >
+          node --input-type=module -e "
+          import { readFile } from 'node:fs/promises';
+          const src = await readFile('scripts/build-electron.mjs', 'utf8');
+          const names = new Set();
+          for (const m of src.matchAll(/external:\s*\[([^\]]*)\]/g))
+            for (const p of m[1].matchAll(/\"([^\"]+)\"/g)) names.add(p[1]);
+          names.delete('electron');
+          for (const name of names) await import(name);
+          console.log('external runtime deps resolved:', [...names].join(', '));
+          "
+
   e2e-web:
     runs-on: ubuntu-latest
     steps:

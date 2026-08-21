@@ -1,7 +1,7 @@
 # R008：Desktop 产品化收尾与搜索规模化
 
 - **版本**：0.1
-- **状态**：草案
+- **状态**：实现中（Stage 0 已完成）
 - **更新时间**：2026-08-21
 - **前置需求**：R007（Desktop Local Vault 产品化基础闭环）
 - **基线 Commit**：`065a0174657e5ea9c4c6510970b5809ed66a87c0`
@@ -596,6 +596,43 @@ R007 文档中的 Current State 必须同步真实状态：
 - Web operation behavior 无回归；
 - Desktop E2E 全绿；
 - R007 文档关闭，不再添加 Stage 6+。
+
+## 7.7 Stage 0 实现记录
+
+**状态：已完成（2026-08-21）**
+
+实际实现：
+
+- `RuntimeOperations` 按 §7.2 推荐方案细分（`src/runtime/RuntimeOperations.ts`）：
+  `page.document{create,renameTitle,renameFile,move,trash,favorite}` /
+  `page.group{create,rename,move,trash}` / `page.trash{restore,purge}`，
+  原扁平字段无兼容层直接迁移；装配为 `webOperations`（全 true）、
+  `desktopOperations`（document 除 renameFile=false 外全 true，
+  group.create/trash=true、group.rename/move=false，trash.restore/purge=true，
+  workspace/tag/revision 维持现值）与内存容器缺省全 true。
+- `PageTreeSidebar`（§7.3）：行内重命名按钮、`draggable`、F2 快捷键均按
+  行对象类型（document/group）分别门控；新建分组后仅当
+  `page.group.rename=true` 才自动进入行内改名（Desktop 下不再进入必然
+  失败的 rename flow）；unsupported 操作入口直接不存在，不产生错误条。
+- chokidar 从 devDependencies 迁入 dependencies（package.json + lockfile
+  同步，readdirp 一并去 dev 标记）；新增构建级门禁测试
+  `scripts/build-electron.test.mjs`（解析 build-electron.mjs 全部 external，
+  断言除 electron 外均在 dependencies 且 node_modules 可解析）；
+  CI 新增独立 `desktop-runtime-deps` job：`npm ci` → `build:desktop` →
+  `npm prune --omit=dev` → 逐个 external `await import` 验证可解析
+  （prune 动 node_modules，故与 build-desktop 分离）。
+- 文档状态修正（§7.5）：R007 标记已完成（阶段 0–4 + 阶段 5 迁移去向
+  写明）、§2.2 补真实状态指针；`docs/requirements/README.md` 与
+  `AGENTS.md` 同步。
+
+偏差记录：
+
+- §22 建议的 `docs(R008): 关闭 R007 并冻结 Search contract` 独立提交
+  未单独拆出——R007 关闭随「操作矩阵收口」提交、Stage 0 实现记录随
+  「external dependencies」提交合入（本批按 3 提交执行：需求文档 /
+  操作矩阵收口 / runtime dependencies）。
+- 测试用例按批次规则只写不跑，统一测试执行在全部阶段完成后进行；
+  DoD 中「Web 无回归 / Desktop E2E 全绿」以该统一执行结果为准。
 
 ---
 
