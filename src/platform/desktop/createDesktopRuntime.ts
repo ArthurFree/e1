@@ -11,8 +11,9 @@
  * BrowserMemorySearchIndex / BroadcastChangeChannel / WebRecoveryStore /
  * webNotification 为「只依赖 renderer 标准能力」的实现，Electron renderer
  * 同样可用；附件 Picker/Access 已换 Desktop 实现（R006-C5）。
- * secretStore/storageHealth 用内存实现（nativeSecrets=false，
- * DesktopSecretStore 接系统安全存储属阶段 6+/R007，见 r006 §21）。
+ * secretStore 经 DesktopSecretStore 接系统安全存储（R008 Stage 1，
+ * nativeSecrets=true；运行态持久性经 SecretStorageStatus 表达，R8-02）；
+ * storageHealth 仍为内存实现。
  */
 import type {
   AppServices,
@@ -40,7 +41,6 @@ import { BroadcastChangeChannel } from "../web/BroadcastChangeChannel";
 import { WebRecoveryStore } from "../web/webRecoveryStore";
 import { WebNotificationService } from "../web/webNotification";
 import { WebAssetPicker } from "../web/webAssetPicker";
-import { InMemorySecretStore } from "../../infrastructure/memory/secretStore";
 import { InMemoryStorageHealthService } from "../../infrastructure/memory/storageHealth";
 import { createOpenAICompatibleProvider } from "../../infrastructure/aiProvider";
 import { createMarkdownCodec } from "../../editor/markdown/codec";
@@ -58,6 +58,7 @@ import { DesktopAssetRegistry } from "./DesktopAssetRegistry";
 import { DesktopAssetStore } from "./DesktopAssetStore";
 import { DesktopAssetPicker } from "./DesktopAssetPicker";
 import { DesktopAssetAccessService } from "./DesktopAssetAccessService";
+import { DesktopSecretStore } from "./DesktopSecretStore";
 import {
   DesktopContentRepository,
   DesktopDocumentWriteRepository,
@@ -162,9 +163,10 @@ export function createDesktopRuntime(api: E1DesktopAPI): DesktopRuntime {
     onError: (err) => console.error("偏好写入失败", err),
     onPersisted: () => syncChannel.publish({ type: "preferences-changed" }),
   });
-  // 机密存储：内存实现（PoC）；apiKey 不持久，重启后需重填——
-  // nativeSecrets 保持 false，接系统安全存储属阶段 6+/R007。
-  const secretStore = new InMemorySecretStore();
+  // 机密存储：系统安全存储（R008 Stage 1）——Main 经 safeStorage 加解密
+  // 落 userData/secrets.json；不安全 backend 由 Main 降级 session-only
+  // （不落盘），运行态经 secretStore.getStatus 暴露给设置 UI。
+  const secretStore = new DesktopSecretStore(api);
   const aiConfigService = new AIConfigService({
     preferences: preferencesService,
     secrets: secretStore,

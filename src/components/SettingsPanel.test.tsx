@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ReactNode } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { useApp } from "../state/AppState";
+import { AppProvider, useApp } from "../state/AppState";
 import { TestApp } from "../test/TestApp";
+import { AppServicesProvider } from "../state/AppServicesProvider";
+import { createBrowserAppServices } from "../platform/web/createBrowserServices";
+import type { SecretStore } from "../application/services/SecretStore";
+import type { SecretStorageStatus } from "../application/services/SecretStorageStatus";
 import { resetDB } from "../platform/web/persistence/db";
 import {
   preferencesRepository,
@@ -16,6 +21,41 @@ import { SettingsPanel } from "./SettingsPanel";
 function ReadySettingsPanel() {
   const { ready } = useApp();
   return ready ? <SettingsPanel /> : null;
+}
+
+/** R008 Stage 1：带运行状态的 SecretStore 测试替身（内存读写 + 固定 status）。 */
+class StatusSecretStore implements SecretStore {
+  private readonly values = new Map<string, string>();
+  constructor(private readonly status: SecretStorageStatus) {}
+  async get(name: string): Promise<string | null> {
+    return this.values.get(name) ?? null;
+  }
+  async set(name: string, value: string): Promise<void> {
+    this.values.set(name, value);
+  }
+  async remove(name: string): Promise<void> {
+    this.values.delete(name);
+  }
+  async getStatus(): Promise<SecretStorageStatus> {
+    return this.status;
+  }
+}
+
+/** 注入指定 secret 后端状态的容器（其余服务与 TestApp 一致）。 */
+function StatusTestApp({
+  status,
+  children,
+}: {
+  status: SecretStorageStatus;
+  children: ReactNode;
+}) {
+  const services = createBrowserAppServices();
+  services.secretStore = new StatusSecretStore(status);
+  return (
+    <AppServicesProvider services={services}>
+      <AppProvider>{children}</AppProvider>
+    </AppServicesProvider>
+  );
 }
 
 /** 临时替换 navigator.storage（jsdom 默认无此属性）。 */
@@ -110,6 +150,65 @@ describe("SettingsPanel", () => {
     expect(cleared.aiEndpoint).toBeNull();
     expect(cleared.aiModel).toBeNull();
     expect(await secretStore.get(AI_API_KEY_SECRET)).toBeNull();
+  });
+});
+
+describe("SettingsPanel secret 存储状态文案（R008 Stage 1 §8.7）", () => {
+  beforeEach(async () => {
+    cleanup();
+    await resetDB();
+  });
+
+  it("无状态提供方（Web）：回退 IndexedDB 说明文案", async () => {
+    render(
+      <TestApp>
+        <ReadySettingsPanel />
+      </TestApp>,
+    );
+    expect(
+      await screen.findByText(/仅保存在本机\s*IndexedDB/),
+    ).toBeInTheDocument();
+  });
+
+  it("secure-persistent：显示「安全保存在本机系统凭据存储中」", async () => {
+    render(
+      <StatusTestApp status={{ mode: "secure-persistent" }}>
+        <ReadySettingsPanel />
+      </StatusTestApp>,
+    );
+    expect(
+      await screen.findByText(/会安全保存在本机系统凭据存储中/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/仅在本次会话有效/)).toBeNull();
+  });
+
+  it("session-only：显示「安全存储不可用，仅在本次会话有效」警告", async () => {
+    render(
+      <StatusTestApp
+        status={{
+          mode: "session-only",
+          reason: "insecure-backend",
+          backend: "basic_text",
+        }}
+      >
+        <ReadySettingsPanel />
+      </StatusTestApp>,
+    );
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("当前系统安全存储不可用");
+    expect(alert.textContent).toContain("仅在本次会话有效");
+    expect(screen.queryByText(/系统凭据存储/)).toBeNull();
+  });
+
+  it("unavailable：显示无法保存提示", async () => {
+    render(
+      <StatusTestApp status={{ mode: "unavailable" }}>
+        <ReadySettingsPanel />
+      </StatusTestApp>,
+    );
+    expect(
+      await screen.findByText(/无法在本机保存 API Key/),
+    ).toBeInTheDocument();
   });
 });
 

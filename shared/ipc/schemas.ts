@@ -27,6 +27,9 @@ import type {
   RenameNoteFileInput,
   RestoreTrashInput,
   SaveNoteInput,
+  SecretGetInput,
+  SecretRemoveInput,
+  SecretSetInput,
   TrashInput,
   VaultFsEvent,
   VaultPageStatePatch,
@@ -457,6 +460,44 @@ export function parseResolveAssetUrlInput(payload: unknown): string {
     invalid("asset.resolveUrl 入参必须为非空 assetId 字符串");
   }
   return payload;
+}
+
+/* ---------------------------------- secret ---------------------------------- */
+
+/**
+ * R008 Stage 1（§8.3/§15.1）：secret 组入参校验。
+ * name 白名单字符（"<域>.<键>" 命名约定，如 ai.apiKey）——secret 名参与
+ * Main 侧存储键拼接，收紧字符集做纵深防御；value 上限 8 KiB（API Key
+ * 实际远小于此），超限拒绝。错误消息只描述约束，不回显 value 内容（§15.2）。
+ */
+const SECRET_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+export const SECRET_VALUE_MAX_LENGTH = 8 * 1024;
+
+function parseSecretName(record: Record<string, unknown>): string {
+  const name = requireString(record, "name", { nonEmpty: true });
+  if (!SECRET_NAME_PATTERN.test(name)) {
+    invalid("字段 name 只允许字母、数字、点、下划线、连字符（最长 128 字符）");
+  }
+  return name;
+}
+
+export function parseSecretGetInput(payload: unknown): SecretGetInput {
+  if (!isRecord(payload)) invalid("secret.get 入参必须为对象");
+  return { name: parseSecretName(payload) };
+}
+
+export function parseSecretSetInput(payload: unknown): SecretSetInput {
+  if (!isRecord(payload)) invalid("secret.set 入参必须为对象");
+  const value = requireString(payload, "value");
+  if (value.length > SECRET_VALUE_MAX_LENGTH) {
+    invalid(`字段 value 超过长度上限（${SECRET_VALUE_MAX_LENGTH} 字符）`);
+  }
+  return { name: parseSecretName(payload), value };
+}
+
+export function parseSecretRemoveInput(payload: unknown): SecretRemoveInput {
+  if (!isRecord(payload)) invalid("secret.remove 入参必须为对象");
+  return { name: parseSecretName(payload) };
 }
 
 /**

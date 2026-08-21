@@ -20,13 +20,13 @@ describe("RuntimeCapabilities matrix（锁定 architecture/runtime-boundaries.md
     });
   });
 
-  it("desktopCapabilities：localDirectory + fileWatching + persistentAssetPaths + documentPersistence 为 true", () => {
+  it("desktopCapabilities：localDirectory + fileWatching + nativeSecrets + persistentAssetPaths + documentPersistence 为 true（R008 Stage 1 起 nativeSecrets=true，运行态见 SecretStorageStatus）", () => {
     expect(desktopCapabilities).toEqual({
       localDirectory: true,
       fileWatching: true,
       revealInFileManager: false,
       nativeMenu: false,
-      nativeSecrets: false,
+      nativeSecrets: true,
       persistentAssetPaths: true,
       documentPersistence: true,
     });

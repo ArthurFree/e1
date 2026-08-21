@@ -17,9 +17,11 @@ export const desktopCapabilities: RuntimeCapabilities = {
   revealInFileManager: false,
   // R007：原生菜单体系属桌面产品化范围（r006 §3 非目标）。
   nativeMenu: false,
-  // 阶段 6/后续批次：DesktopSecretStore 接系统安全存储后翻 true
-  // （r006 §21；当前 secretStore 为内存实现）。
-  nativeSecrets: false,
+  // R008 Stage 1：DesktopSecretStore 经 IPC 接系统安全存储（safeStorage，
+  // 密文落 userData/secrets.json）——capability 表示「接入了 native
+  // secret 体系」；本机当前是否真有安全 backend 由运行态
+  // SecretStorageStatus 表达（R8-02，secret.getStatus IPC）。
+  nativeSecrets: true,
   // R006-C5：附件落 Vault assets/ 真实文件 + Hydration/Serialize 闭环。
   persistentAssetPaths: true,
   // R006-C4-E：note.save + DesktopContentRepository.save + Lossy Gate

@@ -15,6 +15,10 @@
  * vault.listTrash / vault.restore / vault.purgeTrash（.e1/trash 回收站）与
  * note.move / note.renameFile（纯文件系统 rename，Frontmatter 不动、
  * stable note id 不变）。
+ * R008 Stage 1（§8）：secret 组——机密值（当前仅 AI API Key）经 Main 的
+ * Electron safeStorage 安全存储读写（userData/secrets.json 密文落盘；
+ * 不安全 backend 降级 session-only 不落盘）。Renderer 不得知道存储路径、
+ * 原始加密 buffer、OS keychain 标识；错误 details 不携带 secret 值。
  *
  * shared/ 为 Renderer（src/platform/desktop）与 Electron Main/Preload 共用
  * 的唯一契约来源：channel 常量、请求/响应类型、E1DesktopAPI 形状。
@@ -55,6 +59,10 @@ export const IPC_CHANNELS = {
   assetImport: "asset:import",
   assetRead: "asset:read",
   assetResolveUrl: "asset:resolveUrl",
+  secretGet: "secret:get",
+  secretSet: "secret:set",
+  secretRemove: "secret:remove",
+  secretGetStatus: "secret:getStatus",
   eventsVaultChanges: "events:vaultChanges",
 } as const;
 
@@ -500,6 +508,43 @@ export interface AssetReadResult {
   data: Uint8Array;
 }
 
+/* ---------------------------------- secret ---------------------------------- */
+
+/**
+ * R008 Stage 1（§8.6，R8-02）：secret 存储后端运行状态。
+ * 与 RuntimeCapabilities.nativeSecrets（是否接入 native secret 体系）分离——
+ * capability 为 true 不代表本机当前一定有安全 backend，实际持久性由本状态表达。
+ */
+export interface SecretStorageStatus {
+  /**
+   * secure-persistent：系统安全存储可用，密文持久化（重启保持）；
+   * session-only：无安全 backend（如 Linux basic_text），仅进程内存兜底，
+   *   绝不明文/弱保护落盘，重启丢失；
+   * unavailable：secret 体系完全不可用（读写拒绝）。
+   */
+  mode: "secure-persistent" | "session-only" | "unavailable";
+  /** 安全后端标识（如 keychain / kwallet6 / basic_text）；不可得时缺省。 */
+  backend?: string;
+  /** 降级原因（机器可读短串，如 insecure-backend / encryption-unavailable）。 */
+  reason?: string;
+}
+
+/** secret.get 请求：按名读取；不存在（或记录损坏）返回 null。 */
+export interface SecretGetInput {
+  name: string;
+}
+
+/** secret.set 请求：写入（覆盖）机密值。 */
+export interface SecretSetInput {
+  name: string;
+  value: string;
+}
+
+/** secret.remove 请求：删除机密；对缺失记录为 no-op。 */
+export interface SecretRemoveInput {
+  name: string;
+}
+
 /* ---------------------------------- events ---------------------------------- */
 
 /**
@@ -618,6 +663,21 @@ export interface E1DesktopAPI {
     read(input: ReadAssetInput): Promise<AssetReadResult>;
     /** 解析为 e1-asset:// URL（不含字节）。 */
     resolveUrl(assetId: string): Promise<string>;
+  };
+  /**
+   * R008 Stage 1（§8.2/§8.3）：机密值读写（当前仅 AI API Key），Main 经
+   * Electron safeStorage 加解密；不安全 backend 时 session-only 不落盘。
+   * Renderer 不得知道存储路径/原始密文/keychain 标识（§8.3）。
+   */
+  secret: {
+    /** 读取 secret；不存在（或记录损坏）返回 null。 */
+    get(input: SecretGetInput): Promise<string | null>;
+    /** 写入（覆盖）secret；成功返回 null。 */
+    set(input: SecretSetInput): Promise<null>;
+    /** 删除 secret；对缺失记录为 no-op，成功返回 null。 */
+    remove(input: SecretRemoveInput): Promise<null>;
+    /** 当前 secret 存储后端运行状态（R8-02，与 capability 分离）。 */
+    getStatus(): Promise<SecretStorageStatus>;
   };
   /**
    * R007 阶段 3：Main→Renderer 单向事件订阅（唯一推送通道）。

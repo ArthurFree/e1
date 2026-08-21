@@ -69,6 +69,13 @@ function mockApi(
       read: vi.fn(),
       resolveUrl: vi.fn(),
     },
+    // R008 Stage 1：secret 组（DesktopSecretStore 装配；缺省内存应答）。
+    secret: {
+      get: vi.fn(async () => null),
+      set: vi.fn(async () => null),
+      remove: vi.fn(async () => null),
+      getStatus: vi.fn(async () => ({ mode: "secure-persistent" as const })),
+    },
     // R007 阶段 3：事件组（createDesktopRuntime 装配即 start 订阅）。
     events: {
       subscribeVaultChanges: vi.fn(() => () => {}),

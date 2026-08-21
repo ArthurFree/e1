@@ -41,7 +41,7 @@ test.describe("桌面冒烟", () => {
 
     // R006 阶段 1 预加载契约：contextBridge 暴露的完整 E1DesktopAPI
     // （platform + vault/vaultState/note/asset 四组方法 + R007 阶段 3 的
-    // events 事件组；Renderer 拿不到 ipcRenderer）。
+    // events 事件组 + R008 Stage 1 的 secret 组；Renderer 拿不到 ipcRenderer）。
     const bridge = await window.evaluate(() => {
       const e1 = (
         window as unknown as {
@@ -51,6 +51,7 @@ test.describe("桌面冒烟", () => {
             vaultState?: Record<string, unknown>;
             note?: Record<string, unknown>;
             asset?: Record<string, unknown>;
+            secret?: Record<string, unknown>;
             events?: Record<string, unknown>;
           };
         }
@@ -61,6 +62,7 @@ test.describe("桌面冒烟", () => {
         vaultState: Object.keys(e1?.vaultState ?? {}).sort(),
         note: Object.keys(e1?.note ?? {}).sort(),
         asset: Object.keys(e1?.asset ?? {}).sort(),
+        secret: Object.keys(e1?.secret ?? {}).sort(),
         events: Object.keys(e1?.events ?? {}).sort(),
       };
     });
@@ -86,6 +88,8 @@ test.describe("桌面冒烟", () => {
       // R007 阶段 4：move/renameFile（文件操作闭环）。
       note: ["create", "move", "patchMetadata", "read", "renameFile", "save"],
       asset: ["import", "pick", "read", "resolveUrl"],
+      // R008 Stage 1：secret 组（safeStorage 安全存储 + 后端状态）。
+      secret: ["get", "getStatus", "remove", "set"],
       // R007 阶段 3：Main→Renderer 单向事件组（Watcher 事实订阅）。
       events: ["subscribeVaultChanges"],
     });

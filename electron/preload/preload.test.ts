@@ -37,7 +37,7 @@ beforeEach(async () => {
 });
 
 describe("preload 暴露形状", () => {
-  it("platform/versions + vault/note/asset 三组方法齐全", async () => {
+  it("platform/versions + vault/vaultState/note/asset/secret 各组方法齐全", async () => {
     expect(api.platform).toBe("desktop");
     expect(api.versions).toBeTypeOf("object");
     expect(Object.keys(api.vault).sort()).toEqual([
@@ -67,6 +67,13 @@ describe("preload 暴露形状", () => {
       "resolveUrl",
     ]);
     expect(Object.keys(api.vaultState).sort()).toEqual(["get", "patch"]);
+    // R008 Stage 1：secret 组（safeStorage 安全存储 + 后端状态）。
+    expect(Object.keys(api.secret).sort()).toEqual([
+      "get",
+      "getStatus",
+      "remove",
+      "set",
+    ]);
   });
 });
 
@@ -175,6 +182,34 @@ describe("channel 与负载透传", () => {
     expect(invoke).toHaveBeenCalledWith(
       IPC_CHANNELS.vaultStatePatch,
       statePatch,
+    );
+  });
+
+  it("secret 组负载透传（get/set/remove 对象 + getStatus 无入参）", async () => {
+    invoke.mockResolvedValue({ ok: true, value: null });
+    await api.secret.get({ name: "ai.apiKey" });
+    expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.secretGet, {
+      name: "ai.apiKey",
+    });
+
+    const setInput = { name: "ai.apiKey", value: "sk-x" };
+    await api.secret.set(setInput);
+    expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.secretSet, setInput);
+
+    const removeInput = { name: "ai.apiKey" };
+    await api.secret.remove(removeInput);
+    expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.secretRemove, removeInput);
+
+    invoke.mockResolvedValue({
+      ok: true,
+      value: { mode: "secure-persistent" },
+    });
+    await expect(api.secret.getStatus()).resolves.toEqual({
+      mode: "secure-persistent",
+    });
+    expect(invoke).toHaveBeenCalledWith(
+      IPC_CHANNELS.secretGetStatus,
+      undefined,
     );
   });
 });

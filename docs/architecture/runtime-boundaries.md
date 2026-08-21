@@ -44,7 +44,8 @@ R005 将项目划分为四层运行时边界：Shared UI、Shared Application、
 - 授权边界（C2.1）：Renderer 全程不接触 absolutePath（一次性 selectionToken + `openRecent` + transient 仅预览，SEC-01）；未初始化目录经三选项确认框后才初始化。
 - **文档读写已真实**：`note.read` / `note.create` / `note.save` 经 PathGuard、NoteFileSystem、AtomicFileWriter；Renderer 侧 `DesktopContentRepository` + `DesktopMarkdownWriteService`（Source/Identity/Output Gate、Frontmatter 保留、Stable ID Adoption）；`documentPersistence: true`，编辑走共享 SaveCoordinator。
 - **附件已真实（C5）**：`asset.pick` / `import` / `read`、`DesktopAssetStore` / Registry / Access、`e1-asset://` 协议、Markdown Hydration 与相对路径写出；`persistentAssetPaths: true`。
-- 能力矩阵见下表（`src/platform/desktop/desktopCapabilities.ts`）：`localDirectory`、`documentPersistence`、`persistentAssetPaths`、`fileWatching` 为 true；`revealInFileManager` / `nativeMenu` / `nativeSecrets` 仍为 false（未实现，不得写「未来全 true」）。
+- 能力矩阵见下表（`src/platform/desktop/desktopCapabilities.ts`）：`localDirectory`、`documentPersistence`、`persistentAssetPaths`、`fileWatching`、`nativeSecrets` 为 true；`revealInFileManager` / `nativeMenu` 仍为 false（未实现，不得写「未来全 true」）。
+- **Native Secret 已真实（R008 Stage 1）**：`secret.get/set/remove/getStatus` 四通道经 Main `electron/main/secrets/`（Electron `safeStorage` 加解密，优先异步 API）落 `userData/secrets.json` 密文；不安全 backend（如 Linux `basic_text`）降级 session-only 仅进程内存兜底、绝不落盘。R8-02：`nativeSecrets: true` 只表示「接入了 native secret 体系」，本机当前持久性由 `SecretStorageStatus`（`secret.getStatus`）表达，设置 UI 按之分流文案。
 - **外部文件监听已真实（R007 阶段 3）**：Main 侧 `electron/main/watcher/`（chokidar + coalescing + 自写抑制）经首个单向事件通道 `events:vaultChanges` 推送 `VaultFsEvent` 批次；Renderer 侧 `ExternalVaultChangeService`（application 契约 + Desktop 实现）做静止窗口合并 → 重扫 → stable-id diff → 归一化变更；页面树经 `ExternalVaultChangeBridge` 刷新，当前文档按 clean 自动重载 / dirty 冲突面板 / 外部删除提示处理。
 - 平台专属能力经**平台无关的可选 port** 注入（PR5，原 `AppServices.desktopExtras` PoC 通道已删除）：`AppServices.vaultMaintenance`（`rescan(vaultId)`，FR-26 重新扫描）与 `AppServices.documentSafety`（`approveLossySource` / `approveLossyOutput` / `approveIdentityAdoption` 会话级门闸）。Web/内存容器不装配这两个字段；UI 一律以「能力矩阵字段 + port 是否存在」门控（DUAL-01，不判断平台名称）。
 
@@ -82,7 +83,7 @@ R005 将项目划分为四层运行时边界：Shared UI、Shared Application、
 | `fileWatching`         | 能监听真实数据源的外部变更并触发刷新/冲突提示                                          | 否  |   是    |
 | `revealInFileManager`  | 能在系统文件管理器中显示笔记或附件文件                                                 | 否  |   否    |
 | `nativeMenu`           | 能使用系统原生菜单（应用菜单/上下文菜单）                                              | 否  |   否    |
-| `nativeSecrets`        | 能使用系统级安全存储保存 AI 密钥等机密                                                 | 否  |   否    |
+| `nativeSecrets`        | 接入了 native secret 体系（运行态持久性由 `SecretStorageStatus` 表达，R8-02） | 否  |   是    |
 | `persistentAssetPaths` | 附件拥有稳定文件路径，可被外部软件直接访问（而非 Blob/Object URL）                     | 否  |   是    |
 | `documentPersistence`  | 文档编辑会真实持久化（false 时编辑器不启动 SaveCoordinator，UI 必须提示修改不写回磁盘） | 是  |   是    |
 

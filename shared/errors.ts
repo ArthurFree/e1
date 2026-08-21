@@ -63,6 +63,8 @@ export type IpcErrorCode =
   | "VAULT_TRASH_NOT_FOUND"
   /** R007 阶段 4：恢复时确定性改名仍无法分配不冲突路径（递增耗尽）。 */
   | "VAULT_RESTORE_COLLISION"
+  /** R008 Stage 1（§8）：secret 存储完全不可用（无安全后端且无法读写）。 */
+  | "SECRET_STORAGE_UNAVAILABLE"
   /** 未分类的 Main 侧内部错误。 */
   | "INTERNAL";
 
@@ -218,6 +220,9 @@ const IPC_TO_DOMAIN: Partial<Record<IpcErrorCode, string>> = {
   VAULT_RESERVED_PATH: "INVALID_INPUT",
   VAULT_TRASH_NOT_FOUND: "PAGE_NOT_FOUND",
   VAULT_RESTORE_COLLISION: "INVALID_INPUT",
+  // R008 Stage 1：SECRET_STORAGE_UNAVAILABLE 为 Main 侧原生码，无 domain
+  // 对应语义（不新增 DomainError code，R007 §11 同原则）——反向映射得 null，
+  // UI 需要分流时直接读 DesktopIpcError.code。
 };
 
 /** DomainError → IPC 错误载荷；未识别的 domain code 归一为 INTERNAL。 */

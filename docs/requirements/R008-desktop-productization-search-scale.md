@@ -1,7 +1,7 @@
 # R008：Desktop 产品化收尾与搜索规模化
 
 - **版本**：0.1
-- **状态**：实现中（Stage 0 已完成）
+- **状态**：实现中（Stage 0–1 已完成）
 - **更新时间**：2026-08-21
 - **前置需求**：R007（Desktop Local Vault 产品化基础闭环）
 - **基线 Commit**：`065a0174657e5ea9c4c6510970b5809ed66a87c0`
@@ -792,6 +792,80 @@ Session-only：
 - secret 不进入日志；
 - secret 不进入 Playwright screenshot / artifact；
 - `AIConfigService` 无需知道 Electron。
+
+## 8.9 Stage 1 实现记录
+
+**状态：已完成（2026-08-21）**
+
+实际实现：
+
+- Main（`electron/main/secrets/`）：
+  - `SecretBackendStatus.ts`：`SafeStorageLike` 结构视图 +
+    `resolveSecretBackendStatus` 三档判定——safeStorage 缺失或加解密
+    API 全缺 → `unavailable`；`isEncryptionAvailable()` false 或 backend
+    命中已知不安全值（`basic_text`）→ `session-only`；其余 →
+    `secure-persistent`。`getSelectedStorageBackend()` 调用 try/catch
+    容忍非 Linux 平台；`forceBackend` 为测试/E2E 注入点
+    （env `E1_SECRET_BACKEND_FORCE`，G11 模拟 basic_text）。
+  - `SecretFilePersistence.ts`：`userData/secrets.json`
+    （`{version:1, entries:{<name>:{ciphertext:<base64>, updatedAt}}}`），
+    容错与 DesktopVaultStateStore 同口径——缺失空表、JSON 损坏/未知
+    version 备份 `.corrupt-<ts>` 后空表自愈（原文件字节保留在备份中，
+    不被静默覆盖丢弃）、逐条丢弃畸形条目、mkdir -p + tmp + rename
+    原子写，落盘后 best-effort `chmod 0o600`。
+  - `DesktopSecretStore.ts`：三档模式编排——secure-persistent 经
+    safeStorage 加密落盘（**优先 `encryptStringAsync`/`decryptStringAsync`，
+    缺失退回同步版**；解密失败按记录损坏返回 null，与 SecretStore port
+    语义一致）；session-only 仅进程内存 Map 兜底、绝不读写持久文件；
+    unavailable 下 `set` 抛 `SECRET_STORAGE_UNAVAILABLE`、`get` 返回
+    null、`remove` 安全 no-op。status 进程内缓存一次。
+- IPC（§8.3）：`secret.get`/`secret.set`/`secret.remove`/`secret.getStatus`
+  四通道 + `SecretStorageStatus` 契约类型（`shared/ipc/contracts.ts`）；
+  schema 校验（`shared/ipc/schemas.ts`）：name 白名单
+  `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`、value 上限 8 KiB
+  （`SECRET_VALUE_MAX_LENGTH`），错误消息不回显 secret 值（§15.1/§15.2）；
+  `IpcErrorCode` 新增 `SECRET_STORAGE_UNAVAILABLE`（不新增 DomainError
+  code，反向映射得 null，R007 §11 同原则）；handler
+  `electron/main/ipc/secret.ts`（与 vault 授权边界无关，secret 属设备级
+  状态）+ preload `secret` 组桥方法。
+- Renderer：`src/application/services/SecretStorageStatus.ts` 平台无关
+  状态类型（与 shared 线格式同形独立声明）+ `SecretStore` port 新增可选
+  `getStatus()`；`src/platform/desktop/DesktopSecretStore.ts` 走桥实现
+  port（复用 SecretStore 契约套件）；`createDesktopRuntime` 以之替换
+  `InMemorySecretStore`；`desktopCapabilities.nativeSecrets` 翻 true
+  （R8-02：capability=接入 native secret 体系，运行态持久性由
+  `SecretStorageStatus` 表达）；`capabilities.matrix.test` 与
+  `docs/architecture/runtime-boundaries.md` 同步。
+- UI（§8.7）：`SettingsPanel` 按 `secretStore.getStatus()` 分流说明
+  文案——secure-persistent「API Key 会安全保存在本机系统凭据存储中」/
+  session-only「当前系统安全存储不可用，API Key 仅在本次会话有效」
+  （role=alert）/ unavailable「当前环境无法在本机保存 API Key」；
+  无状态提供方（Web/内存）回退既有 IndexedDB 文案；无 localStorage
+  fallback。`AIConfigService` 不变（无需知道 Electron）。
+- 测试（按批次规则只写不跑）：Main 单测
+  （`SecretBackendStatus`/`SecretFilePersistence`/`DesktopSecretStore`
+  三套件：状态判定、加密往返、同步 API 回退、跨实例保持、session-only
+  不落盘与不读既有文件、损坏自愈、unknown version 备份、删 secret、
+  不存在 secret、错误不带 secret 值）+ `ipc/secret.test.ts`（handler
+  往返 + schema 拦截链）+ Renderer 契约/桥映射
+  （`DesktopSecretStore.test.ts`）+ preload 形状/透传 +
+  `desktop.smoke.spec.ts` 桥形状补 secret 组 + SettingsPanel 四种文案
+  组件测试 + E2E `e2e/desktop.secrets.spec.ts` G10/G11（@golden）。
+
+偏差记录：
+
+- G11 的真实 basic_text 环境在本机/CI 无法轻易制造，按任务约定以
+  Main 注入点 `E1_SECRET_BACKEND_FORCE=basic_text` 模拟，E2E 保留
+  G10/G11 双用例；G10 在运行到无安全 backend 的环境（如 CI Linux）
+  时按 `getStatus().mode` 条件跳过（此时持久性不成立的降级语义已由
+  G11 覆盖）。
+- E2E 走桥（`window.e1.secret`）直接验证保存/重启保持语义，设置 UI
+  的保存链路由组件测试覆盖。
+- 测试用例只写不跑（批次规则），统一测试执行在全部阶段完成后进行；
+  §8.8 各验收点以该统一执行结果为准。
+- `SecretStorageStatus` 在 shared（线格式）与 application（平台无关
+  类型）两处同形独立声明，保持 application 不依赖 shared；由
+  DesktopSecretStore 透传时结构兼容。
 
 ---
 

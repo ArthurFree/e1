@@ -15,7 +15,11 @@ export interface RuntimeCapabilities {
   revealInFileManager: boolean;
   /** 能使用系统原生菜单（应用菜单/上下文菜单）。 */
   nativeMenu: boolean;
-  /** 能使用系统级安全存储保存 AI 密钥等机密。 */
+  /**
+   * 接入了系统级安全存储体系保存 AI 密钥等机密（R008 Stage 1，R8-02）。
+   * true 只表示「接入 native secret 体系」；本机当前是否真有安全 backend
+   * 由运行态 SecretStorageStatus（SecretStore.getStatus）表达。
+   */
   nativeSecrets: boolean;
   /** 附件拥有稳定文件路径，可被外部软件直接访问（而非 Blob/Object URL）。 */
   persistentAssetPaths: boolean;

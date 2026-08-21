@@ -18,6 +18,7 @@ import {
 import { useAppServices } from "../state/AppServicesProvider";
 import { getAISettings, validateAIConfig } from "../domain/ai";
 import { AI_API_KEY_SECRET } from "../application/services/SecretStore";
+import type { SecretStorageStatus } from "../application/services/SecretStorageStatus";
 import { revisionContentBytes } from "../domain/revisions";
 import {
   STORAGE_WARN_RATIO,
@@ -52,6 +53,11 @@ export function SettingsPanel() {
   const [model, setModel] = useState(current?.model ?? "");
   // API Key 输入框不回显明文（type=password 掩码）；初始值经 SecretStore 异步读入。
   const [apiKey, setApiKey] = useState("");
+  // R008 Stage 1（R8-02）：secret 后端运行状态（仅 Desktop 等接入 native
+  // secret 体系的实现提供）；null = 实现不提供状态，回退既有 IndexedDB 文案。
+  const [secretStatus, setSecretStatus] = useState<SecretStorageStatus | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   // undefined = 读取中；null = 浏览器不支持 Storage API（降级展示）。
@@ -86,6 +92,25 @@ export function SettingsPanel() {
     void services.secretStore.get(AI_API_KEY_SECRET).then((key) => {
       if (!cancelled && key !== null) setApiKey(key);
     });
+    return () => {
+      cancelled = true;
+    };
+  }, [services]);
+
+  // R008 Stage 1（§8.7）：读取 secret 后端运行状态用于说明文案分流——
+  // 实现不提供 getStatus（Web/内存）时保持 null，走既有 IndexedDB 文案。
+  useEffect(() => {
+    const store = services.secretStore;
+    if (!store.getStatus) return;
+    let cancelled = false;
+    void store
+      .getStatus()
+      .then((status) => {
+        if (!cancelled) setSecretStatus(status);
+      })
+      .catch(() => {
+        // 状态读取失败不阻断设置面板（保持缺省文案）。
+      });
     return () => {
       cancelled = true;
     };
@@ -309,10 +334,32 @@ export function SettingsPanel() {
         )}
       </div>
 
-      <p className="settings-panel__note">
-        API Key 仅保存在本机
-        IndexedDB，不会上传、同步或写入日志；未配置时不会发起任何外部请求。
-      </p>
+      {/* R008 Stage 1（§8.7）：按 secret 后端运行状态表达持久性——
+          无状态提供方（Web/内存）时回退 IndexedDB 文案；禁止 localStorage
+          fallback。 */}
+      {secretStatus === null && (
+        <p className="settings-panel__note">
+          API Key 仅保存在本机
+          IndexedDB，不会上传、同步或写入日志；未配置时不会发起任何外部请求。
+        </p>
+      )}
+      {secretStatus?.mode === "secure-persistent" && (
+        <p className="settings-panel__note">
+          API Key
+          会安全保存在本机系统凭据存储中，不会上传、同步或写入日志；未配置时不会发起任何外部请求。
+        </p>
+      )}
+      {secretStatus?.mode === "session-only" && (
+        <p className="settings-panel__note" role="alert">
+          当前系统安全存储不可用，API Key
+          仅在本次会话有效，重启应用后需重新输入。
+        </p>
+      )}
+      {secretStatus?.mode === "unavailable" && (
+        <p className="settings-panel__note" role="alert">
+          当前环境无法在本机保存 API Key。
+        </p>
+      )}
 
       <div className="settings-panel__section">
         <span className="settings-panel__label">本地存储</span>

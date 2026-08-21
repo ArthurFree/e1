@@ -5,6 +5,7 @@
 // （ipcRenderer.on + 返回取消订阅函数；payload 经 schema 校验后投递）。
 // R007 阶段 4：vault 组新增 createDirectory/trash/listTrash/restore/
 // purgeTrash（回收站闭环），note 组新增 move/renameFile（文件操作）。
+// R008 Stage 1：secret 组——机密值读写与后端状态（safeStorage 安全降级）。
 // sandbox 预加载只支持 CJS（构建产物 dist-electron/preload.cjs）。
 //
 // 错误传递策略（与 src/platform/desktop/desktopApi.ts 注释共同锁定）：
@@ -50,6 +51,10 @@ import {
   type RestoreTrashResult,
   type SaveNoteInput,
   type SaveNoteResult,
+  type SecretGetInput,
+  type SecretRemoveInput,
+  type SecretSetInput,
+  type SecretStorageStatus,
   type SelectedVault,
   type TrashInput,
   type TrashListResult,
@@ -134,6 +139,14 @@ const api: E1DesktopAPI = {
       invoke<AssetReadResult>(IPC_CHANNELS.assetRead, input),
     resolveUrl: (assetId) =>
       invoke<string>(IPC_CHANNELS.assetResolveUrl, assetId),
+  },
+  secret: {
+    get: (input: SecretGetInput) =>
+      invoke<string | null>(IPC_CHANNELS.secretGet, input),
+    set: (input: SecretSetInput) => invoke<null>(IPC_CHANNELS.secretSet, input),
+    remove: (input: SecretRemoveInput) =>
+      invoke<null>(IPC_CHANNELS.secretRemove, input),
+    getStatus: () => invoke<SecretStorageStatus>(IPC_CHANNELS.secretGetStatus),
   },
   events: {
     subscribeVaultChanges: (listener: (events: VaultFsEvent[]) => void) => {

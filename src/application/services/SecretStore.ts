@@ -7,7 +7,9 @@
  * - Web：IndexedDB 独立 secrets object store（DB v5，
  *   src/platform/web/persistence/secretStore.ts）；
  * - 内存：src/infrastructure/memory/secretStore.ts（随内存容器存活）；
- * - 未来 Desktop：系统安全存储（见 docs/requirements/r005.md §十三）。
+ * - Desktop：系统安全存储（src/platform/desktop/DesktopSecretStore.ts，
+ *   R008 Stage 1——经 IPC 走 Main 的 Electron safeStorage，密文落
+ *   userData/secrets.json；不安全 backend 降级 session-only 不落盘）。
  *
  * 安全约束不变：机密只存本机，不进入日志、同步、分析或错误上报；
  * secret 变更不做跨标签页广播（最小实现，见 AIConfigService 注释）。
@@ -23,4 +25,10 @@ export interface SecretStore {
   set(name: string, value: string): Promise<void>;
   /** 删除 secret；对缺失记录为 no-op。 */
   remove(name: string): Promise<void>;
+  /**
+   * R008 Stage 1（R8-02）：可选——当前 secret 存储后端的运行状态。
+   * 接入 native secret 体系的实现（Desktop）提供；Web/内存实现不提供，
+   * UI 对缺省实现回退到既有说明文案（类型见 ./SecretStorageStatus）。
+   */
+  getStatus?(): Promise<import("./SecretStorageStatus").SecretStorageStatus>;
 }
