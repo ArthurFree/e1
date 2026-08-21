@@ -35,6 +35,7 @@ import type { AIConfigService } from "./services/AIConfigService";
 import type { StorageHealthService } from "./services/StorageHealthService";
 import type { ExternalVaultChangeService } from "./services/ExternalVaultChangeService";
 import type { RevealService } from "./services/RevealService";
+import type { FullTextSearchIndexPort } from "./services/SearchContract";
 import type { RuntimeCapabilities } from "../runtime/RuntimeCapabilities";
 import type { RuntimeOperations } from "../runtime/RuntimeOperations";
 
@@ -174,6 +175,16 @@ export interface AppServices {
    * （DUAL-01：只判断能力与 port 是否存在，不判断平台名称）。
    */
   revealService?: RevealService;
+  /**
+   * 全文搜索索引 port（可选，R008 Stage 4 §10.5/§11）：title/tags/body
+   * 全文检索 + 状态模型（missing/building/ready/degraded/corrupt），
+   * 由具备持久化派生索引的运行时装配（Desktop，Main 侧 node:sqlite
+   * 派生库）；Web/内存容器不装配本字段。UI 一律以
+   * `services.fullTextSearchIndex` 存在与否门控（DUAL-01：不判断平台
+   * 名称）；port 不可用或查询失败时回退既有标题搜索链路（§20）。
+   * 与旧 `SearchIndexPort`（标题搜索）并存，互不影响。
+   */
+  fullTextSearchIndex?: FullTextSearchIndexPort;
   /**
    * 命令服务（R005 批次 1）：业务写编排入口，状态层经此触发仓储写、
    * 搜索索引同步与跨标签页广播。

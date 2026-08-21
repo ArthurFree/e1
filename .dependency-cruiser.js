@@ -80,9 +80,15 @@ export default {
     {
       name: "src-no-electron",
       comment:
-        "R006 阶段 1：src 不得依赖 electron（桌面能力只经 platform/desktop + shared/ 契约）",
+        "R006 阶段 1：src 不得依赖 electron（桌面能力只经 platform/desktop + shared/ 契约）。" +
+        "唯一豁免：R008 Stage 4 的 Main 侧全文搜索契约测试（双实现契约要求" +
+        "同一套件驱动 Main 真实实现，@vitest-environment node 真实 node:sqlite）",
       severity: "error",
-      from: { path: "^src" },
+      from: {
+        path: "^src",
+        pathNot:
+          "^src/test/desktopFullTextSearch\\.contract\\.test\\.ts$",
+      },
       to: { path: "^electron" },
     },
   ],

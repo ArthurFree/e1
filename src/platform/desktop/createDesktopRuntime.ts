@@ -60,6 +60,7 @@ import { DesktopAssetPicker } from "./DesktopAssetPicker";
 import { DesktopAssetAccessService } from "./DesktopAssetAccessService";
 import { DesktopSecretStore } from "./DesktopSecretStore";
 import { DesktopRevealService } from "./DesktopRevealService";
+import { DesktopFullTextSearchIndex } from "./DesktopFullTextSearchIndex";
 import {
   DesktopContentRepository,
   DesktopDocumentWriteRepository,
@@ -172,6 +173,10 @@ export function createDesktopRuntime(api: E1DesktopAPI): DesktopRuntime {
     preferences: preferencesService,
     secrets: secretStore,
   });
+  // R008 Stage 4（§11）：全文搜索派生索引——查询/索引在 Main（node:sqlite，
+  // userData/search-index/），本侧仅桥接；消费侧以 port 存在门控，
+  // 失败回退标题搜索（§20）。会话加载时后台 prepare（§11.5）。
+  const fullTextSearchIndex = new DesktopFullTextSearchIndex(api);
   const commands = {
     workspace: new WorkspaceCommandService({
       workspace: workspaceRepository,
@@ -192,6 +197,7 @@ export function createDesktopRuntime(api: E1DesktopAPI): DesktopRuntime {
       tag: tagRepository,
       session,
       searchIndex,
+      fullTextSearchIndex,
     }),
     document: new DocumentQueryService({
       content: contentRepository,
@@ -275,6 +281,9 @@ export function createDesktopRuntime(api: E1DesktopAPI): DesktopRuntime {
     // Reveal in File Manager（R008 Stage 2；消费侧以
     // capabilities.revealInFileManager 门控）。
     revealService,
+    // 全文搜索派生索引（R008 Stage 4；消费侧以 port 存在门控，
+    // 查询失败回退标题搜索，§20）。
+    fullTextSearchIndex,
     preferencesService,
     syncChannel,
     documentVersionChannel,

@@ -18,6 +18,9 @@
  * 为测试注入点，强制按指定 backend 判定，如 basic_text 模拟不安全后端）。
  * R008 Stage 2：reveal 组 handler（note.reveal/asset.reveal——授权边界 +
  * PathGuard 解析后经 electron shell 在文件管理器中显示；shell 可注入 mock）。
+ * R008 Stage 4：search 组 handler（DesktopSearchService 缺省指向
+ * userData/search-index/ + Vault 扫描正文真相 source——registry/transients
+ * 双通道授权边界在 source 内部完成；node:sqlite 为 Node 内置模块）。
  */
 import {
   app,
@@ -39,10 +42,13 @@ import { registerAssetHandlers } from "./asset.js";
 import { registerVaultStateHandlers } from "./vaultState.js";
 import { registerSecretHandlers } from "./secret.js";
 import { registerRevealHandlers, type ShellLike } from "./reveal.js";
+import { registerSearchHandlers } from "./search.js";
 import { VaultRegistry } from "../vaultRegistry.js";
 import { DesktopVaultStateStore } from "../state/DesktopVaultStateStore.js";
 import { DesktopSecretStore } from "../secrets/DesktopSecretStore.js";
 import { SecretFilePersistence } from "../secrets/SecretFilePersistence.js";
+import { DesktopSearchService } from "../search/DesktopSearchService.js";
+import { VaultSearchDocumentSource } from "../search/VaultSearchDocumentSource.js";
 import { SelectionTokenStore } from "../SelectionTokenStore.js";
 import { TransientVaultStore } from "../transientVaults.js";
 import {
@@ -66,6 +72,8 @@ export interface RegisterIpcHandlersDeps {
   secrets?: DesktopSecretStore;
   /** R008 Stage 2：文件管理器 shell（缺省真实 electron shell；测试注入 mock）。 */
   shell?: ShellLike;
+  /** R008 Stage 4：全文搜索索引服务（缺省指向 userData/search-index/ + Vault 扫描 source）。 */
+  searchService?: DesktopSearchService;
   /** R006-C2.1：可注入以控制时钟/隔离状态（测试用）。 */
   selectionTokens?: SelectionTokenStore;
   transients?: TransientVaultStore;
@@ -134,6 +142,15 @@ export function registerIpcHandlers(
     transients,
   });
   registerSecretHandlers(bus, { store: secrets });
+  // R008 Stage 4：search 组——全文搜索派生索引（source 经 registry/
+  // transients 双通道授权边界解析 Vault 根，只读扫描不修改 Vault）。
+  const searchService =
+    deps.searchService ??
+    new DesktopSearchService({
+      baseDir: join(app.getPath("userData"), "search-index"),
+      source: new VaultSearchDocumentSource({ registry, transients }),
+    });
+  registerSearchHandlers(bus, { service: searchService });
   // R008 Stage 2：reveal 组——note.reveal/asset.reveal 共用同一安全链路
   //（resolveVaultRoot → PathGuard → shell.showItemInFolder）。
   registerRevealHandlers(bus, {

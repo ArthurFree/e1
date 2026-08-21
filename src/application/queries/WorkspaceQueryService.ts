@@ -20,6 +20,7 @@ import type {
 } from "../../domain/repositories";
 import type { Page, PageTag, Tag, Workspace } from "../../domain/types";
 import { increment } from "../devDiagnostics";
+import type { FullTextSearchIndexPort } from "../services/SearchContract";
 import type { SearchIndexPort } from "../services/SearchIndexPort";
 import type {
   WorkspaceSessionData,
@@ -34,6 +35,11 @@ export class WorkspaceQueryService {
       tag: TagRepository;
       session: WorkspaceSessionService;
       searchIndex: SearchIndexPort;
+      /**
+       * 全文搜索索引（可选，R008 Stage 4）：具备持久化派生索引的运行时
+       * 装配（Desktop）；会话加载时后台准备，不阻断会话（§11.5）。
+       */
+      fullTextSearchIndex?: FullTextSearchIndexPort;
     },
   ) {}
 
@@ -50,6 +56,14 @@ export class WorkspaceQueryService {
     // 不会失败；未来异步实现（SQLite 等）可改为后台准备，失败时
     // 降级为「索引未准备」，搜索自动回退全量扫描（SearchQueryService）。
     await this.deps.searchIndex.prepareWorkspace(workspaceId);
+    // 全文索引后台准备（R008 Stage 4 §11.5）：首次打开无索引 Vault 触发
+    // Main 侧首建 rebuild；fire-and-forget 不阻断会话加载——building 期间
+    // 搜索贡献空结果，失败仅诊断，SearchPanel 自动回退标题搜索（§20）。
+    if (this.deps.fullTextSearchIndex) {
+      void this.deps.fullTextSearchIndex
+        .prepareWorkspace(workspaceId)
+        .catch(() => increment("search-index", "fulltext-prepare-failed"));
+    }
     return data;
   }
 

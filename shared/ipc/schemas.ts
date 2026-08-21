@@ -9,6 +9,12 @@
  * 属阶段 2 的 PathGuard（需访问真实文件系统，不在 shared 层）。
  */
 import { IpcFailure } from "../errors.js";
+import { SEARCH_LIMIT_MAX } from "../search/ranking.js";
+import type {
+  SearchDocument,
+  SearchQueryInput,
+  SearchRemoveInput,
+} from "../search/model.js";
 import type {
   AssetPickRequest,
   CreateDirectoryInput,
@@ -28,6 +34,8 @@ import type {
   RestoreTrashInput,
   RevealInput,
   SaveNoteInput,
+  SearchUpsertInput,
+  SearchVaultInput,
   SecretGetInput,
   SecretRemoveInput,
   SecretSetInput,
@@ -514,6 +522,127 @@ export function parseSecretSetInput(payload: unknown): SecretSetInput {
 export function parseSecretRemoveInput(payload: unknown): SecretRemoveInput {
   if (!isRecord(payload)) invalid("secret.remove 入参必须为对象");
   return { name: parseSecretName(payload) };
+}
+
+/* ---------------------------------- search ---------------------------------- */
+
+/**
+ * R008 Stage 4（§11/§15.1）：search 组入参校验。
+ * query 上限 256 字符（正常搜索词远低于此）；limit 夹在整数
+ * [0, SEARCH_LIMIT_MAX=100]（§10.6 上限在契约层已是硬约束，这里做
+ * 线格式收窄——超限直接拒绝而非静默截断）；SearchDocument 各字段
+ * 类型/长度上限校验（bodyText 上限 1M 字符，单篇 Markdown 上限
+ * 10MiB 的可检索文本远低于此）。错误消息只描述约束，不回显内容。
+ */
+export const SEARCH_QUERY_MAX_LENGTH = 256;
+export const SEARCH_BODY_TEXT_MAX_LENGTH = 1024 * 1024;
+
+/** 长度受限字符串（非空可配）；field 仅用于错误消息。 */
+function parseBoundedString(
+  record: Record<string, unknown>,
+  field: string,
+  maxLength: number,
+  options: { nonEmpty?: boolean } = {},
+): string {
+  const value = requireString(record, field, options);
+  if (value.length > maxLength) {
+    invalid(`字段 ${field} 超过长度上限（${maxLength} 字符）`);
+  }
+  return value;
+}
+
+/** search.prepare / search.rebuild / search.getStatus：入参同形 { vaultId }。 */
+export function parseSearchVaultInput(payload: unknown): SearchVaultInput {
+  if (!isRecord(payload)) invalid("search 入参必须为对象");
+  return {
+    vaultId: parseBoundedString(payload, "vaultId", 256, { nonEmpty: true }),
+  };
+}
+
+export function parseSearchQueryInput(payload: unknown): SearchQueryInput {
+  if (!isRecord(payload)) invalid("search.query 入参必须为对象");
+  const query = parseBoundedString(payload, "query", SEARCH_QUERY_MAX_LENGTH);
+  const limit = payload.limit;
+  if (
+    typeof limit !== "number" ||
+    !Number.isFinite(limit) ||
+    !Number.isInteger(limit) ||
+    limit < 0 ||
+    limit > SEARCH_LIMIT_MAX
+  ) {
+    invalid(`字段 limit 必须为 [0, ${SEARCH_LIMIT_MAX}] 内的整数`);
+  }
+  const input: SearchQueryInput = { query, limit };
+  if (payload.vaultId !== undefined) {
+    input.vaultId = parseBoundedString(payload, "vaultId", 256, {
+      nonEmpty: true,
+    });
+  }
+  return input;
+}
+
+/** 可空非负整数毫秒时间戳或 null。 */
+function parseNullableMillis(value: unknown, field: string): number | null {
+  if (value === null) return null;
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    !Number.isInteger(value) ||
+    value < 0
+  ) {
+    invalid(`字段 ${field} 必须为非负整数毫秒时间戳或 null`);
+  }
+  return value;
+}
+
+function parseSearchDocument(value: unknown): SearchDocument {
+  if (!isRecord(value)) invalid("search.upsert.doc 必须为对象");
+  const stableNoteId = value.stableNoteId;
+  if (stableNoteId !== null && typeof stableNoteId !== "string") {
+    invalid("字段 stableNoteId 必须为字符串或 null");
+  }
+  if (typeof stableNoteId === "string" && stableNoteId.length > 256) {
+    invalid("字段 stableNoteId 超过长度上限（256 字符）");
+  }
+  const tags = value.tags;
+  if (
+    !Array.isArray(tags) ||
+    tags.length > 64 ||
+    tags.some((tag) => typeof tag !== "string" || tag.length > 128)
+  ) {
+    invalid("字段 tags 必须为字符串数组（≤64 项，每项 ≤128 字符）");
+  }
+  return {
+    pageId: parseBoundedString(value, "pageId", 256, { nonEmpty: true }),
+    vaultId: parseBoundedString(value, "vaultId", 256, { nonEmpty: true }),
+    stableNoteId,
+    relativePath: assertRelativePath(
+      parseBoundedString(value, "relativePath", 1024, { nonEmpty: true }),
+    ),
+    title: parseBoundedString(value, "title", 1024),
+    tags: tags as string[],
+    bodyText: parseBoundedString(
+      value,
+      "bodyText",
+      SEARCH_BODY_TEXT_MAX_LENGTH,
+    ),
+    createdAt: parseNullableMillis(value.createdAt, "createdAt"),
+    updatedAt: parseNullableMillis(value.updatedAt, "updatedAt"),
+    versionToken: parseBoundedString(value, "versionToken", 128),
+  };
+}
+
+export function parseSearchUpsertInput(payload: unknown): SearchUpsertInput {
+  if (!isRecord(payload)) invalid("search.upsert 入参必须为对象");
+  return { doc: parseSearchDocument(payload.doc) };
+}
+
+export function parseSearchRemoveInput(payload: unknown): SearchRemoveInput {
+  if (!isRecord(payload)) invalid("search.remove 入参必须为对象");
+  return {
+    vaultId: parseBoundedString(payload, "vaultId", 256, { nonEmpty: true }),
+    pageId: parseBoundedString(payload, "pageId", 256, { nonEmpty: true }),
+  };
 }
 
 /**

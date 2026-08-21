@@ -8,6 +8,8 @@
 // R008 Stage 1：secret 组——机密值读写与后端状态（safeStorage 安全降级）。
 // R008 Stage 2：note.reveal / asset.reveal——在文件管理器中显示 Vault 内
 // 文件（Renderer 只传 {vaultId, relativePath}，R8-07）。
+// R008 Stage 4：search 组——全文搜索派生索引（查询/索引在 Main，
+// Renderer 只传 vaultId/query/SearchDocument，不接触索引库路径）。
 // sandbox 预加载只支持 CJS（构建产物 dist-electron/preload.cjs）。
 //
 // 错误传递策略（与 src/platform/desktop/desktopApi.ts 注释共同锁定）：
@@ -59,6 +61,13 @@ import {
   type SecretSetInput,
   type SecretStorageStatus,
   type SelectedVault,
+  type SearchIndexStatus,
+  type SearchQueryInput,
+  type SearchRebuildResult,
+  type SearchRemoveInput,
+  type SearchResult,
+  type SearchUpsertInput,
+  type SearchVaultInput,
   type TrashInput,
   type TrashListResult,
   type TrashResult,
@@ -154,6 +163,20 @@ const api: E1DesktopAPI = {
     remove: (input: SecretRemoveInput) =>
       invoke<null>(IPC_CHANNELS.secretRemove, input),
     getStatus: () => invoke<SecretStorageStatus>(IPC_CHANNELS.secretGetStatus),
+  },
+  search: {
+    prepare: (input: SearchVaultInput) =>
+      invoke<null>(IPC_CHANNELS.searchPrepare, input),
+    query: (input: SearchQueryInput) =>
+      invoke<SearchResult[]>(IPC_CHANNELS.searchQuery, input),
+    upsert: (input: SearchUpsertInput) =>
+      invoke<null>(IPC_CHANNELS.searchUpsert, input),
+    remove: (input: SearchRemoveInput) =>
+      invoke<null>(IPC_CHANNELS.searchRemove, input),
+    rebuild: (input: SearchVaultInput) =>
+      invoke<SearchRebuildResult>(IPC_CHANNELS.searchRebuild, input),
+    getStatus: (input: SearchVaultInput) =>
+      invoke<SearchIndexStatus>(IPC_CHANNELS.searchGetStatus, input),
   },
   events: {
     subscribeVaultChanges: (listener: (events: VaultFsEvent[]) => void) => {

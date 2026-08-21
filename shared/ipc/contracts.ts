@@ -23,6 +23,11 @@
  * 中显示 Vault 内文件。Renderer 只传 {vaultId, relativePath}（R8-07：
  * absolutePath 只在 Main 内经授权边界 + PathGuard 解析，绝不由 Renderer
  * 提供）；附件同样按 relativePath 寻址（Renderer 侧经会话资源索引反查）。
+ * R008 Stage 4（§11，R8-03/R8-04）：search 组——Desktop 全文搜索派生
+ * 索引（userData/search-index/<vaultId>.sqlite，node:sqlite）。查询与
+ * 索引都在 Main；Renderer 只传 vaultId/query/SearchDocument，绝不接触
+ * 索引库路径（错误消息不携带本机绝对路径）；索引为可重建派生数据，
+ * rebuild 从 Markdown 正文真相完整重建，不反向覆盖 Markdown。
  *
  * shared/ 为 Renderer（src/platform/desktop）与 Electron Main/Preload 共用
  * 的唯一契约来源：channel 常量、请求/响应类型、E1DesktopAPI 形状。
@@ -38,6 +43,24 @@
  * 做乐观锁，出参返回写入后的新令牌；不一致即 DOCUMENT_CONFLICT。
  */
 import type { IpcErrorPayload } from "../errors.js";
+import type {
+  SearchDocument,
+  SearchIndexStatus,
+  SearchQueryInput,
+  SearchRebuildResult,
+  SearchRemoveInput,
+  SearchResult,
+} from "../search/model.js";
+
+export type {
+  SearchDocument,
+  SearchIndexStatus,
+  SearchMatchedField,
+  SearchQueryInput,
+  SearchRebuildResult,
+  SearchRemoveInput,
+  SearchResult,
+} from "../search/model.js";
 
 /** IPC channel 常量：Main 注册与 Preload 调用共用，禁止散落字符串。 */
 export const IPC_CHANNELS = {
@@ -69,6 +92,12 @@ export const IPC_CHANNELS = {
   secretSet: "secret:set",
   secretRemove: "secret:remove",
   secretGetStatus: "secret:getStatus",
+  searchPrepare: "search:prepare",
+  searchQuery: "search:query",
+  searchUpsert: "search:upsert",
+  searchRemove: "search:remove",
+  searchRebuild: "search:rebuild",
+  searchGetStatus: "search:getStatus",
   eventsVaultChanges: "events:vaultChanges",
 } as const;
 
@@ -530,8 +559,24 @@ export interface AssetReadResult {
   data: Uint8Array;
 }
 
-/* ---------------------------------- secret ---------------------------------- */
+/* ---------------------------------- search ---------------------------------- */
 
+/**
+ * R008 Stage 4（§11，R8-03/R8-04）：search 组——全文搜索派生索引。
+ * 模型/结果/状态类型直接复用 shared/search/model（契约唯一来源），
+ * 线格式与 SearchContract 类型同形。Renderer 不接触索引库路径；
+ * prepare/rebuild/getStatus 入参同为 { vaultId }。
+ */
+export interface SearchVaultInput {
+  vaultId: string;
+}
+
+/** search.upsert 请求：单文档 upsert（同 pageId 覆盖）。 */
+export interface SearchUpsertInput {
+  doc: SearchDocument;
+}
+
+/* ---------------------------------- secret ---------------------------------- */
 /**
  * R008 Stage 1（§8.6，R8-02）：secret 存储后端运行状态。
  * 与 RuntimeCapabilities.nativeSecrets（是否接入 native secret 体系）分离——
@@ -710,6 +755,26 @@ export interface E1DesktopAPI {
     remove(input: SecretRemoveInput): Promise<null>;
     /** 当前 secret 存储后端运行状态（R8-02，与 capability 分离）。 */
     getStatus(): Promise<SecretStorageStatus>;
+  };
+  /**
+   * R008 Stage 4（§11）：全文搜索派生索引（R8-03/R8-04）。查询与索引
+   * 都在 Main（userData/search-index/）；Renderer 只传 vaultId/query/
+   * SearchDocument。索引失败经 getStatus 的 degraded/corrupt 暴露，
+   * 不抛错阻断正文（R8-06）；索引不可用时调用方回退标题搜索（§20）。
+   */
+  search: {
+    /** 准备（必要时创建并首建）vault 索引；幂等，成功返回 null。 */
+    prepare(input: SearchVaultInput): Promise<null>;
+    /** 全文查询（title/tags/body + 权重排序 + snippet）。 */
+    query(input: SearchQueryInput): Promise<SearchResult[]>;
+    /** 单文档 upsert（同 pageId 覆盖）；成功返回 null。 */
+    upsert(input: SearchUpsertInput): Promise<null>;
+    /** 移除单条索引；条目或 vault 不存在为 no-op，成功返回 null。 */
+    remove(input: SearchRemoveInput): Promise<null>;
+    /** 丢弃派生索引并从 Markdown 正文真相完整重建。 */
+    rebuild(input: SearchVaultInput): Promise<SearchRebuildResult>;
+    /** vault 索引状态（missing/building/ready/degraded/corrupt）。 */
+    getStatus(input: SearchVaultInput): Promise<SearchIndexStatus>;
   };
   /**
    * R007 阶段 3：Main→Renderer 单向事件订阅（唯一推送通道）。

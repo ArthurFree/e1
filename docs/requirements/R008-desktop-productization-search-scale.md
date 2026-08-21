@@ -1,7 +1,7 @@
 # R008：Desktop 产品化收尾与搜索规模化
 
 - **版本**：0.1
-- **状态**：实现中（Stage 0–3 已完成）
+- **状态**：实现中（Stage 0–3 已完成，Stage 4 实现中——中断点见 §11 头部记录）
 - **更新时间**：2026-08-21
 - **前置需求**：R007（Desktop Local Vault 产品化基础闭环）
 - **基线 Commit**：`065a0174657e5ea9c4c6510970b5809ed66a87c0`
@@ -1257,6 +1257,17 @@ packaging 简单；代价是索引体积增长，可接受（索引是 derived d
 ---
 
 # 11. Stage 4：Desktop Search Database + Full Text
+
+**状态：实现中（2026-08-21，中断点记录）**
+
+已落地（工作区，随中断点提交，测试只写未跑、未经统一执行验证）：
+
+- 契约下沉：模型类型与查询语义纯函数唯一来源移至 `shared/search/model.ts`（SearchDocument/SearchResult/SearchIndexStatus/SearchRebuildResult/SearchQueryInput/SearchRemoveInput）与 `shared/search/ranking.ts`（rankSearchDocuments/权重/SEARCH_LIMIT_MAX），`src/application/services/SearchContract.ts` 原样 re-export 冻结导出面——Electron Main 复用同一实现（electron 不得 import src，同 searchText.ts 先例）。
+- Main 搜索库 `electron/main/search/`：`DesktopSearchDatabase.ts`（node:sqlite，`userData/search-index/`）、`DesktopSearchService.ts`、`VaultSearchDocumentSource.ts`（扫描 → SearchDocument 映射）、`searchTokens.ts`（中文 bigram，方案 B 路线）+ 各自测试。
+- IPC search 组：`shared/ipc/contracts.ts`（SearchVaultInput/SearchUpsertInput + search 组 E1DesktopAPI）+ `schemas.ts` 校验 + `electron/main/ipc/search.ts` + preload 桥。
+- Renderer：`src/platform/desktop/DesktopFullTextSearchIndex.ts`（FullTextSearchIndexPort 桥实现）+ `createDesktopRuntime.ts` 装配（AppServices 可选 fullTextSearchIndex）+ `WorkspaceQueryService` 注入 + `src/test/desktopFullTextSearch.contract.test.ts`（契约套件接入）。
+
+未完成（下一阶段继续）：契约套件双实现复跑的完整性核对、SearchPanel 全文接入与 title-only 降级（§14/§20）、E2E G14–G16（只写）、本节省略的实现记录与中文方案终选确认、AGENTS.md/persistence.md 同步；全部测试（含本阶段既有改动）待统一执行阶段验证。
 
 ## 11.1 技术选型
 
