@@ -34,6 +34,7 @@ import type { SecretStore } from "./services/SecretStore";
 import type { AIConfigService } from "./services/AIConfigService";
 import type { StorageHealthService } from "./services/StorageHealthService";
 import type { ExternalVaultChangeService } from "./services/ExternalVaultChangeService";
+import type { RevealService } from "./services/RevealService";
 import type { RuntimeCapabilities } from "../runtime/RuntimeCapabilities";
 import type { RuntimeOperations } from "../runtime/RuntimeOperations";
 
@@ -165,6 +166,14 @@ export interface AppServices {
    * （DUAL-01：只判断能力与服务是否存在，不判断平台名称）。
    */
   externalVaultChanges?: ExternalVaultChangeService;
+  /**
+   * Reveal in File Manager port（可选，R008 Stage 2 §9）：在系统文件管理器
+   * 中显示文档源文件/附件文件，由以本地文件系统为真相的运行时装配
+   * （Desktop）；Web/内存容器不装配本字段。UI 一律以
+   * `capabilities.revealInFileManager && services.revealService` 门控入口
+   * （DUAL-01：只判断能力与 port 是否存在，不判断平台名称）。
+   */
+  revealService?: RevealService;
   /**
    * 命令服务（R005 批次 1）：业务写编排入口，状态层经此触发仓储写、
    * 搜索索引同步与跨标签页广播。

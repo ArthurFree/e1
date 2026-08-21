@@ -16,8 +16,17 @@
  * R008 Stage 1：secret 组 handler（DesktopSecretStore 缺省指向
  * userData/secrets.json + 真实 safeStorage；E1_SECRET_BACKEND_FORCE
  * 为测试注入点，强制按指定 backend 判定，如 basic_text 模拟不安全后端）。
+ * R008 Stage 2：reveal 组 handler（note.reveal/asset.reveal——授权边界 +
+ * PathGuard 解析后经 electron shell 在文件管理器中显示；shell 可注入 mock）。
  */
-import { app, BrowserWindow, dialog, ipcMain, safeStorage } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  safeStorage,
+  shell,
+} from "electron";
 import { join } from "node:path";
 import {
   IPC_CHANNELS,
@@ -29,6 +38,7 @@ import { registerFileHandlers } from "./files.js";
 import { registerAssetHandlers } from "./asset.js";
 import { registerVaultStateHandlers } from "./vaultState.js";
 import { registerSecretHandlers } from "./secret.js";
+import { registerRevealHandlers, type ShellLike } from "./reveal.js";
 import { VaultRegistry } from "../vaultRegistry.js";
 import { DesktopVaultStateStore } from "../state/DesktopVaultStateStore.js";
 import { DesktopSecretStore } from "../secrets/DesktopSecretStore.js";
@@ -54,6 +64,8 @@ export interface RegisterIpcHandlersDeps {
   vaultStateStore?: DesktopVaultStateStore;
   /** R008 Stage 1：secret 存储（缺省指向 userData/secrets.json + safeStorage）。 */
   secrets?: DesktopSecretStore;
+  /** R008 Stage 2：文件管理器 shell（缺省真实 electron shell；测试注入 mock）。 */
+  shell?: ShellLike;
   /** R006-C2.1：可注入以控制时钟/隔离状态（测试用）。 */
   selectionTokens?: SelectionTokenStore;
   transients?: TransientVaultStore;
@@ -122,6 +134,13 @@ export function registerIpcHandlers(
     transients,
   });
   registerSecretHandlers(bus, { store: secrets });
+  // R008 Stage 2：reveal 组——note.reveal/asset.reveal 共用同一安全链路
+  //（resolveVaultRoot → PathGuard → shell.showItemInFolder）。
+  registerRevealHandlers(bus, {
+    registry,
+    transients,
+    shell: deps.shell ?? (shell as ShellLike | undefined),
+  });
   registerAssetHandlers(bus, {
     openDialog: openDialog as FileDialogLike,
     registry,

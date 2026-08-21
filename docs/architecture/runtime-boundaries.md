@@ -44,7 +44,8 @@ R005 将项目划分为四层运行时边界：Shared UI、Shared Application、
 - 授权边界（C2.1）：Renderer 全程不接触 absolutePath（一次性 selectionToken + `openRecent` + transient 仅预览，SEC-01）；未初始化目录经三选项确认框后才初始化。
 - **文档读写已真实**：`note.read` / `note.create` / `note.save` 经 PathGuard、NoteFileSystem、AtomicFileWriter；Renderer 侧 `DesktopContentRepository` + `DesktopMarkdownWriteService`（Source/Identity/Output Gate、Frontmatter 保留、Stable ID Adoption）；`documentPersistence: true`，编辑走共享 SaveCoordinator。
 - **附件已真实（C5）**：`asset.pick` / `import` / `read`、`DesktopAssetStore` / Registry / Access、`e1-asset://` 协议、Markdown Hydration 与相对路径写出；`persistentAssetPaths: true`。
-- 能力矩阵见下表（`src/platform/desktop/desktopCapabilities.ts`）：`localDirectory`、`documentPersistence`、`persistentAssetPaths`、`fileWatching`、`nativeSecrets` 为 true；`revealInFileManager` / `nativeMenu` 仍为 false（未实现，不得写「未来全 true」）。
+- 能力矩阵见下表（`src/platform/desktop/desktopCapabilities.ts`）：`localDirectory`、`documentPersistence`、`persistentAssetPaths`、`fileWatching`、`nativeSecrets`、`revealInFileManager` 为 true；`nativeMenu` 仍为 false（未实现，不得写「未来全 true」）。
+- **Reveal in File Manager 已真实（R008 Stage 2，R8-07）**：`note.reveal` / `asset.reveal` 两通道共用同一安全链路——Renderer 只传 `{vaultId, relativePath}`（附件经会话资源索引反查 relativePath，绝不传 absolutePath），Main 经授权边界（registry/transients 双通道）+ PathGuard（realpath 根内判定）解析后调 `shell.showItemInFolder`；只读操作，transient 仅预览 Vault 同样允许。Renderer 侧为平台无关可选 port `AppServices.revealService`（`RevealService`：revealDocument/revealAsset），UI 以「capability + port 存在」门控入口。
 - **Native Secret 已真实（R008 Stage 1）**：`secret.get/set/remove/getStatus` 四通道经 Main `electron/main/secrets/`（Electron `safeStorage` 加解密，优先异步 API）落 `userData/secrets.json` 密文；不安全 backend（如 Linux `basic_text`）降级 session-only 仅进程内存兜底、绝不落盘。R8-02：`nativeSecrets: true` 只表示「接入了 native secret 体系」，本机当前持久性由 `SecretStorageStatus`（`secret.getStatus`）表达，设置 UI 按之分流文案。
 - **外部文件监听已真实（R007 阶段 3）**：Main 侧 `electron/main/watcher/`（chokidar + coalescing + 自写抑制）经首个单向事件通道 `events:vaultChanges` 推送 `VaultFsEvent` 批次；Renderer 侧 `ExternalVaultChangeService`（application 契约 + Desktop 实现）做静止窗口合并 → 重扫 → stable-id diff → 归一化变更；页面树经 `ExternalVaultChangeBridge` 刷新，当前文档按 clean 自动重载 / dirty 冲突面板 / 外部删除提示处理。
 - 平台专属能力经**平台无关的可选 port** 注入（PR5，原 `AppServices.desktopExtras` PoC 通道已删除）：`AppServices.vaultMaintenance`（`rescan(vaultId)`，FR-26 重新扫描）与 `AppServices.documentSafety`（`approveLossySource` / `approveLossyOutput` / `approveIdentityAdoption` 会话级门闸）。Web/内存容器不装配这两个字段；UI 一律以「能力矩阵字段 + port 是否存在」门控（DUAL-01，不判断平台名称）。
@@ -79,12 +80,12 @@ R005 将项目划分为四层运行时边界：Shared UI、Shared Application、
 
 | 字段                   | 语义                                                                                    | Web | Desktop |
 | ---------------------- | --------------------------------------------------------------------------------------- | :-: | :-----: |
-| `localDirectory`       | 能以本地目录作为 Vault 直接读写（文件夹即页面树）                                      | 否  |   是    |
-| `fileWatching`         | 能监听真实数据源的外部变更并触发刷新/冲突提示                                          | 否  |   是    |
-| `revealInFileManager`  | 能在系统文件管理器中显示笔记或附件文件                                                 | 否  |   否    |
-| `nativeMenu`           | 能使用系统原生菜单（应用菜单/上下文菜单）                                              | 否  |   否    |
-| `nativeSecrets`        | 接入了 native secret 体系（运行态持久性由 `SecretStorageStatus` 表达，R8-02） | 否  |   是    |
-| `persistentAssetPaths` | 附件拥有稳定文件路径，可被外部软件直接访问（而非 Blob/Object URL）                     | 否  |   是    |
+| `localDirectory`       | 能以本地目录作为 Vault 直接读写（文件夹即页面树）                                       | 否  |   是    |
+| `fileWatching`         | 能监听真实数据源的外部变更并触发刷新/冲突提示                                           | 否  |   是    |
+| `revealInFileManager`  | 能在系统文件管理器中显示笔记或附件文件                                                  | 否  |   是    |
+| `nativeMenu`           | 能使用系统原生菜单（应用菜单/上下文菜单）                                               | 否  |   否    |
+| `nativeSecrets`        | 接入了 native secret 体系（运行态持久性由 `SecretStorageStatus` 表达，R8-02）           | 否  |   是    |
+| `persistentAssetPaths` | 附件拥有稳定文件路径，可被外部软件直接访问（而非 Blob/Object URL）                      | 否  |   是    |
 | `documentPersistence`  | 文档编辑会真实持久化（false 时编辑器不启动 SaveCoordinator，UI 必须提示修改不写回磁盘） | 是  |   是    |
 
 约定：能力为 `false` 时对应 UI 入口隐藏或降级，不做「平台名 + 弹窗提示」式分支；新增平台功能一律先定义能力字段再实现（r005.md §十六）。变更任一字段时须同步更新本表、对应 `*Capabilities.ts` 与 `capabilities.matrix.test.ts`。
@@ -102,24 +103,24 @@ R8-01：Operation Support 必须描述业务对象——document 与 group 的�
 
 下表为**当前实现值**（源：`src/platform/web/webOperations.ts`、`src/platform/desktop/desktopOperations.ts`；由 `src/platform/desktop/desktopOperations.test.ts` 锁定）：
 
-| 字段                         | 语义                                                             | Web | Desktop |
-| ---------------------------- | ---------------------------------------------------------------- | :-: | :-----: |
-| `workspace.rename`           | 重命名知识库（Desktop 库名取自 vault.json/目录名，未实现）      | 是  |   否    |
-| `workspace.favorite`         | 收藏/取消收藏知识库                                              | 是  |   是    |
-| `page.document.create`       | 新建文档                                                         | 是  |   是    |
-| `page.document.renameTitle`  | 标题重命名（Desktop 写 Frontmatter title）                       | 是  |   是    |
-| `page.document.renameFile`   | 物理文件名重命名（§4.4 P2，与标题重命名分开；UI 入口属后续批次） | 是  |   否    |
-| `page.document.move`         | 移动文档（Desktop 仅 document → directory，不支持自定义排序）    | 是  |   是    |
-| `page.document.trash`        | 文档移入回收站（Desktop = rename 进 .e1/trash）                  | 是  |   是    |
-| `page.document.favorite`     | 收藏/取消收藏文档                                                | 是  |   是    |
-| `page.group.create`          | 新建分组（Desktop = 真实目录）                                   | 是  |   是    |
-| `page.group.rename`          | 分组重命名（Desktop 待 Main 目录 rename IPC，R011）              | 是  |   否    |
-| `page.group.move`            | 分组移动（Desktop 待 Main 目录 move IPC，R011）                  | 是  |   否    |
-| `page.group.trash`           | 分组移入回收站                                                   | 是  |   是    |
-| `page.trash.restore`         | 从回收站恢复                                                     | 是  |   是    |
-| `page.trash.purge`           | 永久删除（含清空回收站）                                         | 是  |   是    |
-| `tag.write`                  | 标签写入（create / setPageTags）                                 | 是  |   是    |
-| `revision.read`              | 读取版本历史（false 时 UI 必须隐藏版本历史入口，R007 §8）        | 是  |   否    |
-| `revision.write`             | 写入版本快照（Desktop 版本历史为空实现）                         | 是  |   否    |
+| 字段                        | 语义                                                             | Web | Desktop |
+| --------------------------- | ---------------------------------------------------------------- | :-: | :-----: |
+| `workspace.rename`          | 重命名知识库（Desktop 库名取自 vault.json/目录名，未实现）       | 是  |   否    |
+| `workspace.favorite`        | 收藏/取消收藏知识库                                              | 是  |   是    |
+| `page.document.create`      | 新建文档                                                         | 是  |   是    |
+| `page.document.renameTitle` | 标题重命名（Desktop 写 Frontmatter title）                       | 是  |   是    |
+| `page.document.renameFile`  | 物理文件名重命名（§4.4 P2，与标题重命名分开；UI 入口属后续批次） | 是  |   否    |
+| `page.document.move`        | 移动文档（Desktop 仅 document → directory，不支持自定义排序）    | 是  |   是    |
+| `page.document.trash`       | 文档移入回收站（Desktop = rename 进 .e1/trash）                  | 是  |   是    |
+| `page.document.favorite`    | 收藏/取消收藏文档                                                | 是  |   是    |
+| `page.group.create`         | 新建分组（Desktop = 真实目录）                                   | 是  |   是    |
+| `page.group.rename`         | 分组重命名（Desktop 待 Main 目录 rename IPC，R011）              | 是  |   否    |
+| `page.group.move`           | 分组移动（Desktop 待 Main 目录 move IPC，R011）                  | 是  |   否    |
+| `page.group.trash`          | 分组移入回收站                                                   | 是  |   是    |
+| `page.trash.restore`        | 从回收站恢复                                                     | 是  |   是    |
+| `page.trash.purge`          | 永久删除（含清空回收站）                                         | 是  |   是    |
+| `tag.write`                 | 标签写入（create / setPageTags）                                 | 是  |   是    |
+| `revision.read`             | 读取版本历史（false 时 UI 必须隐藏版本历史入口，R007 §8）        | 是  |   否    |
+| `revision.write`            | 写入版本快照（Desktop 版本历史为空实现）                         | 是  |   否    |
 
 变更任一字段时须同步更新本表与 `desktopOperations.test.ts`。

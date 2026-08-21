@@ -240,6 +240,11 @@ export function DocumentEditor({
         const storage = e.storage as unknown as Record<string, unknown>;
         storage.attachmentPageId = pageId;
         storage.assetServices = services.assets;
+        // R008 Stage 2：附件「在文件管理器中显示」入口按能力门控注入——
+        // 能力关闭/无 RevealService 的运行时不注入，节点视图不出现入口。
+        storage.revealService = services.capabilities.revealInFileManager
+          ? (services.revealService ?? null)
+          : null;
       },
       onUpdate: ({ editor: e }) => {
         // 只读或无持久化能力（FR-22）：不触发任何保存链路。
@@ -269,6 +274,10 @@ export function DocumentEditor({
       // infrastructure，也不直接访问浏览器 API）。
       storage.attachmentPageId = pageId;
       storage.assetServices = services.assets;
+      // R008 Stage 2：reveal 服务按能力门控注入（同 onBeforeCreate）。
+      storage.revealService = services.capabilities.revealInFileManager
+        ? (services.revealService ?? null)
+        : null;
     }
     onEditorReady(editor);
     return () => {

@@ -58,6 +58,7 @@ describe("preload 暴露形状", () => {
       "patchMetadata",
       "read",
       "renameFile",
+      "reveal",
       "save",
     ]);
     expect(Object.keys(api.asset).sort()).toEqual([
@@ -65,6 +66,7 @@ describe("preload 暴露形状", () => {
       "pick",
       "read",
       "resolveUrl",
+      "reveal",
     ]);
     expect(Object.keys(api.vaultState).sort()).toEqual(["get", "patch"]);
     // R008 Stage 1：secret 组（safeStorage 安全存储 + 后端状态）。
@@ -183,6 +185,17 @@ describe("channel 与负载透传", () => {
       IPC_CHANNELS.vaultStatePatch,
       statePatch,
     );
+  });
+
+  it("R008 Stage 2：reveal 负载透传（note.reveal/asset.reveal 同形 {vaultId, relativePath}）", async () => {
+    const noteInput = { vaultId: "v1", relativePath: "学习/笔记.md" };
+    invoke.mockResolvedValue({ ok: true, value: null });
+    await expect(api.note.reveal(noteInput)).resolves.toBeNull();
+    expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.noteReveal, noteInput);
+
+    const assetInput = { vaultId: "v1", relativePath: "assets/design.pdf" };
+    await expect(api.asset.reveal(assetInput)).resolves.toBeNull();
+    expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.assetReveal, assetInput);
   });
 
   it("secret 组负载透传（get/set/remove 对象 + getStatus 无入参）", async () => {

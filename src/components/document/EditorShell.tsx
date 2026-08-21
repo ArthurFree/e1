@@ -28,6 +28,7 @@ import { SaveStateIndicator } from "../editor/SaveStateIndicator";
 import {
   IconAlertTriangle,
   IconExport,
+  IconFolder,
   IconHistory,
   IconList,
   IconMenu,
@@ -97,6 +98,18 @@ export function EditorShell({
     await refreshCurrentWorkspace();
   };
 
+  // R008 Stage 2（§9.4）：在系统文件管理器中显示当前文档源文件。
+  // 失败只给「无法定位」级别文案，不泄露任何路径信息。
+  const revealCurrentDocument = async () => {
+    if (!page || !services.revealService) return;
+    const ok = await services.revealService.revealDocument(page.id);
+    if (!ok) {
+      services.assets.notify.notify(
+        "无法定位该文件：文件可能已被移动、删除或不在知识库内。",
+      );
+    }
+  };
+
   return (
     <main className="main">
       <header className="topbar">
@@ -154,6 +167,21 @@ export function EditorShell({
             <IconHistory />
           </button>
         )}
+        {isDocument &&
+          services.capabilities.revealInFileManager &&
+          services.revealService && (
+            // R008 Stage 2（§9.4）：只读定位操作，只读/兼容文档同样可用
+            // （transient 仅预览 Vault 的 Main 链路也允许 reveal）。
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="在文件管理器中显示"
+              title="在文件管理器中显示"
+              onClick={() => void revealCurrentDocument()}
+            >
+              <IconFolder />
+            </button>
+          )}
         <button
           type="button"
           className="icon-button"

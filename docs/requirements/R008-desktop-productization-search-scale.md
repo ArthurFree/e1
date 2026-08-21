@@ -1,7 +1,7 @@
 # R008：Desktop 产品化收尾与搜索规模化
 
 - **版本**：0.1
-- **状态**：实现中（Stage 0–1 已完成）
+- **状态**：实现中（Stage 0–2 已完成）
 - **更新时间**：2026-08-21
 - **前置需求**：R007（Desktop Local Vault 产品化基础闭环）
 - **基线 Commit**：`065a0174657e5ea9c4c6510970b5809ed66a87c0`
@@ -946,6 +946,65 @@ Attachment context menu
 - Renderer 无 absolutePath；
 - capability 翻为 true；
 - Web UI 不出现该入口。
+
+## 9.6 Stage 2 实现记录
+
+**状态：已完成（2026-08-21）**
+
+实际实现：
+
+- IPC（§9.2/§15.1）：`note.reveal` / `asset.reveal` 两通道共用同一入参
+  `RevealInput{vaultId, relativePath}`（`shared/ipc/contracts.ts`）——
+  附件按 relativePath 寻址而非 §9.2 推荐的 assetId：Renderer 侧附件身份
+  本就是 assetId/relativePath 双持（DesktopAssetRegistry 会话索引），
+  反查 relativePath 后与 note 走完全同一安全链路，Main 无需第二张
+  assetId 解析表（R8-07 允许 {vaultId, relativePath} 形态）。成功返回
+  null；schema 校验复用 assertRelativePath（`parseRevealInput`）。
+- Main（§9.3）：`electron/main/ipc/reveal.ts`——resolveVaultRoot
+  （registry/transients 双通道授权边界）→ PathGuard.resolveWithinVault
+  （realpath 根内判定，目标必须存在）→ `shell.showItemInFolder`；
+  `ShellLike` 结构视图可注入 mock，shell 缺失归一 INTERNAL。
+  `index.ts` 注入真实 electron shell；preload 补 note/asset 两组桥方法。
+- transient 行为（§9.5）：允许 reveal——reveal 是只读操作，不修改 Vault
+  任何文件，仅预览会话的文件真实存在于磁盘，定位不越权；schema 与
+  PathGuard 校验与常规 Vault 一视同仁。
+- 目录 reveal：允许（showItemInFolder 选中该目录），取最小语义不单独
+  限制；目标不存在统一归一 NOTE_NOT_FOUND（不新增 REVEAL_* 码，
+  R007 §11 原则：UI 无需新分流）。
+- Renderer：平台无关可选 port `RevealService`
+  （`src/application/services/RevealService.ts`，revealDocument/revealAsset
+  → boolean）挂 `AppServices.revealService`；Desktop 实现
+  `DesktopRevealService`——pageId 经 DesktopDocumentSourceCache、assetId
+  经 DesktopAssetRegistry 反查 {vaultId, relativePath} 后走桥；反查缺失
+  或 IPC 失败归一 false，全链路不出现 absolutePath。
+  `createDesktopRuntime` 装配；`desktopCapabilities.revealInFileManager`
+  翻 true（capabilities.matrix.test 与 runtime-boundaries.md 同步）。
+- UI（§9.4）：EditorShell 顶栏新增「在文件管理器中显示」图标按钮
+  （照版本历史入口模式，capability + port 存在双门控，只读/兼容文档
+  同样可用）；附件块新增「定位」动作按钮（RevealService 由
+  DocumentEditor 按能力门控注入 editor.storage.revealService，未注入的
+  运行时入口不存在）。失败提示只说「无法定位」级别文案，不泄露路径；
+  Web 端 capability false 天然无入口。
+- 测试（按批次规则只写不跑）：Main 单测
+  （`electron/main/ipc/reveal.test.ts`：正常 note/asset/目录 reveal +
+  realpath 路径断言、NOTE_NOT_FOUND、schema 拦截链、symlink 逃逸、
+  未知 vaultId、transient 允许、shell 缺失 INTERNAL）+ Renderer 服务
+  契约（`DesktopRevealService.test.ts`）+ 组件门控
+  （`revealEntry.test.tsx`：入口可见/点击调用/失败提示/capability false
+  或无 port 不出现）+ 附件节点视图三例（attachment.test.ts）+ preload
+  形状/透传 + smoke 桥形状 + index 注册齐全（自动覆盖新 channel）+
+  E2E `e2e/desktop.reveal.spec.ts` G12/G13。
+
+偏差记录：
+
+- E2E（§17.4）：CI/Linux 无法验证真实 GUI 文件管理器，经
+  `app.evaluate` stub Main 进程 `shell.showItemInFolder`（调用记录进
+  globalThis），断言 IPC 全链路被调用且路径在 realpath(Vault) 内；
+  真实 GUI 行为留平台人工验收。
+- 附件契约取 relativePath 而非 assetId（见上）；REVEAL_TARGET_NOT_FOUND
+  未新增，复用 NOTE_NOT_FOUND（R007 §11）。
+- 测试用例只写不跑（批次规则），统一测试执行在全部阶段完成后进行；
+  §9.5 各验收点以该统一执行结果为准。
 
 ---
 

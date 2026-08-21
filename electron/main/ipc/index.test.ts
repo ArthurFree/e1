@@ -21,6 +21,8 @@ vi.mock("electron", () => ({
   app: { getPath: () => tmpdir() },
   ipcMain: { handle: vi.fn() },
   dialog: { showOpenDialog: vi.fn() },
+  // R008 Stage 2：reveal 组缺省 shell（行为测试见 ./reveal.test.ts，注入 mock）。
+  shell: { showItemInFolder: vi.fn() },
 }));
 
 type Handler = (
@@ -47,7 +49,7 @@ beforeEach(() => {
 });
 
 describe("registerIpcHandlers 注册", () => {
-  it("全部 request/response channel 注册（vault 5 + note 4 + asset 4 + vaultState 2）", () => {
+  it("全部 request/response channel 注册（vault + note + asset + vaultState + secret + reveal 全组）", () => {
     registerIpcHandlers({ ipc: bus });
     // events:vaultChanges 是 Main→Renderer 单向推送通道（R007 阶段 3），
     // 不注册 ipcMain.handle，从断言集中排除。

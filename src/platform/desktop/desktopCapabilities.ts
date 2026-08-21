@@ -13,8 +13,9 @@ export const desktopCapabilities: RuntimeCapabilities = {
   // reconciliation（DesktopExternalVaultChangeService）已接通，页面树经
   // ExternalVaultChangeBridge 自动刷新；文档层重载/冲突策略属 §3.4 后续。
   fileWatching: true,
-  // R007：原生「在文件管理器中显示」属桌面产品化范围。
-  revealInFileManager: false,
+  // R008 Stage 2：note.reveal/asset.reveal 经授权边界 + PathGuard +
+  // shell.showItemInFolder 已接通（Renderer 只传 {vaultId, relativePath}）。
+  revealInFileManager: true,
   // R007：原生菜单体系属桌面产品化范围（r006 §3 非目标）。
   nativeMenu: false,
   // R008 Stage 1：DesktopSecretStore 经 IPC 接系统安全存储（safeStorage，

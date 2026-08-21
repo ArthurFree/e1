@@ -6,6 +6,8 @@
 // R007 阶段 4：vault 组新增 createDirectory/trash/listTrash/restore/
 // purgeTrash（回收站闭环），note 组新增 move/renameFile（文件操作）。
 // R008 Stage 1：secret 组——机密值读写与后端状态（safeStorage 安全降级）。
+// R008 Stage 2：note.reveal / asset.reveal——在文件管理器中显示 Vault 内
+// 文件（Renderer 只传 {vaultId, relativePath}，R8-07）。
 // sandbox 预加载只支持 CJS（构建产物 dist-electron/preload.cjs）。
 //
 // 错误传递策略（与 src/platform/desktop/desktopApi.ts 注释共同锁定）：
@@ -49,6 +51,7 @@ import {
   type RenameNoteFileResult,
   type RestoreTrashInput,
   type RestoreTrashResult,
+  type RevealInput,
   type SaveNoteInput,
   type SaveNoteResult,
   type SecretGetInput,
@@ -129,6 +132,8 @@ const api: E1DesktopAPI = {
       invoke<MoveNoteResult>(IPC_CHANNELS.noteMove, input),
     renameFile: (input: RenameNoteFileInput) =>
       invoke<RenameNoteFileResult>(IPC_CHANNELS.noteRenameFile, input),
+    reveal: (input: RevealInput) =>
+      invoke<null>(IPC_CHANNELS.noteReveal, input),
   },
   asset: {
     pick: (input?: AssetPickRequest) =>
@@ -139,6 +144,8 @@ const api: E1DesktopAPI = {
       invoke<AssetReadResult>(IPC_CHANNELS.assetRead, input),
     resolveUrl: (assetId) =>
       invoke<string>(IPC_CHANNELS.assetResolveUrl, assetId),
+    reveal: (input: RevealInput) =>
+      invoke<null>(IPC_CHANNELS.assetReveal, input),
   },
   secret: {
     get: (input: SecretGetInput) =>

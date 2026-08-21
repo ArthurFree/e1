@@ -59,6 +59,7 @@ import { DesktopAssetStore } from "./DesktopAssetStore";
 import { DesktopAssetPicker } from "./DesktopAssetPicker";
 import { DesktopAssetAccessService } from "./DesktopAssetAccessService";
 import { DesktopSecretStore } from "./DesktopSecretStore";
+import { DesktopRevealService } from "./DesktopRevealService";
 import {
   DesktopContentRepository,
   DesktopDocumentWriteRepository,
@@ -256,6 +257,9 @@ export function createDesktopRuntime(api: E1DesktopAPI): DesktopRuntime {
     aliases,
   });
   externalVaultChanges.start();
+  // R008 Stage 2（§9）：Reveal in File Manager——会话身份反查 relativePath
+  // 后经桥走 Main 安全链路；消费侧以 capabilities.revealInFileManager 门控。
+  const revealService = new DesktopRevealService(api, sources, assets);
   const services: AppServices = {
     assets: assetsServices,
     capabilities: desktopCapabilities,
@@ -268,6 +272,9 @@ export function createDesktopRuntime(api: E1DesktopAPI): DesktopRuntime {
     documentSafety,
     // 外部 Vault 变更流（R007 阶段 3；消费侧以 capabilities.fileWatching 门控）。
     externalVaultChanges,
+    // Reveal in File Manager（R008 Stage 2；消费侧以
+    // capabilities.revealInFileManager 门控）。
+    revealService,
     preferencesService,
     syncChannel,
     documentVersionChannel,

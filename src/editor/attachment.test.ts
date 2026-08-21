@@ -194,3 +194,78 @@ describe("附件节点视图", () => {
     editor2.destroy();
   });
 });
+
+describe("附件「在文件管理器中显示」（R008 Stage 2 §9.4）", () => {
+  let editor: Editor | null = null;
+  afterEach(() => {
+    editor?.destroy();
+    editor = null;
+  });
+
+  function createWithReveal(revealService: unknown) {
+    // 先建空编辑器并注入 revealService（宿主按能力门控注入，DocumentEditor
+    // 在 onBeforeCreate 写入），再 setContent——节点视图创建时读取 storage。
+    const instance = createEditor();
+    (instance.storage as unknown as Record<string, unknown>).revealService =
+      revealService;
+    instance.commands.setContent({
+      type: "doc",
+      content: [
+        {
+          type: "attachment",
+          attrs: {
+            attachmentId: "asset-1",
+            name: "design.pdf",
+            mimeType: "application/pdf",
+            size: 1024,
+          },
+        },
+      ],
+    } as never);
+    return instance;
+  }
+
+  it("注入 revealService：出现「定位」按钮，点击以 attachmentId 调 revealAsset", async () => {
+    const revealAsset = vi.fn(async () => true);
+    editor = createWithReveal({ revealAsset });
+    const reveal = editor.view.dom.querySelector<HTMLButtonElement>(
+      "[aria-label^='在文件管理器中显示附件']",
+    );
+    expect(reveal).not.toBeNull();
+    reveal!.click();
+    await vi.waitFor(() => expect(revealAsset).toHaveBeenCalledWith("asset-1"));
+    expect(
+      editor.view.dom.querySelector(".attachment-block__status")?.textContent,
+    ).toBe("");
+  });
+
+  it("revealAsset 失败：就地提示「无法定位附件」，节点保留", async () => {
+    const revealAsset = vi.fn(async () => false);
+    editor = createWithReveal({ revealAsset });
+    editor.view.dom
+      .querySelector<HTMLButtonElement>(
+        "[aria-label^='在文件管理器中显示附件']",
+      )!
+      .click();
+    await vi.waitFor(() => {
+      expect(
+        editor!.view.dom.querySelector(".attachment-block__status")
+          ?.textContent,
+      ).toBe("无法定位附件");
+    });
+    expect(editor.getJSON().content?.some((n) => n.type === "attachment")).toBe(
+      true,
+    );
+  });
+
+  it("未注入 revealService（能力关闭/Web）：不出现「定位」入口", () => {
+    editor = createWithReveal(null);
+    expect(
+      editor.view.dom.querySelector("[aria-label^='在文件管理器中显示附件']"),
+    ).toBeNull();
+    // 下载/移除入口不受影响。
+    expect(
+      editor.view.dom.querySelector("[aria-label^='下载附件']"),
+    ).not.toBeNull();
+  });
+});

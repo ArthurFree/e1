@@ -26,6 +26,7 @@ import type {
   ReadNoteInput,
   RenameNoteFileInput,
   RestoreTrashInput,
+  RevealInput,
   SaveNoteInput,
   SecretGetInput,
   SecretRemoveInput,
@@ -460,6 +461,21 @@ export function parseResolveAssetUrlInput(payload: unknown): string {
     invalid("asset.resolveUrl 入参必须为非空 assetId 字符串");
   }
   return payload;
+}
+
+/**
+ * R008 Stage 2（§9.2/§15.1，R8-07）：note.reveal / asset.reveal 入参校验——
+ * 与 note.read 同口径：vaultId 非空 + relativePath 静态拒绝绝对路径/盘符/
+ * ".." 段；realpath 根内判定（symlink 逃逸）由 Main 侧 PathGuard 复查。
+ */
+export function parseRevealInput(payload: unknown): RevealInput {
+  if (!isRecord(payload)) invalid("reveal 入参必须为对象");
+  return {
+    vaultId: requireString(payload, "vaultId", { nonEmpty: true }),
+    relativePath: assertRelativePath(
+      requireString(payload, "relativePath", { nonEmpty: true }),
+    ),
+  };
 }
 
 /* ---------------------------------- secret ---------------------------------- */

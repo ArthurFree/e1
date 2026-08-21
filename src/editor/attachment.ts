@@ -13,6 +13,7 @@ import { Node } from "@tiptap/core";
 import type { Editor } from "@tiptap/core";
 import type { AssetServices } from "../application/assets/assetServices";
 import type { AssetImportSource } from "../application/assets/assetServices";
+import type { RevealService } from "../application/services/RevealService";
 import { isDomainError, isQuotaExceededError } from "../domain/errors";
 import { paperclipSvgString } from "../components/ui/icons";
 
@@ -28,6 +29,17 @@ export function getAssetServices(editor: Editor): AssetServices {
     throw new Error("资源服务未装配：editor.storage.assetServices 缺失");
   }
   return services;
+}
+
+/**
+ * R008 Stage 2（§9.4）：读取可选的 Reveal 服务（编辑器宿主按
+ * capabilities.revealInFileManager 门控注入——能力关闭时不注入，
+ * 附件块随之不出现「定位」入口；无此服务的运行时天然隐藏）。
+ */
+export function getRevealService(editor: Editor): RevealService | null {
+  const service = (editor.storage as unknown as Record<string, unknown>)
+    .revealService as RevealService | null | undefined;
+  return service ?? null;
 }
 
 /** 字节数的人性化展示（B/KB/MB，一位小数），用于附件块元信息。 */
@@ -248,6 +260,33 @@ export const Attachment = Node.create({
           .run();
       });
 
+      // R008 Stage 2（§9.4）：附件「在文件管理器中显示」——RevealService 由
+      // 宿主按能力门控注入，未注入（Web/能力关闭）时入口不存在。
+      const revealService = getRevealService(editor);
+      let reveal: HTMLButtonElement | null = null;
+      if (revealService) {
+        reveal = document.createElement("button");
+        reveal.type = "button";
+        reveal.className = "attachment-block__action";
+        reveal.textContent = "定位";
+        reveal.setAttribute(
+          "aria-label",
+          `在文件管理器中显示附件 ${node.attrs.name as string}`,
+        );
+        reveal.addEventListener("click", () => {
+          void (async () => {
+            status.textContent = "";
+            const ok = await revealService
+              .revealAsset(node.attrs.attachmentId as string)
+              .catch(() => false);
+            if (!ok) {
+              // 与「附件不可用」同级别的就地提示，不泄露任何路径信息。
+              status.textContent = "无法定位附件";
+            }
+          })();
+        });
+      }
+
       const sync = () => {
         name.textContent = (node.attrs.name as string) || "未命名附件";
         meta.textContent = `${node.attrs.mimeType} · ${formatBytes(node.attrs.size as number)}`;
@@ -255,6 +294,7 @@ export const Attachment = Node.create({
       sync();
 
       dom.append(icon, info, status, download, remove);
+      if (reveal) dom.append(reveal);
       return {
         dom,
         update(updated) {

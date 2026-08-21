@@ -19,6 +19,10 @@
  * Electron safeStorage 安全存储读写（userData/secrets.json 密文落盘；
  * 不安全 backend 降级 session-only 不落盘）。Renderer 不得知道存储路径、
  * 原始加密 buffer、OS keychain 标识；错误 details 不携带 secret 值。
+ * R008 Stage 2（§9，R8-07）：note.reveal / asset.reveal——在系统文件管理器
+ * 中显示 Vault 内文件。Renderer 只传 {vaultId, relativePath}（R8-07：
+ * absolutePath 只在 Main 内经授权边界 + PathGuard 解析，绝不由 Renderer
+ * 提供）；附件同样按 relativePath 寻址（Renderer 侧经会话资源索引反查）。
  *
  * shared/ 为 Renderer（src/platform/desktop）与 Electron Main/Preload 共用
  * 的唯一契约来源：channel 常量、请求/响应类型、E1DesktopAPI 形状。
@@ -50,6 +54,7 @@ export const IPC_CHANNELS = {
   notePatchMetadata: "note:patchMetadata",
   noteMove: "note:move",
   noteRenameFile: "note:renameFile",
+  noteReveal: "note:reveal",
   vaultCreateDirectory: "vault:createDirectory",
   vaultTrash: "vault:trash",
   vaultListTrash: "vault:listTrash",
@@ -59,6 +64,7 @@ export const IPC_CHANNELS = {
   assetImport: "asset:import",
   assetRead: "asset:read",
   assetResolveUrl: "asset:resolveUrl",
+  assetReveal: "asset:reveal",
   secretGet: "secret:get",
   secretSet: "secret:set",
   secretRemove: "secret:remove",
@@ -457,6 +463,22 @@ export interface RenameNoteFileResult {
   relativePath: string;
 }
 
+/* ---------------------------------- reveal ---------------------------------- */
+
+/**
+ * R008 Stage 2（§9.2/§9.3，R8-07）：在系统文件管理器中显示 Vault 内文件。
+ * note.reveal 与 asset.reveal 共用同一入参——Renderer 只传
+ * {vaultId, relativePath}（附件经 Renderer 会话资源索引反查 relativePath），
+ * 绝不传 absolutePath；Main 侧经授权边界（registry/transients 双通道）+
+ * PathGuard（realpath 根内判定，symlink 逃逸拒绝）解析后才调用
+ * shell.showItemInFolder。只读操作：transient 仅预览 Vault 同样允许。
+ */
+export interface RevealInput {
+  vaultId: string;
+  /** 相对 Vault 根的 POSIX 风格路径（文件或目录）。 */
+  relativePath: string;
+}
+
 /* ---------------------------------- asset ---------------------------------- */
 
 export interface AssetPickRequest {
@@ -655,6 +677,11 @@ export interface E1DesktopAPI {
      * 冲突报 VAULT_PATH_COLLISION。transient 拒写。
      */
     renameFile(input: RenameNoteFileInput): Promise<RenameNoteFileResult>;
+    /**
+     * R008 Stage 2（§9）：在系统文件管理器中显示该 Markdown 源文件；
+     * 只读操作（transient 允许），成功返回 null。
+     */
+    reveal(input: RevealInput): Promise<null>;
   };
   asset: {
     /** 原生文件选择；取消返回 null。不得返回绝对路径。 */
@@ -663,6 +690,11 @@ export interface E1DesktopAPI {
     read(input: ReadAssetInput): Promise<AssetReadResult>;
     /** 解析为 e1-asset:// URL（不含字节）。 */
     resolveUrl(assetId: string): Promise<string>;
+    /**
+     * R008 Stage 2（§9）：在系统文件管理器中显示该附件文件；
+     * 只读操作（transient 允许），成功返回 null。
+     */
+    reveal(input: RevealInput): Promise<null>;
   };
   /**
    * R008 Stage 1（§8.2/§8.3）：机密值读写（当前仅 AI API Key），Main 经
