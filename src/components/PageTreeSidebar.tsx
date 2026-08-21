@@ -29,6 +29,7 @@ import {
 } from "../state/NavigationContext";
 import { usePreferences } from "../state/PreferencesContext";
 import { useOverlay } from "../state/OverlayContext";
+import type { RuntimeOperations } from "../runtime/RuntimeOperations";
 import {
   IconChevronDown,
   IconChevronRight,
@@ -70,13 +71,11 @@ interface PageTreeBodyProps {
   /** 请求某页面进入行内重命名（新建分组后立即改名）。 */
   renameRequest?: Page | null;
   /**
-   * 操作支持矩阵（R007 阶段 4 §9，AppServices.operations.page）：
-   * false 的动作隐藏入口（而不是点了抛 NOT_IMPLEMENTED）。
+   * 操作支持矩阵 page 组（R007 阶段 4 §9；R008 Stage 0 R8-01 细分
+   * document/group）：false 的动作入口不存在（而不是点了抛
+   * NOT_IMPLEMENTED）。
    */
-  canCreateDocument: boolean;
-  canRenameTitle: boolean;
-  canTrash: boolean;
-  canMove: boolean;
+  pageOps: RuntimeOperations["page"];
 }
 
 /**
@@ -96,10 +95,7 @@ const PageTreeBody = memo(function PageTreeBody({
   onActionError,
   onPick,
   renameRequest,
-  canCreateDocument,
-  canRenameTitle,
-  canTrash,
-  canMove,
+  pageOps,
 }: PageTreeBodyProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -207,11 +203,20 @@ const PageTreeBody = memo(function PageTreeBody({
     } else if (event.key === "ArrowLeft" && page) {
       event.preventDefault();
       if (!collapsed.has(page.id)) toggleCollapse(page.id);
-    } else if (event.key === "F2" && page && canRenameTitle) {
+    } else if (event.key === "F2" && page && canRenameRow(page)) {
       event.preventDefault();
       startRename(page);
     }
   };
+
+  // R8-01：document 与 group 的操作支持分别门控——unsupported 操作
+  // 入口不存在（无按钮、不可拖拽、F2 不触发），而不是点了报错。
+  const canRenameRow = (page: Page) =>
+    page.kind === "group" ? pageOps.group.rename : pageOps.document.renameTitle;
+  const canMoveRow = (page: Page) =>
+    page.kind === "group" ? pageOps.group.move : pageOps.document.move;
+  const canTrashRow = (page: Page) =>
+    page.kind === "group" ? pageOps.group.trash : pageOps.document.trash;
 
   const renderRow = (page: Page, children: Page[]) => {
     const isCollapsed = collapsed.has(page.id);
@@ -224,7 +229,7 @@ const PageTreeBody = memo(function PageTreeBody({
         aria-expanded={children.length > 0 ? !isCollapsed : undefined}
         data-page-id={page.id}
         tabIndex={0}
-        draggable={canMove}
+        draggable={canMoveRow(page)}
         onDragStart={(event) => {
           dragIdRef.current = page.id;
           event.dataTransfer.setData(DND_MIME, page.id);
@@ -302,7 +307,7 @@ const PageTreeBody = memo(function PageTreeBody({
           </span>
         )}
         <span className="tree-row__actions">
-          {canCreateDocument && (
+          {pageOps.document.create && (
             <button
               type="button"
               className="tree-row__action"
@@ -316,7 +321,7 @@ const PageTreeBody = memo(function PageTreeBody({
               <IconPlus size={14} />
             </button>
           )}
-          {canRenameTitle && (
+          {canRenameRow(page) && (
             <button
               type="button"
               className="tree-row__action"
@@ -330,7 +335,7 @@ const PageTreeBody = memo(function PageTreeBody({
               <IconPencil size={14} />
             </button>
           )}
-          {canTrash && (
+          {canTrashRow(page) && (
             <button
               type="button"
               className="tree-row__action"
@@ -518,7 +523,7 @@ export function PageTreeSidebar() {
           >
             <IconImport />
           </button>
-          {operations.page.createDocument && (
+          {operations.page.document.create && (
             <button
               type="button"
               className="icon-button"
@@ -535,17 +540,20 @@ export function PageTreeSidebar() {
               <IconPlus />
             </button>
           )}
-          {operations.page.createGroup && (
+          {operations.page.group.create && (
             <button
               type="button"
               className="icon-button"
               aria-label="新建分组"
               title="新建分组"
               onClick={() => {
-                // 创建后立即进入重命名状态（经 renamingSeed 通知树主体）。
+                // 创建后立即进入重命名状态（经 renamingSeed 通知树主体）——
+                // 仅当 group.rename 受支持；Desktop 上分组 rename 未实现
+                // （R8-01），不得自动进入一个必然失败的 rename flow。
                 void (async () => {
                   const page = await createPage("group", null);
-                  if (page) setRenamingSeed(page);
+                  if (page && operations.page.group.rename)
+                    setRenamingSeed(page);
                 })().catch((err: unknown) =>
                   setActionError(
                     err instanceof Error ? err.message : "操作失败，请重试。",
@@ -596,10 +604,7 @@ export function PageTreeSidebar() {
         onActionError={setActionError}
         onPick={closeTreeDrawer}
         renameRequest={renamingSeed}
-        canCreateDocument={operations.page.createDocument}
-        canRenameTitle={operations.page.renameTitle}
-        canTrash={operations.page.trash}
-        canMove={operations.page.move}
+        pageOps={operations.page}
       />
       <div className="tree-tags" aria-label="标签筛选">
         <span className="tree-tags__label">标签</span>

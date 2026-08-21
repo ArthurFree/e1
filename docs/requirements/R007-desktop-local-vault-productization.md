@@ -1,8 +1,8 @@
 # R007：Desktop Local Vault 产品化基础闭环
 
 - **版本**：0.1
-- **状态**：实现中（阶段 0–4 已完成）
-- **更新时间**：2026-08-20
+- **状态**：已完成（阶段 0–4；原阶段 5 Secret/Reveal 已迁移至 R008 Stage 1–2，见 `R008-desktop-productization-search-scale.md`）
+- **更新时间**：2026-08-21
 - **基线 Commit**：`623f5292c290d0843d8e7eb72a7ce11bbaf22d06`
 - **前置阶段**：R006（Electron Desktop 本地 Vault 技术验证版）
 - **目标分支**：建议从 `main` 建立独立 R007 feature branch，按阶段提交，不一次性大改
@@ -112,6 +112,12 @@ R006 已经证明 E1 的双 Runtime 架构可行：
 - reveal in file manager 未实现；
 - native menu 未实现；
 - 安装器 / 签名 / 自动更新未实现。
+
+> **状态指针（2026-08-21）**：本节是 R007 启动前的基线快照，保留不改写。
+> 阶段 0–4 后的真实状态以 §7–§11 各阶段记录与 `AGENTS.md` 为准：
+> fileWatching 已翻 true、group create / document move / trash / restore /
+> purge / workspace 与 page favorite / page lastOpened 持久化均已实现；
+> 剩余 Secret / Reveal 两项迁移至 R008 Stage 1–2。
 
 ### 2.3 当前 CI 前置问题
 
