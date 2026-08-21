@@ -44,6 +44,16 @@
 
 搜索索引抽象为 `SearchIndexPort`（`src/application/services/SearchIndexPort.ts`，R005 阶段 6），Web 实现为工作区级内存索引 `BrowserMemorySearchIndex`（`src/platform/web/search/`，Desktop 未来可换 SQLite 实现）。会话加载不再携带正文：`prepareWorkspace(workspaceId)` 由索引实现自行经仓储读取页面与正文快照（`page.listByWorkspace` + `content.listByWorkspace`），幂等、重复调用等价于 `rebuild`。页面写操作 `syncPages`/`upsertDocument` 同步元数据、正文保存经 `DocumentCommitService.commit` 的 `updateText` 增量更新；查询语义与 `domain/search.ts` 的 `searchPages` 完全等价（测试强制）。索引未准备时查询返回空，由调用方回退全量扫描路径。索引是派生数据，同步失败不反向影响保存主流程。
 
+### Desktop 搜索派生索引（R008 Stage 3 契约冻结）
+
+Desktop 全文搜索沿用同一「派生数据」原则并固化为契约（R8-03/R8-04）：
+
+- **Markdown 是唯一正文真相，搜索索引是可完整重建的 derived data**——删除索引后重扫 Vault 即恢复全部搜索能力；索引数据绝不反向覆盖 Markdown；索引失败只进入 `degraded`/`corrupt` 状态，不阻断正文保存（R8-06）。
+- **契约落点**：`src/application/services/SearchContract.ts`——`SearchDocument`（`bodyText` 经 `shared/markdown/searchText.ts` 的 `markdownToSearchText` 从 Markdown 提取，Main 与 Renderer 共用同一实现）、`SearchResult`、`SearchIndexStatus` 五态（missing/building/ready/degraded/corrupt）与 port `FullTextSearchIndexPort`（prepareWorkspace/search/upsert/remove/rebuild/getStatus）。查询语义由契约层纯函数 `rankSearchDocuments` 可执行化（title > tag > body 权重 + 同分稳定排序 + limit ≤ 100），与底层存储/分词器解耦。
+- **Port 隔离（R8-04）**：`application/`、`domain/`、`components/` 只依赖该 port，禁止出现 `node:sqlite`/`better-sqlite3`/SQL 语句；Stage 4 的 SQLite 实现（`userData/search-index/<vaultId>.sqlite`，设备级派生状态，不进 Vault）经 adapter 接入，推荐「FTS 召回候选 + 契约层精排」。
+- **可替换性证明**：内存参照实现 `src/infrastructure/memory/fullTextSearchIndex.ts` 与 Stage 4 的 Desktop 实现必须通过同一契约套件（`src/test/searchIndexContract.ts`，含中文验收语料 `fixtures/search/corpus.ts`）与性能基线（`src/test/searchIndex.perf-wallclock.test.ts`，`fixtures/search/generator.ts` 确定性生成 1k/10k/50k）。
+- 与既有标题搜索 `SearchIndexPort`（workspaceId 语义，Web 现行链路）并存、互不影响；装配切换属 Stage 4。
+
 ## 恢复缓冲与损坏诊断（localStorage）
 
 - `pending-document-recovery:{pageId}`：未落盘正文快照兜底（beforeunload 不保证 IndexedDB 写入完成），保存成功即清除；读取时经正文白名单校验（Web 经 `RecoveryStore` port，实现见 `platform/web/webRecoveryStore.ts`）。

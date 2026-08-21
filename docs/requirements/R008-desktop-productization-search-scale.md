@@ -1,7 +1,7 @@
 # R008：Desktop 产品化收尾与搜索规模化
 
 - **版本**：0.1
-- **状态**：实现中（Stage 0–2 已完成）
+- **状态**：实现中（Stage 0–3 已完成）
 - **更新时间**：2026-08-21
 - **前置需求**：R007（Desktop Local Vault 产品化基础闭环）
 - **基线 Commit**：`065a0174657e5ea9c4c6510970b5809ed66a87c0`
@@ -1170,6 +1170,89 @@ watcher → searchable    < 1 s
 实际值以开发机与 CI benchmark 报告为准。
 
 Perf 独立运行，不塞进普通 unit test hard SLA。
+
+## 10.9 Stage 3 实现记录
+
+**状态：已完成（2026-08-21）**
+
+契约冻结终值：
+
+- **`src/application/services/SearchContract.ts`**（与既有
+  `SearchIndexPort` 同目录）：
+  - `SearchDocument{pageId, vaultId, stableNoteId, relativePath, title,
+    tags, bodyText, createdAt, updatedAt, versionToken}`（§10.3 终值）；
+  - `SearchResult{pageId, title, matchedField, snippet, score,
+    relativePath?}`（§10.4 终值；与 domain/types 的标题搜索
+    `SearchResult` 同名的遗留形状并存，消费方按模块路径区分，
+    Stage 4 接线时如需同文件引用用 import alias）；
+  - `SearchIndexStatus` 五态 / `SearchRebuildResult{indexedDocuments,
+    durationMs}` / `SearchQueryInput` / `SearchRemoveInput`；
+  - **新 port `FullTextSearchIndexPort`**：`prepareWorkspace(vaultId)` /
+    `search({vaultId?, query, limit})` / `upsert(doc)` /
+    `remove({vaultId, pageId})` / `rebuild(vaultId)` / `getStatus(vaultId)`。
+- **查询语义可执行化**（§10.6/§11.7 由纯函数实现而非注释约定）：
+  `normalizeSearchQuery`（trim + 小写，Unicode 安全）、
+  `scoreSearchDocument`（权重 exact title 100 > title prefix 80 >
+  title contains 60 > tag exact 45 > tag contains 40 > body 20）、
+  `makeSearchSnippet`（半径 30，保留原文大小写，正文未命中为 null）、
+  `compareSearchResults`（score 降序 → 标题码元升序 → pageId 升序，
+  与插入顺序无关）、`rankSearchDocuments`（空查询 []，limit 夹在
+  [0, `SEARCH_LIMIT_MAX=100`]）。所有实现的查询路径复用这些函数或
+  经契约测试证明等价。
+- **Markdown → searchable text**：`shared/markdown/searchText.ts` 的
+  `markdownToSearchText`（frontmatter 剥离；围栏代码保留内容去围栏；
+  链接锚文本/图片 alt 保留、URL 丢弃；表格管道/HTML 标签/水平线/
+  链接引用定义剔除；强调标记仅非词内边界剔除，snake_case 保留；
+  空白归一为单行）。零依赖、环境中立，Electron Main（Stage 4 扫描/
+  重建）与 Renderer 共用（frontmatter.ts 双端先例），NodeNext 下
+  以 `.js` 扩展名引用。
+- **内存参照实现**：`src/infrastructure/memory/fullTextSearchIndex.ts`
+  （vault 分桶存储 + 状态模型，查询完全委托契约层纯函数——即
+  Stage 4 推荐「存储/召回 + 契约层精排」分层的最小形态）。
+- **契约测试套件**（§17.2）：`src/test/searchIndexContract.ts`
+  14 组断言——upsert 幂等、同 pageId 覆盖后旧文本消失、remove 幂等、
+  query 确定性（乱序插入两实例一致）、rebuild 后结果一致、trim/
+  空查询/大小写/中文/emoji、title>tag>body 权重、同分稳定排序、
+  limit 上限 100 与截断、vault 隔离、跨 vault 合并、getStatus
+  状态机（missing → ready + rebuild 计数）、验收语料全量。
+  内存实现接入：`src/infrastructure/memory/fullTextSearchIndex.test.ts`；
+  Stage 4 Desktop 实现复跑同一套件。
+- **Benchmark 语料与基线**（§10.7/§10.8）：`fixtures/search/generator.ts`
+  （mulberry32 固定 seed 20260821，12 原型轮转覆盖 §10.7 全维度，
+  每篇产出 markdown + SearchDocument 双形态，bodyText 经
+  `markdownToSearchText` 真实提取；1k/10k/50k 参数化，实体不提交）+
+  `fixtures/search/corpus.ts`（12 文档 + 16 条固定 query 断言：
+  中文「知识库」「部署」、大小写 react/REACT/typescript、tag
+  exact/contains、emoji、代码词、snippet 原文大小写、空标题回退
+  「无标题」、跨 vault、limit）。`src/test/searchIndex.perf-wallclock.test.ts`
+  （内存实现占位：1k/10k build + 3 轮 warm query p50/p95 + 20 次单
+  文档 upsert p95，输出 §18 JSON 形状 `[search-benchmark]` 前缀），
+  在 `vitest.perf.config.ts` 覆盖范围内（`src/**/*perf-wallclock.test.ts`），
+  Stage 4 复用同一 harness（`runSearchBenchmark`）只换 `makeIndex`。
+  `tsconfig.json` include 增加 `fixtures`。
+
+中文搜索方案倾向（§11.4，最终由 Stage 4 实测确认）：**倾向方案 B
+（应用层 normalized bigram token + FTS）**。理由：契约层
+`rankSearchDocuments` 提供与底层分词器无关的精确打分与稳定排序，
+Stage 4 可用「FTS bigram 召回候选 + 契约层精排」保证契约套件与
+中文验收语料通过——中文可控、不引入 SQLite 原生扩展、跨平台
+packaging 简单；代价是索引体积增长，可接受（索引是 derived data，
+可随时重建）。方案 A（unicode61 + substring）作为实测 fallback。
+
+偏差记录：
+
+- §10.5 称「继续沿用/扩展 `SearchIndexPort`」——实际新建独立 port
+  `FullTextSearchIndexPort`：既有 port 的方法签名（workspaceId 语义、
+  `syncPages`/`updateText`/`has`/`query`、仓储取数）与 §10.5 模型
+  整体不兼容，扩展会波及 Web/内存/DesktopTitle 三实现与
+  `SearchQueryService` 回退链路的全部装配，违反最小破坏原则；
+  新旧 port 并存，Stage 4 由装配层接入新 port。
+- §10.7 的 `fixtures/search/1k/`、`10k/` 实体目录不提交（10k 实体
+  体积过大且无必要），全部规模由生成器参数化产出；提交的实体
+  只有验收语料 `corpus.ts`。
+- 测试用例按批次规则只写不跑，统一测试执行在全部阶段完成后进行；
+  本阶段已验证 `tsc --noEmit`（Web + Electron 双 tsconfig）与
+  eslint（全部新增文件 0 error）。
 
 ---
 
