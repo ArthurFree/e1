@@ -58,6 +58,7 @@ describe("preload 暴露形状", () => {
       "patchMetadata",
       "read",
       "renameFile",
+      "reveal",
       "save",
     ]);
     expect(Object.keys(api.asset).sort()).toEqual([
@@ -65,8 +66,16 @@ describe("preload 暴露形状", () => {
       "pick",
       "read",
       "resolveUrl",
+      "reveal",
     ]);
     expect(Object.keys(api.vaultState).sort()).toEqual(["get", "patch"]);
+    // R007 阶段 5：机密存储组（safeStorage 持久化 + 可用性探测）。
+    expect(Object.keys(api.secret).sort()).toEqual([
+      "get",
+      "remove",
+      "set",
+      "status",
+    ]);
   });
 });
 

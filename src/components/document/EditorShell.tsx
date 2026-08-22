@@ -28,6 +28,7 @@ import { SaveStateIndicator } from "../editor/SaveStateIndicator";
 import {
   IconAlertTriangle,
   IconExport,
+  IconFolderOpen,
   IconHistory,
   IconList,
   IconMenu,
@@ -77,6 +78,8 @@ export function EditorShell({
   const { openTreeDrawer } = useOverlay();
   const [tocOpen, setTocOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
+  // R007 阶段 5：「在文件管理器中显示」失败的一次性错误提示（手动关闭）。
+  const [revealError, setRevealError] = useState<string | null>(null);
 
   const { access, markdown } = compatibility;
   const { saveState } = conflict;
@@ -154,6 +157,28 @@ export function EditorShell({
             <IconHistory />
           </button>
         )}
+        {isDocument &&
+          services.capabilities.revealInFileManager &&
+          services.reveal && (
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="在文件管理器中显示"
+              title="在文件管理器中显示"
+              onClick={() => {
+                setRevealError(null);
+                const reveal = services.reveal;
+                if (!reveal || !page) return;
+                void reveal.revealPage(page.id).catch((err: unknown) => {
+                  setRevealError(
+                    err instanceof Error ? err.message : "操作失败，请重试。",
+                  );
+                });
+              }}
+            >
+              <IconFolderOpen />
+            </button>
+          )}
         <button
           type="button"
           className="icon-button"
@@ -277,6 +302,15 @@ export function EditorShell({
                     variant="ghost"
                     onClick={conflict.dismissExternalReloadNotice}
                   >
+                    关闭
+                  </Button>
+                </div>
+              )}
+              {revealError && (
+                // R007 阶段 5：「在文件管理器中显示」失败的一次性错误提示。
+                <div className="recovery-banner" role="alert">
+                  <span className="recovery-banner__text">{revealError}</span>
+                  <Button variant="ghost" onClick={() => setRevealError(null)}>
                     关闭
                   </Button>
                 </div>

@@ -1,6 +1,7 @@
 /**
  * R006-C5：Desktop 资源访问——显示走 e1-asset://，字节走 asset.read。
  * releaseUrl 为安全 no-op（协议 URL 不占用 Object URL）。
+ * R007 阶段 5：reveal 接 asset.reveal IPC（shell.showItemInFolder）。
  */
 import type { AssetAccessService } from "../../application/assets/assetServices";
 import type { Attachment, BinaryAttachment } from "../../domain/types";
@@ -58,6 +59,16 @@ export class DesktopAssetAccessService implements AssetAccessService {
     anchor.click();
     URL.revokeObjectURL(url);
     return true;
+  }
+
+  /** R007 阶段 5：在系统文件管理器中显示附件；失败（缺失/拒绝）返回 false。 */
+  async reveal(assetId: string): Promise<boolean> {
+    try {
+      await this.api.asset.reveal({ assetId });
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
 

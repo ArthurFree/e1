@@ -63,6 +63,11 @@ export type IpcErrorCode =
   | "VAULT_TRASH_NOT_FOUND"
   /** R007 阶段 4：恢复时确定性改名仍无法分配不冲突路径（递增耗尽）。 */
   | "VAULT_RESTORE_COLLISION"
+  /** R007 阶段 5：系统安全存储不可用且调用方要求持久化（当前保留码——
+   *  主路径是 Main 会话内存降级 + secret.status 报告，不抛本码）。 */
+  | "SECRET_STORAGE_UNAVAILABLE"
+  /** R007 阶段 5：reveal 目标不存在（note.reveal / asset.reveal）。 */
+  | "REVEAL_TARGET_NOT_FOUND"
   /** 未分类的 Main 侧内部错误。 */
   | "INTERNAL";
 
@@ -218,6 +223,10 @@ const IPC_TO_DOMAIN: Partial<Record<IpcErrorCode, string>> = {
   VAULT_RESERVED_PATH: "INVALID_INPUT",
   VAULT_TRASH_NOT_FOUND: "PAGE_NOT_FOUND",
   VAULT_RESTORE_COLLISION: "INVALID_INPUT",
+  // R007 阶段 5：REVEAL_TARGET_NOT_FOUND 映射既有 domain 码（note/asset
+  // 共用，UI 不需要进一步分流）；SECRET_STORAGE_UNAVAILABLE 无 domain
+  // 语义（主路径不抛，见上），反向映射得 null。
+  REVEAL_TARGET_NOT_FOUND: "PAGE_NOT_FOUND",
 };
 
 /** DomainError → IPC 错误载荷；未识别的 domain code 归一为 INTERNAL。 */

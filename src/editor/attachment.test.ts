@@ -193,4 +193,59 @@ describe("附件节点视图", () => {
     expect(await assetStore.getMetadata(record.id)).toBeDefined();
     editor2.destroy();
   });
+
+  it("access 未实现 reveal（Web/内存）：不出现「在文件夹中显示」入口", () => {
+    editor = createWithAttachment();
+    expect(
+      editor.view.dom.querySelector("[aria-label^='在文件夹中显示附件']"),
+    ).toBeNull();
+  });
+
+  it("access 实现 reveal（Desktop）：按钮出现，点击调 reveal，失败提示「无法定位文件」", async () => {
+    const base = createTestAssetServices();
+    const reveal = vi.fn(async () => true);
+    // 节点视图创建发生在内容装配时——先建空编辑器、注入服务，再写入内容。
+    const editor2 = new Editor({
+      element: document.createElement("div"),
+      extensions: buildDocumentExtensions(),
+    });
+    (editor2.storage as unknown as Record<string, unknown>).assetServices = {
+      ...base,
+      access: { ...base.access, reveal },
+    };
+    editor2.commands.setContent({
+      type: "doc",
+      content: [
+        {
+          type: "attachment",
+          attrs: {
+            attachmentId: "a-reveal",
+            name: "图.png",
+            mimeType: "image/png",
+            size: 10,
+          },
+        },
+      ],
+    });
+    const button = editor2.view.dom.querySelector<HTMLButtonElement>(
+      "[aria-label^='在文件夹中显示附件']",
+    )!;
+    expect(button).not.toBeNull();
+    button.click();
+    await vi.waitFor(() => expect(reveal).toHaveBeenCalledWith("a-reveal"));
+    expect(
+      editor2.view.dom.querySelector(".attachment-block__status")?.textContent,
+    ).toBe("");
+
+    // 失败（返回 false 或拒签）→ 状态文案。
+    reveal.mockRejectedValueOnce(new Error("目标不存在"));
+    button.click();
+    await vi.waitFor(() => {
+      expect(
+        editor2.view.dom.querySelector(".attachment-block__status")
+          ?.textContent,
+      ).toBe("无法定位文件");
+    });
+    editor2.destroy();
+  });
 });

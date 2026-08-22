@@ -21,6 +21,15 @@ vi.mock("electron", () => ({
   app: { getPath: () => tmpdir() },
   ipcMain: { handle: vi.fn() },
   dialog: { showOpenDialog: vi.fn() },
+  // R007 阶段 5：secret 组（safeStorage 加密持久化）与 reveal 组（shell）的
+  // 缺省依赖；本文件不调用这两组 handler，占位防 vitest 未定义导出报错。
+  safeStorage: {
+    isEncryptionAvailable: () => true,
+    encryptString: (plain: string) => Buffer.from(`enc:${plain}`, "utf8"),
+    decryptString: (encrypted: Buffer) =>
+      encrypted.toString("utf8").slice("enc:".length),
+  },
+  shell: { showItemInFolder: vi.fn() },
 }));
 
 type Handler = (

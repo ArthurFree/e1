@@ -248,13 +248,57 @@ export const Attachment = Node.create({
           .run();
       });
 
+      // R007 阶段 5：「在文件夹中显示」——仅附件拥有真实文件路径的运行时
+      //（Desktop 实现 AssetAccessService.reveal）才出现本入口。
+      // 服务未装配（或装配晚于节点创建）时按无能力处理，不阻断节点渲染。
+      const access = (() => {
+        try {
+          return getAssetServices(editor).access;
+        } catch {
+          return null;
+        }
+      })();
+      const revealFn =
+        access && typeof access.reveal === "function"
+          ? access.reveal.bind(access)
+          : null;
+      let reveal: HTMLButtonElement | null = null;
+      if (revealFn) {
+        reveal = document.createElement("button");
+        reveal.type = "button";
+        reveal.className = "attachment-block__action";
+        reveal.textContent = "在文件夹中显示";
+        reveal.setAttribute(
+          "aria-label",
+          `在文件夹中显示附件 ${node.attrs.name as string}`,
+        );
+        reveal.addEventListener("click", () => {
+          void (async () => {
+            status.textContent = "";
+            const ok = await revealFn(node.attrs.attachmentId as string).catch(
+              () => false,
+            );
+            if (!ok) {
+              status.textContent = "无法定位文件";
+            }
+          })();
+        });
+      }
+
       const sync = () => {
         name.textContent = (node.attrs.name as string) || "未命名附件";
         meta.textContent = `${node.attrs.mimeType} · ${formatBytes(node.attrs.size as number)}`;
       };
       sync();
 
-      dom.append(icon, info, status, download, remove);
+      dom.append(
+        icon,
+        info,
+        status,
+        download,
+        ...(reveal ? [reveal] : []),
+        remove,
+      );
       return {
         dom,
         update(updated) {

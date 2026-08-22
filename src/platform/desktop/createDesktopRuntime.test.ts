@@ -69,6 +69,13 @@ function mockApi(
       read: vi.fn(),
       resolveUrl: vi.fn(),
     },
+    // R007 阶段 5：机密存储组（DesktopSecretStore 透传）。
+    secret: {
+      status: vi.fn(async () => ({ available: true })),
+      get: vi.fn(async () => null),
+      set: vi.fn(async () => {}),
+      remove: vi.fn(async () => {}),
+    },
     // R007 阶段 3：事件组（createDesktopRuntime 装配即 start 订阅）。
     events: {
       subscribeVaultChanges: vi.fn(() => () => {}),
@@ -83,8 +90,54 @@ describe("createDesktopRuntime（IPC-backed）", () => {
 
   it("capabilities 为桌面能力矩阵（runtime 与 services 两处一致）", () => {
     const runtime = createDesktopRuntime(mockApi());
-    expect(runtime.capabilities).toBe(desktopCapabilities);
-    expect(runtime.services.capabilities).toBe(desktopCapabilities);
+    // R007 阶段 5：capabilities 是静态矩阵的运行时副本（nativeSecrets 探测覆盖），
+    // 缺省与静态矩阵等值但不是同一对象引用。
+    expect(runtime.capabilities).toEqual(desktopCapabilities);
+    expect(runtime.services.capabilities).toBe(runtime.capabilities);
+  });
+
+  it("nativeSecrets 按 secret.status 探测值覆盖（R007 阶段 5，G3）", () => {
+    const available = createDesktopRuntime(mockApi(), { nativeSecrets: true });
+    expect(available.capabilities.nativeSecrets).toBe(true);
+    expect(available.services.capabilities.nativeSecrets).toBe(true);
+    expect(available.services.secretStorageStatus).toEqual({
+      native: true,
+      persistent: true,
+    });
+    // 缺省/显式 false：安全降级——不声称系统安全存储。
+    const degraded = createDesktopRuntime(mockApi(), { nativeSecrets: false });
+    expect(degraded.capabilities.nativeSecrets).toBe(false);
+    expect(degraded.services.secretStorageStatus).toEqual({
+      native: false,
+      persistent: false,
+    });
+    expect(createDesktopRuntime(mockApi()).capabilities.nativeSecrets).toBe(
+      false,
+    );
+  });
+
+  it("secretStore 经 api.secret 透传（R007 阶段 5：替换内存 PoC）", async () => {
+    const api = mockApi();
+    (api.secret.get as ReturnType<typeof vi.fn>).mockResolvedValue("sk-机密");
+    const { services } = createDesktopRuntime(api);
+    await expect(services.secretStore.get("ai.apiKey")).resolves.toBe(
+      "sk-机密",
+    );
+    expect(api.secret.get).toHaveBeenCalledWith("ai.apiKey");
+  });
+
+  it("reveal：装配 RevealService 并解析页面为 vaultId + relativePath（R007 阶段 5）", async () => {
+    const api = mockApi();
+    (api.note as unknown as { reveal: ReturnType<typeof vi.fn> }).reveal =
+      vi.fn(async () => {});
+    const { services } = createDesktopRuntime(api);
+    expect(services.reveal).toBeDefined();
+    await services.queries.workspace.loadSession("v1");
+    await services.reveal!.revealPage("01JABC");
+    expect(api.note.reveal).toHaveBeenCalledWith({
+      vaultId: "v1",
+      relativePath: "学习/React.md",
+    });
   });
 
   it("返回完整 AppServices 形状", () => {

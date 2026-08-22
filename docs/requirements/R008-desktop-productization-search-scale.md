@@ -1,0 +1,1924 @@
+# R008：Desktop 产品化收尾与搜索规模化
+
+- **版本**：0.1
+- **状态**：草案
+- **更新时间**：2026-08-21
+- **前置需求**：R007（Desktop Local Vault 产品化基础闭环）
+- **基线 Commit**：`065a0174657e5ea9c4c6510970b5809ed66a87c0`
+- **建议目标分支**：`feat/r008-desktop-productization-search-scale`
+- **建议仓库路径**：`docs/requirements/R008-desktop-productization-search-scale.md`
+
+---
+
+# 1. 背景
+
+R006 已经验证 Electron Desktop + Local Markdown Vault 的双 Runtime 技术路线可行；R007 阶段 0–4 进一步把 Desktop 从 PoC 推进到了基本可日用状态。
+
+当前 Desktop 已真实具备：
+
+- 本地 Vault 选择、初始化、最近知识库；
+- Markdown 扫描、读取、创建、安全保存；
+- Tiptap ↔ Markdown 持久化编解码；
+- Stable Note ID / Identity Adoption；
+- Frontmatter `title` / `tags` 安全写入；
+- 乐观锁与 `DocumentVersionChannel`；
+- 本地附件与相对资源路径；
+- 收藏 / 最近打开设备级持久化；
+- chokidar 文件监听；
+- 外部新增 / 修改 / 删除 / 移动 reconciliation；
+- 当前文档 clean reload / dirty conflict；
+- 新建真实目录；
+- 文档移动；
+- 回收站删除 / 恢复 / 永久删除；
+- `RuntimeCapabilities` 与 `RuntimeOperations` 双层能力门控；
+- Desktop golden E2E 已覆盖打开、保存、附件、metadata、watcher、回收站等关键路径。
+
+因此下一阶段的核心问题已经从：
+
+> Desktop 能否正确读写一个本地 Markdown Vault？
+
+转变为：
+
+> Desktop 是否已经足够安全、一致、可搜索、可扩展，能够承担大规模本地知识库的日常主力使用？
+
+本需求把两类工作合并到一个连续版本中：
+
+1. **R007 的剩余产品化收口项**：修复现有 Operation Support 语义不准确、Runtime 依赖边界、Native Secret Store、Reveal in File Manager 等遗留问题。
+2. **R008 的正式能力建设**：建立 Desktop 全文搜索、可重建派生索引、增量索引、性能基线和规模化验收。
+
+本需求完成后，R007 不再继续追加阶段；Desktop 后续能力以新的独立需求编号演进。
+
+---
+
+# 2. 当前状态
+
+## 2.1 当前 RuntimeCapabilities
+
+当前 Desktop 能力约为：
+
+```ts
+{
+  localDirectory: true,
+  fileWatching: true,
+  revealInFileManager: false,
+  nativeMenu: false,
+  nativeSecrets: false,
+  persistentAssetPaths: true,
+  documentPersistence: true,
+}
+```
+
+其中：
+
+- `localDirectory`：真实；
+- `fileWatching`：真实；
+- `persistentAssetPaths`：真实；
+- `documentPersistence`：真实；
+- `revealInFileManager`：未实现；
+- `nativeSecrets`：未实现；
+- `nativeMenu`：本需求不实现。
+
+## 2.2 当前 RuntimeOperations
+
+当前 Desktop 操作矩阵约为：
+
+```ts
+{
+  workspace: {
+    rename: false,
+    favorite: true,
+  },
+  page: {
+    createDocument: true,
+    createGroup: true,
+    renameTitle: true,
+    renameFile: false,
+    move: true,
+    trash: true,
+    restore: true,
+    purge: true,
+    favorite: true,
+  },
+  tag: {
+    write: true,
+  },
+  revision: {
+    read: false,
+    write: false,
+  },
+}
+```
+
+这个矩阵目前存在一个语义问题：
+
+```text
+page.renameTitle = true
+page.move = true
+```
+
+实际上只完整适用于 document：
+
+```text
+Document rename title    ✅
+Group rename directory   ❌
+
+Document move            ✅
+Group move directory     ❌
+```
+
+因此当前某些 Group UI 操作仍可能出现：
+
+```text
+入口可见
+→ 用户操作
+→ Repository
+→ NOT_IMPLEMENTED
+```
+
+这违反 R007 的 G4 原则：
+
+> 已显示给 Desktop 用户的主操作，要么真实可用，要么明确隐藏 / 禁用。
+
+## 2.3 当前 Desktop Search
+
+Desktop 当前使用：
+
+```text
+DesktopTitleSearchIndex
+```
+
+其目标是避免在没有完整正文索引时伪装成“全文搜索”。
+
+现状：
+
+- 标题搜索可用；
+- 正文搜索不完整；
+- Watcher 已具备增量事件基础；
+- Markdown 是唯一正文真相；
+- 当前尚无持久化 Desktop 全文索引数据库；
+- 当前尚无索引版本、重建、损坏恢复和性能基线。
+
+---
+
+# 3. 产品目标
+
+本需求包含五个正式目标。
+
+## G1：产品操作能力必须与真实实现一致
+
+Desktop 中所有页面树操作必须满足：
+
+```text
+Visible / Enabled
+=> 真实支持
+```
+
+禁止：
+
+```text
+Visible
+→ click / drag
+→ NOT_IMPLEMENTED
+```
+
+必须明确区分：
+
+- document rename；
+- group rename；
+- document move；
+- group move；
+- title rename；
+- physical file rename。
+
+## G2：Desktop Secret 必须安全持久化
+
+AI API Key：
+
+- 不进入 Markdown；
+- 不进入 Vault；
+- 不进入 localStorage；
+- 不进入日志；
+- 不进入测试 artifact；
+- 系统安全存储可用时安全持久化；
+- 系统安全存储不可安全使用时只允许 session-only；
+- UI 必须能表达当前 secret persistence mode。
+
+## G3：Desktop 可以安全定位本地文件
+
+用户可以：
+
+- 在文件管理器中显示当前 Markdown；
+- 在文件管理器中显示本地附件。
+
+安全约束：
+
+- Renderer 永远不传 absolutePath；
+- Main 必须重新通过 Vault 授权边界解析路径；
+- malformed / 越界路径必须拒绝；
+- Reveal 不得绕过 `PathGuard`。
+
+## G4：Desktop 支持真实全文搜索
+
+搜索至少支持：
+
+- title；
+- tags；
+- Markdown body text。
+
+搜索结果至少返回：
+
+- note/page identity；
+- title；
+- match source；
+- snippet；
+- ranking score 或稳定排序依据。
+
+## G5：全文索引可以增量维护且永远可重建
+
+索引不是正文真相。
+
+必须满足：
+
+```text
+删除 Desktop 搜索数据库
+→ 重新扫描 Markdown Vault
+→ 完整恢复搜索能力
+```
+
+Watcher 驱动：
+
+```text
+created
+modified
+moved
+deleted
+```
+
+必须正确映射到索引：
+
+```text
+insert
+update
+relocate
+delete
+```
+
+任何索引错误都不能损坏 Markdown。
+
+---
+
+# 4. 非目标
+
+本需求明确不做：
+
+- Cloud Sync；
+- 多设备同步；
+- Git 集成；
+- 插件系统；
+- 实时多人协作；
+- 多窗口完整同步；
+- Native Menu 完整体系；
+- 系统托盘；
+- 自动更新；
+- 正式安装器；
+- 代码签名；
+- Desktop 完整 Revision History；
+- Notion database；
+- `.e1/tree.json` 自定义目录排序；
+- 自动批量重写所有第三方 Markdown 相对链接；
+- SQLite 作为 Markdown 正文真相；
+- 搜索数据库成为主存储；
+- 向 Renderer 暴露本机绝对路径；
+- Group rename / Group move 的完整文件系统实现；
+- Physical file rename UI；
+- backlinks / knowledge graph；
+- 向量数据库 / semantic search；
+- RAG / embedding；
+- 云端搜索服务。
+
+其中 Group rename / move、Revision、backlinks、installer / updater 必须独立进入后续需求，而不是继续扩大 R008。
+
+---
+
+# 5. 新增架构不变量
+
+在既有 DUAL / DSK 不变量基础上新增：
+
+## R8-01：Operation Support 必须描述业务对象，而不是模糊 Page
+
+错误：
+
+```ts
+page.move = true
+```
+
+如果 document 和 group 的实现不同。
+
+正确方向：
+
+```ts
+page.document.move
+page.group.move
+```
+
+或提供：
+
+```ts
+operations.canMove(page)
+operations.canRename(page)
+```
+
+UI 不得自己判断平台名称。
+
+## R8-02：Secret capability 与 Secret runtime status 分离
+
+Capability：
+
+```text
+这个 Runtime 是否实现了 native secret integration
+```
+
+Status：
+
+```text
+这台机器当前是否真的有安全 secret backend
+```
+
+不能用单一静态 boolean 表达两者。
+
+## R8-03：搜索数据库只是 Derived Data
+
+```text
+Markdown
+= source of truth
+
+Search DB
+= rebuildable derived state
+```
+
+禁止：
+
+```text
+Search DB 中的数据
+→ 反向覆盖 Markdown
+```
+
+## R8-04：索引 API 不泄露具体数据库实现
+
+Application 层只依赖 `SearchIndexPort` 或新增 Desktop-neutral port。
+
+禁止 `application/`、`domain/`、`components/` 直接 import：
+
+```text
+node:sqlite
+better-sqlite3
+SQL statements
+```
+
+## R8-05：Watcher 只发布事实，Index Service 自行决定索引动作
+
+```text
+Watcher
+→ ExternalVaultChangeService
+→ normalized change event
+→ Search Index Reconciler
+```
+
+禁止：
+
+```text
+VaultWatcher
+→ 直接执行 SQL
+```
+
+## R8-06：任何索引失败不得阻断正文保存
+
+```text
+Markdown commit success
+→ index update failure
+```
+
+最终语义必须是：
+
+```text
+文档保存成功
+搜索索引进入 degraded / dirty
+后续自动修复或重建
+```
+
+## R8-07：Reveal 路径只能在 Main 内解析
+
+Renderer 仅允许：
+
+```ts
+{ vaultId, relativePath }
+```
+
+或：
+
+```ts
+{ vaultId, assetId }
+```
+
+Main：
+
+```text
+VaultRegistry
+→ authorization
+→ PathGuard
+→ absolute path
+→ shell.showItemInFolder
+```
+
+---
+
+# 6. 阶段拆分
+
+本需求建议分为 7 个阶段：
+
+```text
+Stage 0  R007 遗留一致性收口
+Stage 1  Native Secret Store
+Stage 2  Reveal in File Manager
+Stage 3  Search Contract + Benchmark
+Stage 4  Desktop Search Database + Full Text
+Stage 5  Watcher Incremental Index
+Stage 6  Rebuild / Recovery / Scale Acceptance
+```
+
+不要一次性提交。
+
+---
+
+# 7. Stage 0：R007 遗留一致性收口
+
+## 7.1 目标
+
+在开始新的搜索基础设施前，清理当前已经明确存在的产品能力与工程依赖不一致。
+
+## 7.2 RuntimeOperations 精确化
+
+推荐把 `page` 操作细分到 document / group：
+
+```ts
+interface RuntimeOperations {
+  workspace: {
+    rename: boolean;
+    favorite: boolean;
+  };
+
+  page: {
+    document: {
+      create: boolean;
+      renameTitle: boolean;
+      renameFile: boolean;
+      move: boolean;
+      trash: boolean;
+      favorite: boolean;
+    };
+
+    group: {
+      create: boolean;
+      rename: boolean;
+      move: boolean;
+      trash: boolean;
+    };
+
+    trash: {
+      restore: boolean;
+      purge: boolean;
+    };
+  };
+
+  tag: {
+    write: boolean;
+  };
+
+  revision: {
+    read: boolean;
+    write: boolean;
+  };
+}
+```
+
+Desktop：
+
+```ts
+page.document.renameTitle = true
+page.document.move = true
+
+page.group.rename = false
+page.group.move = false
+```
+
+Web 可保持完整 true。
+
+如果认为接口改动过大，可先增加：
+
+```ts
+interface PageOperationPolicy {
+  canRename(page: Page): boolean;
+  canMove(page: Page): boolean;
+}
+```
+
+但长期更推荐静态 operation matrix + 对象类型细分。
+
+## 7.3 PageTreeSidebar 行为
+
+必须达到：
+
+```text
+Document
+├─ rename title ✅
+├─ drag move    ✅
+└─ trash        ✅
+
+Group
+├─ rename       ❌ hidden
+├─ drag move    ❌ disabled
+└─ trash        ✅
+```
+
+要求：
+
+- F2 在 unsupported Group 上不触发 rename；
+- Group 不设置 `draggable=true`；
+- drag visual hint 不应出现在 unsupported source 上；
+- 新建 Group 后不得自动进入一个必然失败的 rename flow；
+- unsupported operation 不显示错误条，因为用户根本不能发起。
+
+## 7.4 chokidar Runtime Dependency 修正
+
+当前 Electron Main bundle：
+
+```js
+external: ["electron", "chokidar"]
+```
+
+因此 `chokidar` 是 runtime dependency。
+
+要求：
+
+- 将 `chokidar` 从 `devDependencies` 移到 `dependencies`；
+- 新增构建级测试，保证 Electron Main 的第三方 `external` 包均存在于 production dependencies；
+- CI 中增加 production-runtime sanity：
+
+```bash
+npm ci
+npm run build:desktop
+npm prune --omit=dev
+# 验证 Electron main 可解析全部 external runtime dependency
+```
+
+可不实际启动完整 GUI，但必须能完成 Main module resolution。
+
+## 7.5 文档状态修正
+
+R007 文档中的 Current State 必须同步真实状态：
+
+- `fileWatching: true`；
+- group create 已实现；
+- document move 已实现；
+- trash / restore / purge 已实现；
+- workspace/page favorite 已实现；
+- page lastOpened 已持久；
+- R007 阶段 0–4 已完成；
+- 明确 Stage 5 已迁移到 R008 Stage 1–2；
+- R007 状态更新为 `待验收` 或 `已完成`。
+
+## 7.6 Stage 0 DoD
+
+- document/group operation UI 与真实支持一致；
+- Group 不再触发已知 `NOT_IMPLEMENTED`；
+- chokidar production dependency 正确；
+- production-pruned runtime dependency test 通过；
+- Web operation behavior 无回归；
+- Desktop E2E 全绿；
+- R007 文档关闭，不再添加 Stage 6+。
+
+---
+
+# 8. Stage 1：Native Secret Store
+
+## 8.1 目标
+
+把当前 Desktop `InMemorySecretStore` 替换为真实安全存储。
+
+## 8.2 数据流
+
+```text
+AIConfigService
+→ SecretStore
+→ DesktopSecretStore
+→ E1DesktopAPI.secret
+→ preload
+→ IPC
+→ Main SecretPersistence
+→ Electron safeStorage
+→ userData/secrets.json
+```
+
+Application 层不改变 secret 使用方式。
+
+## 8.3 IPC
+
+新增：
+
+```ts
+secret.get({ name })
+secret.set({ name, value })
+secret.remove({ name })
+secret.getStatus()
+```
+
+Renderer 不得知道：
+
+- storage path；
+- encryption raw buffer；
+- OS keychain identifier；
+- machine absolute path。
+
+## 8.4 Main Secret Persistence
+
+建议：
+
+```text
+electron/main/secrets/
+├─ DesktopSecretStore.ts
+├─ SecretFilePersistence.ts
+├─ SecretBackendStatus.ts
+└─ *.test.ts
+```
+
+持久文件：
+
+```text
+userData/secrets.json
+```
+
+建议格式：
+
+```json
+{
+  "version": 1,
+  "entries": {
+    "ai.apiKey": {
+      "ciphertext": "<base64>",
+      "updatedAt": 1787300000000
+    }
+  }
+}
+```
+
+不得保存明文 API Key。
+
+## 8.5 safeStorage 使用原则
+
+优先异步接口：
+
+```ts
+safeStorage.encryptStringAsync()
+safeStorage.decryptStringAsync()
+```
+
+如果当前 Electron API 可用。
+
+需要检查：
+
+```ts
+safeStorage.isEncryptionAvailable()
+```
+
+Linux 还必须检查 encryption backend。
+
+如果平台只能使用不安全 backend，例如 `basic_text`，则：
+
+```text
+mode = "session-only"
+```
+
+禁止自动把 API Key 明文或弱保护落盘。
+
+## 8.6 SecretStorageStatus
+
+新增平台无关状态：
+
+```ts
+export interface SecretStorageStatus {
+  mode:
+    | "secure-persistent"
+    | "session-only"
+    | "unavailable";
+
+  backend?: string;
+  reason?: string;
+}
+```
+
+区分：
+
+```text
+RuntimeCapabilities.nativeSecrets
+= Desktop 接入了 native secret system
+
+SecretStorageStatus.mode
+= 当前机器实际运行状态
+```
+
+Desktop capability 可以表示 `nativeSecrets: true`，但实际持久性由 status 决定。
+
+## 8.7 Renderer 行为
+
+安全可用：
+
+```text
+API Key 会安全保存在本机系统凭据存储中
+```
+
+Session-only：
+
+```text
+当前系统安全存储不可用，API Key 仅在本次会话有效
+```
+
+禁止 fallback 到 localStorage。
+
+## 8.8 Stage 1 验收
+
+- macOS / Windows 安全 backend 下 API Key 重启保持；
+- Linux 安全 backend 下可持久；
+- insecure backend 下不持久明文 secret；
+- `secrets.json` 中看不到原始 API Key；
+- corrupted secrets file 可自愈或安全降级；
+- unknown schema version 不覆盖原文件；
+- secret 不进入日志；
+- secret 不进入 Playwright screenshot / artifact；
+- `AIConfigService` 无需知道 Electron。
+
+---
+
+# 9. Stage 2：Reveal in File Manager
+
+## 9.1 目标
+
+Desktop 用户可以定位：
+
+- 当前 Markdown 文件；
+- 本地附件文件。
+
+## 9.2 IPC
+
+推荐：
+
+```ts
+note.reveal({
+  vaultId,
+  relativePath
+})
+```
+
+附件：
+
+```ts
+asset.reveal({
+  vaultId,
+  assetId
+})
+```
+
+## 9.3 Main 安全链路
+
+```text
+Renderer vaultId + relativePath
+→ IPC schema validation
+→ VaultRegistry
+→ authorized root
+→ PathGuard
+→ ensure target belongs to Vault
+→ shell.showItemInFolder(absolutePath)
+```
+
+禁止：
+
+```ts
+shell.showItemInFolder(rendererProvidedAbsolutePath)
+```
+
+## 9.4 UI
+
+文档：
+
+```text
+EditorShell
+└─ 更多
+   └─ 在文件管理器中显示
+```
+
+附件：
+
+```text
+Attachment context menu
+└─ 在文件管理器中显示
+```
+
+只在 `capabilities.revealInFileManager === true` 时显示。
+
+## 9.5 Stage 2 验收
+
+- note reveal 成功；
+- asset reveal 成功；
+- malformed relative path 拒绝；
+- `../` 逃逸拒绝；
+- symlink escape 拒绝；
+- transient Vault 行为明确；
+- Renderer 无 absolutePath；
+- capability 翻为 true；
+- Web UI 不出现该入口。
+
+---
+
+# 10. Stage 3：Search Contract + Benchmark
+
+## 10.1 目标
+
+在写数据库之前先冻结：
+
+- 搜索语义；
+- Search Port；
+- Index document model；
+- ranking baseline；
+- benchmark fixture；
+- correctness test corpus。
+
+不允许一边写 SQL 一边决定产品语义。
+
+## 10.2 搜索范围
+
+R008 第一版搜索：
+
+```text
+title
+tags
+body plain text
+```
+
+不做 semantic embedding、OCR、PDF indexing、image content、code intelligence、backlinks。
+
+## 10.3 SearchDocument
+
+建议：
+
+```ts
+interface SearchDocument {
+  pageId: string;
+  vaultId: string;
+  stableNoteId: string | null;
+  relativePath: string;
+
+  title: string;
+  tags: string[];
+  bodyText: string;
+
+  createdAt: number | null;
+  updatedAt: number | null;
+  versionToken: string;
+}
+```
+
+`bodyText` 来源：
+
+```text
+Markdown
+→ codec / parser
+→ searchable plain text
+```
+
+不要直接把原始 Markdown syntax 作为唯一索引文本。
+
+## 10.4 SearchResult
+
+建议：
+
+```ts
+interface SearchResult {
+  pageId: string;
+  title: string;
+
+  matchedField:
+    | "title"
+    | "tag"
+    | "body";
+
+  snippet: string | null;
+  score: number;
+  relativePath?: string;
+}
+```
+
+## 10.5 Search API
+
+继续沿用 / 扩展 `SearchIndexPort`：
+
+```ts
+prepareWorkspace(vaultId): Promise<void>;
+
+search(input: {
+  vaultId?: string;
+  query: string;
+  limit: number;
+}): Promise<SearchResult[]>;
+
+upsert(doc: SearchDocument): Promise<void>;
+
+remove(input: {
+  vaultId: string;
+  pageId: string;
+}): Promise<void>;
+
+rebuild(vaultId: string): Promise<SearchRebuildResult>;
+getStatus(vaultId: string): Promise<SearchIndexStatus>;
+```
+
+## 10.6 Query 规则
+
+第一版定义：
+
+- trim query；
+- 空字符串返回空结果；
+- Unicode / 中文必须支持；
+- 大小写默认不敏感；
+- title 命中权重最高；
+- tag 次之；
+- body 最低；
+- 相同 score 使用稳定排序；
+- limit 必须有上限，例如 100；
+- 不做复杂 query language。
+
+## 10.7 Benchmark Fixture
+
+建立：
+
+```text
+fixtures/search/
+├─ 1k/
+├─ 10k/
+└─ generator.ts
+```
+
+50k 可以程序生成，不提交完整大体积 fixture。
+
+文档分布至少包含：
+
+- 中文标题；
+- 英文标题；
+- 中英混合；
+- 多标签；
+- 长文；
+- 短文；
+- 深目录；
+- 重复词；
+- 高频词；
+- emoji；
+- code block；
+- links；
+- tables；
+- frontmatter。
+
+## 10.8 Performance Baseline
+
+目标级：
+
+```text
+1k notes rebuild        < 1~2 s 目标区间
+10k notes rebuild       < 10 s 目标区间
+search warm query       < 100 ms
+single document upsert  < 50 ms
+watcher → searchable    < 1 s
+```
+
+实际值以开发机与 CI benchmark 报告为准。
+
+Perf 独立运行，不塞进普通 unit test hard SLA。
+
+---
+
+# 11. Stage 4：Desktop Search Database + Full Text
+
+## 11.1 技术选型
+
+首选评估：
+
+```text
+node:sqlite
+```
+
+原因：
+
+- Electron 当前自带 Node；
+- 避免额外 native addon rebuild；
+- 降低跨平台 packaging 复杂度；
+- 能放在 Electron Main；
+- 搜索 DB 只是 derived index，可替换。
+
+但必须通过 adapter 隔离：
+
+```text
+SearchIndexPort
+        ↓
+DesktopSearchIndex
+        ↓
+DesktopSearchDatabase
+        ↓
+node:sqlite
+```
+
+如果实测 FTS 能力不满足、Electron bundled Node API 不合适或性能不达标，允许改用 `better-sqlite3`，但不能影响 Application / Domain。
+
+## 11.2 数据库位置
+
+推荐：
+
+```text
+userData/search-index/<vaultId>.sqlite
+```
+
+不要放 `Vault/.e1/`。
+
+理由：
+
+- 搜索索引是设备级派生状态；
+- 不应该污染用户 Markdown Vault；
+- 不应该跟随 Vault 同步到第三方设备；
+- 删除 userData 索引不影响正文。
+
+## 11.3 Schema
+
+示意：
+
+```sql
+CREATE TABLE index_meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
+CREATE TABLE notes (
+  page_id TEXT PRIMARY KEY,
+  vault_id TEXT NOT NULL,
+  stable_note_id TEXT,
+  relative_path TEXT NOT NULL,
+  title TEXT NOT NULL,
+  tags_json TEXT NOT NULL,
+  version_token TEXT NOT NULL,
+  updated_at INTEGER
+);
+```
+
+全文表：
+
+```text
+notes_fts
+```
+
+字段：
+
+```text
+title
+tags
+body
+```
+
+具体 FTS tokenizer 必须通过中文搜索测试后再冻结。
+
+## 11.4 中文搜索
+
+这是本阶段的重要风险项。
+
+SQLite 默认 tokenizer 对中文分词能力有限。
+
+第一版可接受两种方案：
+
+### 方案 A：unicode61 + substring/prefix 策略
+
+优点：
+
+- 实现简单；
+- 无额外原生扩展。
+
+缺点：
+
+- 中文检索效果有限。
+
+### 方案 B：应用层生成 normalized searchable tokens
+
+```text
+Markdown body
+→ normalize
+→ char n-gram / bigram
+→ FTS token stream
+```
+
+优点：
+
+- 不引入 SQLite extension；
+- 中文可控。
+
+缺点：
+
+- 索引体积增长。
+
+R008 必须通过真实中文 corpus 决定，不允许只用英文 benchmark。
+
+## 11.5 Initial Rebuild
+
+首次打开一个没有索引的 Vault：
+
+```text
+Vault scan
+→ SearchIndexStatus = rebuilding
+→ batch read notes
+→ parse/search text
+→ transaction batch upsert
+→ commit
+→ status ready
+```
+
+UI 可以显示：
+
+```text
+搜索索引正在建立
+```
+
+但页面树和编辑器必须先可使用，不能阻断打开 Vault。
+
+## 11.6 Batch Strategy
+
+禁止每个 note 一个 transaction。
+
+建议：
+
+```text
+100~500 docs / transaction
+```
+
+具体经 benchmark 决定。
+
+## 11.7 Search Ranking
+
+第一版可定义：
+
+```text
+exact title
+> title prefix
+> title contains
+> tag match
+> body match
+```
+
+必须保证同一查询结果排序稳定。
+
+---
+
+# 12. Stage 5：Watcher Incremental Index
+
+## 12.1 目标
+
+在 Stage 4 完成后，不再每次 Vault 变化都全量 rebuild。
+
+## 12.2 数据流
+
+```text
+VaultWatcher
+→ events:vaultChanges
+→ DesktopExternalVaultChangeService
+→ normalized:
+   created
+   modified
+   moved
+   deleted
+→ DesktopSearchIndexReconciler
+→ SearchIndexPort
+```
+
+## 12.3 事件行为
+
+### created
+
+```text
+read new note
+→ parse
+→ upsert
+```
+
+### modified
+
+先比较 `versionToken`。
+
+相同则 no-op；不同则：
+
+```text
+read
+→ parse
+→ upsert
+```
+
+### moved
+
+Stable ID 存在：
+
+```text
+same page identity
+→ update relativePath
+```
+
+如果第一版实现复杂，可以重新 read + upsert。
+
+### deleted
+
+```text
+delete index row
+```
+
+## 12.4 Self-write
+
+现有 `SelfWriteRegistry` 继续负责 UI watcher echo 抑制。
+
+但索引不能因为 self-write suppression 导致漏更新。
+
+推荐：
+
+```text
+DocumentCommitService success
+→ best-effort searchIndex upsert
+```
+
+Watcher 主要负责外部变化。
+
+## 12.5 索引维护失败
+
+如果：
+
+```text
+Markdown save success
+Search upsert failed
+```
+
+则：
+
+```text
+SearchIndexStatus = degraded
+mark vault dirty
+schedule rebuild
+```
+
+用户正文保存仍然成功。
+
+---
+
+# 13. Stage 6：Rebuild / Recovery / Scale Acceptance
+
+## 13.1 Index Status
+
+推荐：
+
+```ts
+type SearchIndexStatus =
+  | { state: "missing" }
+  | { state: "building"; progress?: number }
+  | { state: "ready"; indexedDocuments: number }
+  | { state: "degraded"; reason: string }
+  | { state: "corrupt"; reason: string };
+```
+
+## 13.2 Schema Version
+
+DB 必须有：
+
+```text
+schemaVersion
+indexFormatVersion
+```
+
+如果版本不兼容：
+
+```text
+delete old derived DB
+→ rebuild
+```
+
+派生索引优先 rebuild，不做过重 migration。
+
+## 13.3 Corruption Recovery
+
+如果 SQLite open / integrity / schema 失败：
+
+```text
+close
+→ rename .corrupt.<timestamp>
+→ create fresh DB
+→ rebuild
+```
+
+绝不能因为搜索库坏了导致 Vault 无法打开。
+
+## 13.4 Manual Rebuild
+
+设置或搜索 UI 增加：
+
+```text
+重建搜索索引
+```
+
+流程：
+
+```text
+drop derived index
+→ rebuild
+```
+
+不能删除 Markdown。
+
+## 13.5 Performance Acceptance
+
+最终至少测：
+
+```text
+1,000 notes
+10,000 notes
+50,000 notes sanity
+```
+
+建议验收目标：
+
+### 1k
+
+```text
+initial index build <= 2s target
+warm query <= 100ms
+single update <= 100ms
+```
+
+### 10k
+
+```text
+initial index build <= 10s target
+warm query <= 150ms
+single update <= 150ms
+```
+
+### 50k
+
+不要求极端首建速度，但必须：
+
+```text
+无 OOM
+UI 不永久卡死
+搜索可在 index ready 后稳定工作
+增量更新不退化成全量 scan
+```
+
+时间数字最终依据真实 benchmark 调整并回写本文档。
+
+---
+
+# 14. UI / UX
+
+## 14.1 Search UI
+
+现有搜索入口继续使用，不重新设计大 UI。
+
+状态：
+
+```text
+index missing/building:
+  正在建立本地搜索索引…
+
+ready:
+  正常搜索
+
+degraded:
+  搜索索引需要修复
+  [重建索引]
+```
+
+## 14.2 Search Result
+
+建议：
+
+```text
+[标题]
+snippet 中命中内容……
+标签 / 路径辅助信息
+```
+
+命中词高亮由 UI 做，不要求 DB 返回 HTML。
+
+禁止 DB snippet 中直接返回未经转义 HTML。
+
+## 14.3 Search Input
+
+要求：
+
+- debounce；
+- query request id；
+- 丢弃过期结果；
+- 搜索期间不能阻断编辑；
+- Escape 清空 / 关闭遵循现有 UI 规则。
+
+---
+
+# 15. 安全设计
+
+## 15.1 IPC
+
+所有新 IPC：
+
+- schema validation；
+- known channel only；
+- Renderer 不得传 absolute path；
+- error code 继续通过现有 IPC bridge encoding 保留；
+- secret value 不进入 Error details。
+
+## 15.2 Secret
+
+禁止：
+
+```text
+console.log(apiKey)
+JSON.stringify(settings with secret)
+test snapshot secret
+Playwright artifact secret
+```
+
+## 15.3 Search DB
+
+搜索 DB 可能包含正文派生文本。
+
+因此：
+
+- 只保存在本机 `userData`；
+- 不上传；
+- 不加入日志；
+- crash report 不自动附带 DB；
+- 删除 Vault / 移除最近记录时不自动删除 index，除非用户明确清理；
+- 后续可以提供“清除本机索引数据”。
+
+---
+
+# 16. 模块规划
+
+建议新增：
+
+```text
+electron/main/
+├─ secrets/
+│  ├─ DesktopSecretStore.ts
+│  ├─ SecretFilePersistence.ts
+│  └─ SecretBackendStatus.ts
+│
+├─ search/
+│  ├─ DesktopSearchDatabase.ts
+│  ├─ DesktopSearchSchema.ts
+│  ├─ DesktopSearchIndexer.ts
+│  ├─ DesktopSearchRebuilder.ts
+│  └─ DesktopSearchRecovery.ts
+│
+└─ ipc/
+   ├─ secret.ts
+   └─ reveal.ts
+```
+
+Renderer / application：
+
+```text
+src/application/services/
+├─ SearchIndexStatusService.ts
+└─ SecretStorageStatus.ts
+
+src/platform/desktop/
+├─ DesktopSecretStore.ts
+├─ DesktopSearchIndex.ts
+├─ DesktopSearchIndexReconciler.ts
+└─ DesktopRevealService.ts
+```
+
+共享：
+
+```text
+shared/ipc/
+├─ contracts.ts
+└─ schemas.ts
+```
+
+---
+
+# 17. 测试计划
+
+## 17.1 Unit
+
+Stage 0：
+
+- operation policy document/group；
+- Group rename hidden；
+- Group draggable false；
+- external runtime dependency validation。
+
+Secret：
+
+- encrypt/decrypt adapter；
+- session-only fallback；
+- corrupted secret file；
+- unknown secret；
+- delete secret；
+- secret schema version。
+
+Reveal：
+
+- valid relative path；
+- traversal；
+- symlink escape；
+- unknown vault；
+- missing file。
+
+Search：
+
+- SearchDocument mapper；
+- title/tag/body query；
+- 中文；
+- Unicode；
+- ranking；
+- empty query；
+- stable ordering；
+- rebuild；
+- corrupt DB；
+- schema mismatch；
+- incremental create/update/delete/move。
+
+## 17.2 Contract
+
+SearchIndexPort contract：
+
+```text
+Memory implementation
+Desktop implementation
+```
+
+在共同语义上必须通过同一套测试。
+
+重点：
+
+- upsert 幂等；
+- remove 幂等；
+- query deterministic；
+- rebuild 后结果一致；
+- update 后旧文本消失。
+
+## 17.3 Component
+
+- Group 不显示 unsupported rename；
+- Group 不可拖；
+- Secret session-only 文案；
+- Search building 状态；
+- Search degraded + rebuild；
+- Search result snippet；
+- stale search request 丢弃。
+
+## 17.4 Desktop E2E
+
+在现有黄金路径基础上新增：
+
+```text
+G10 API Key 保存 → 重启 → 仍存在（安全 backend）
+G11 Secret backend 不安全 → 重启后 key 不存在
+G12 当前文档 → Reveal
+G13 附件 → Reveal
+G14 title 搜索
+G15 body 搜索
+G16 中文正文搜索
+G17 外部编辑文档 → watcher → 新正文可搜索
+G18 外部删除 → 搜索结果消失
+G19 外部 move → 搜索结果身份保持
+G20 删除 search DB → 重启 → 自动 rebuild
+```
+
+Reveal 在 CI Linux 环境不一定能验证真实 GUI file manager，可：
+
+- Main service 单元测试真实路径；
+- E2E 验证 IPC 调用与 capability/UI；
+- 平台人工验收验证 shell 行为。
+
+---
+
+# 18. CI
+
+继续保持现有：
+
+```text
+quality
+build-web
+build-desktop
+e2e-web
+e2e-desktop
+```
+
+建议新增非阻塞或独立：
+
+```text
+perf-search
+```
+
+第一阶段只上传 benchmark artifact。
+
+例如：
+
+```bash
+npm run test:perf -- search
+```
+
+输出：
+
+```json
+{
+  "documents": 10000,
+  "buildMs": 5230,
+  "queryP50Ms": 18,
+  "queryP95Ms": 42,
+  "updateP95Ms": 35
+}
+```
+
+不要在共享 CI 环境一开始就使用脆弱的绝对 wall-clock hard fail。
+
+---
+
+# 19. 数据迁移
+
+## 19.1 Vault
+
+本需求不改变 Markdown 主格式。
+
+已有 Vault 无需迁移。
+
+## 19.2 Secret
+
+旧 Desktop 使用 `InMemorySecretStore`，无持久 secret 可迁移。
+
+首次升级：
+
+```text
+用户下一次设置 API Key
+→ 写入安全存储
+```
+
+## 19.3 Search DB
+
+首次升级：
+
+```text
+index missing
+→ 自动创建
+→ rebuild
+```
+
+任何 schema 更新优先 derived DB rebuild，而不是复杂 migration。
+
+---
+
+# 20. 失败处理原则
+
+## Secret Failure
+
+```text
+secure backend unavailable
+→ session-only
+→ 明确 UI
+```
+
+不是 plaintext persistent fallback。
+
+## Reveal Failure
+
+```text
+missing / unauthorized
+→ 用户可理解错误
+```
+
+不能泄露完整绝对路径。
+
+## Search Failure
+
+```text
+index unavailable
+→ Markdown editor 继续工作
+```
+
+搜索可降级为 title-only 或提示重建。
+
+正文编辑永远优先。
+
+---
+
+# 21. 需求实施顺序
+
+强制推荐：
+
+```text
+1. Stage 0
+   Operation truthfulness
+   Runtime dependency hygiene
+
+2. Stage 1
+   Native Secret Store
+
+3. Stage 2
+   Reveal
+
+4. R007 closure
+   更新 R007 = 已完成
+
+5. Stage 3
+   Search contract + benchmark
+
+6. Stage 4
+   Full-text derived database
+
+7. Stage 5
+   Incremental indexing
+
+8. Stage 6
+   Recovery + scale acceptance
+
+9. R008 acceptance
+```
+
+不建议先上 SQLite，再回头修 operation / secret / runtime dependency。
+
+---
+
+# 22. 提交拆分建议
+
+建议至少拆成以下提交：
+
+```text
+fix(R008): 收口 Desktop document/group 操作支持矩阵
+```
+
+```text
+build(R008): 修正 Electron runtime external dependencies
+```
+
+```text
+feat(R008): Desktop native secret store 与安全降级
+```
+
+```text
+feat(R008): Desktop reveal in file manager
+```
+
+```text
+docs(R008): 关闭 R007 并冻结 Search contract
+```
+
+```text
+feat(R008): Desktop derived full-text search index
+```
+
+```text
+feat(R008): watcher 驱动增量索引
+```
+
+```text
+feat(R008): search index rebuild/recovery 与规模化验收
+```
+
+不要合成一个超大 commit。
+
+---
+
+# 23. R008 Definition of Done
+
+只有同时满足以下条件才可将 R008 标记为完成。
+
+## R007 收口
+
+- [ ] document/group operation support 与真实能力一致；
+- [ ] Group 不再暴露会抛 NOT_IMPLEMENTED 的 rename/move；
+- [ ] chokidar 属 production runtime dependency；
+- [ ] Electron external dependency 有自动门禁；
+- [ ] R007 文档状态与实际代码一致；
+- [ ] R007 标记已完成。
+
+## Secret
+
+- [ ] Desktop 不再使用 `InMemorySecretStore` 作为正常持久实现；
+- [ ] secure backend 下 API Key 重启保持；
+- [ ] insecure backend 下不会明文持久化；
+- [ ] SecretStorageStatus 可表达真实运行状态；
+- [ ] secret 不出现在日志 / artifact / Vault。
+
+## Reveal
+
+- [ ] note reveal 可用；
+- [ ] asset reveal 可用；
+- [ ] Renderer 无 absolutePath；
+- [ ] PathGuard / Vault authorization 不可绕过；
+- [ ] `revealInFileManager = true`。
+
+## Search
+
+- [ ] title 搜索；
+- [ ] tags 搜索；
+- [ ] body 全文搜索；
+- [ ] 中文搜索通过验收 corpus；
+- [ ] Search DB 是 derived data；
+- [ ] 删除 Search DB 后可完整 rebuild；
+- [ ] watcher create/update/delete/move 可增量维护；
+- [ ] self-write 不产生重复 UI reload / index loop；
+- [ ] index failure 不影响 Markdown save；
+- [ ] 10k notes 规模可日用；
+- [ ] 50k notes sanity 不 OOM；
+- [ ] degraded / rebuilding 状态有 UI；
+- [ ] Desktop golden E2E 全绿；
+- [ ] Web 无回归；
+- [ ] 架构 / decisions / requirements / AGENTS 同步。
+
+---
+
+# 24. 后续需求建议
+
+R008 完成后再按价值选择：
+
+## R009：Desktop Distribution
+
+- electron-builder；
+- dmg；
+- Windows installer；
+- signing；
+- auto update；
+- release CI。
+
+## R010：Knowledge Graph
+
+- backlinks；
+- link index；
+- broken links；
+- outgoing links；
+- graph view。
+
+## R011：Desktop File Operations v2
+
+- group rename；
+- group move；
+- physical file rename；
+- relative link impact analysis；
+- optional link rewrite。
+
+## R012：Revision / History
+
+- Desktop local revisions；
+- snapshot retention；
+- restore；
+- diff。
+
+不要把以上需求重新塞回 R008。
+
+---
+
+# 25. 决策摘要
+
+本需求最终冻结以下方向：
+
+1. **R007 不再新增 Stage 6+，剩余内容并入 R008。**
+2. **先清产品一致性债务，再建设搜索。**
+3. **Document 和 Group 的 operation support 必须分开。**
+4. **Secret 使用系统安全存储，不安全时只 session-only。**
+5. **Reveal 绝不向 Renderer 暴露 absolutePath。**
+6. **Search Index 永远是 Markdown 的可重建派生数据。**
+7. **优先评估 `node:sqlite`，但通过 adapter 隔离数据库实现。**
+8. **中文搜索必须是正式验收项。**
+9. **Watcher 负责事实，Indexer 负责索引语义。**
+10. **搜索失败不能影响正文保存。**
+11. **10k 文档是正式性能目标，50k 是规模 sanity。**
+12. **Installer / revision / backlinks / group file ops 继续后移。**
+
+---
+
+# 26. 变更记录
+
+## 0.1 — 2026-08-21
+
+首次建立。
+
+合并：
+
+- R007 阶段 4 后遗留的 Operation Support 精确化；
+- Electron `chokidar` production runtime dependency 修正；
+- 原 R007 Stage 5 Native Secret Store；
+- 原 R007 Stage 5 Reveal in File Manager；
+- R008 Desktop Full-text Search；
+- Desktop Search derived database；
+- Watcher incremental index；
+- Search rebuild / corruption recovery；
+- 1k / 10k / 50k 性能验收。
+
+R007 在本需求 Stage 0–2 完成后正式关闭，后续不继续追加产品化阶段。

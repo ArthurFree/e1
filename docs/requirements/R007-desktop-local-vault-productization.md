@@ -1,8 +1,8 @@
 # R007：Desktop Local Vault 产品化基础闭环
 
 - **版本**：0.1
-- **状态**：实现中（阶段 0–4 已完成）
-- **更新时间**：2026-08-20
+- **状态**：实现中（阶段 0–5 已完成，待 R007 验收）
+- **更新时间**：2026-08-21
 - **基线 Commit**：`623f5292c290d0843d8e7eb72a7ce11bbaf22d06`
 - **前置阶段**：R006（Electron Desktop 本地 Vault 技术验证版）
 - **目标分支**：建议从 `main` 建立独立 R007 feature branch，按阶段提交，不一次性大改
@@ -1023,6 +1023,21 @@ Physical file rename 可以放阶段 4 尾部，UI 必须明确叫：
 ---
 
 ## 阶段 5：Native Secret Store + Reveal
+
+**状态：已完成（2026-08-21）**
+
+实际实现与偏差记录：
+
+- Main：`electron/main/state/DesktopSecretPersistence.ts`——safeStorage.encryptString 密文 base64 落 `userData/secrets.json`（`{version:1,secrets:{<name>:<base64>}}`），容错与 VaultStateStore 同口径（缺失空表、损坏备份 `.corrupt-<ts>` 后自愈、单条解密失败按缺失处理——他机复制/密钥链变更属预期）；tmp+rename 原子写。safeStorage 不可用时降级为进程内存 Map（会话级，重启丢失），**绝不明文落盘**；`isAvailable()` 每次调用动态评估。
+- IPC：`secret.status/get/set/delete` 四通道（`electron/main/ipc/secrets.ts`）。**偏差 1**：在原计划 get/set/delete 之外新增 `secret.status`——`nativeSecrets` 按 R007 §5.1 要求「仅在当前系统运行时确认可用时成立」，Renderer 装配前必须能探测可用性；status 返回 `{available}`，false 时 Main 组内读写即会话内存语义。
+- schema：secret 名白名单形态校验（`"<域>.<键>"`，小写域名 + 点 + 键名，≤128 字符）；value 非空且 ≤16 KiB（清空走 delete）；`SECRET_STORAGE_UNAVAILABLE` 保留码只在「运行中 encryptString 抛错」时使用（主路径是 status 探测 + 内存降级，不抛）。
+- Renderer：`DesktopSecretStore`（SecretStore port 的 IPC-backed 实现，替换 R006 起的内存 PoC）接入 `createDesktopRuntime`，AI API Key 重启保持（G3）；`main.desktop.tsx` 改为异步 bootstrap——先查 `secret.status`（失败按不可用处理，安全缺省）再装配，`createDesktopRuntime(api, { nativeSecrets })` 以探测值覆盖 `desktopCapabilities.nativeSecrets` 静态缺省 false。
+- 降级提示（§5.1「不伪装为安全」）：新增可选 `AppServices.secretStorageStatus: { native, persistent }`（仅 Desktop 装配；Web 的 IndexedDB SecretStore 本就持久，不装配无需提示）；设置页在 `persistent=false` 时提示「系统安全存储不可用，API Key 仅保存在本次会话」，底部隐私说明按运行时分流（系统安全存储 / IndexedDB）。
+- Reveal：`note.reveal({vaultId, relativePath})` / `asset.reveal({assetId})` IPC（`electron/main/ipc/reveal.ts`）——resolveVaultRoot + PathGuard（resolveWithinVault 含 realpath 符号链接防护）后 `shell.showItemInFolder`；PathGuard 的 NOTE_NOT_FOUND 归一为 `REVEAL_TARGET_NOT_FOUND`（§11 新码，反向映射既有 domain PAGE_NOT_FOUND）；relativePath 允许文件与目录（分组目录同样可定位）；只读操作，transient 仅预览会话允许（与 note.read 同口径）。Renderer `DesktopRevealService`（新可选 port `AppServices.reveal`，application/services/RevealService.ts）：页面经扫描缓存 findEntry 解析 vaultId+relativePath（document 走 stable id/别名、group 走 path: id），附件 assetId 自带编码直传 Main。
+- UI 入口（G4：capability 门控，Web 不出现）：EditorShell 顶栏「在文件管理器中显示」图标按钮（当前文档，`capabilities.revealInFileManager && services.reveal` 门控，失败显示一次性错误条）；附件节点「在文件夹中显示」按钮——`AssetAccessService` 新增可选方法 `reveal?(assetId): Promise<boolean>`，仅 Desktop 实现（Web/内存不实现 → 按钮不出现），失败显示「无法定位文件」；新系统图标 `IconFolderOpen`。**偏差 3**：初版把入口放在 PageTreeSidebar 行内动作——行内按钮增至 4 个后悬停动作区覆盖树行点击中心点（窄行 ~190px 时首个按钮正好压在行中点），E2E 点击 treeitem 误触「新建子文档」（7 例确定性失败，探针复现）；遂改为 EditorShell 顶栏单按钮（文档级 reveal 即可满足 §5.2 验收，分组目录 reveal IPC 仍支持但不暴露入口）。
+- 能力矩阵（§3.6 同口径）：`desktopCapabilities.revealInFileManager` 翻 true；`nativeSecrets` 为 R007 唯一的运行时探测字段（静态缺省 false + 装配根探测覆盖），runtime-boundaries.md / capabilities.matrix.test.ts（锁定静态缺省）/ createDesktopRuntime 测试（锁定覆盖路径）三处同步。
+- 测试（统一在阶段末执行）：DesktopSecretPersistence（加密往返/损坏自愈/单条解密失败/不可用内存降级不落盘）、secrets/reveal handler（schema 拒绝/REVEAL_TARGET_NOT_FOUND/transient 允许/shell 调用/资产 id 解码）、DesktopSecretStore/DesktopRevealService 契约、设置页降级提示与分流文案、页面树 reveal 门控、附件 reveal 按钮、capabilities 矩阵与装配覆盖；桌面 golden E2E G09（AI Key 重启保持 + secrets.json 无明文）。
+- **偏差 2**：CI（Linux xvfb）无系统密钥链，safeStorage 通常不可用——G09 E2E 以 `--password-store=basic` 启动参数强制 Electron 启用基本加密使 safeStorage 可用；不可用降路径由单测覆盖（内存降级 + status=false），E2E 不断言真实密钥链。
 
 ### 5.1 DesktopSecretStore
 

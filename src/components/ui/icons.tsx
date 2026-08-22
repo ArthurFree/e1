@@ -106,6 +106,14 @@ export const IconFolder = (p: IconProps) => (
   </Svg>
 );
 
+/** R007 阶段 5：「在文件管理器中显示」（打开的文件夹）。 */
+export const IconFolderOpen = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v2" />
+    <path d="M3 7v11a2 2 0 0 0 2 2h13.2a2 2 0 0 0 1.96-1.6l1.6-7A2 2 0 0 0 19.8 9H8.4a2 2 0 0 0-1.96 1.6L3 7" />
+  </Svg>
+);
+
 export const IconChevronDown = (p: IconProps) => (
   <Svg {...p}>
     <path d="m6 9 6 6 6-6" />

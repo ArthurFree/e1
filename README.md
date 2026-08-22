@@ -2,7 +2,7 @@
 
 一个独立的 Web 笔记应用：以 Tiptap 的 Notion-like 模板为交互和视觉参考，提供本地优先（离线可用）的知识库、页面树和块编辑能力。面向简体中文个人用户。
 
-**当前状态：R003 与 R004 架构整改全部完成——保存协调器（串行 + 代次 + 恢复缓冲 + 乐观锁）、统一文档写入边界（原子创建 + 提交单点）、四状态域 Provider、IndexedDB v5（secrets store）、图片附件化与存储配额治理、多标签页同步与冲突处理、ESLint/Prettier/dependency-cruiser 与 GitHub Actions 工程门禁。R005（Web 优先与 Electron 双端准备）阶段 0–8 已完成——命令/查询服务下沉与 AppServices 收紧、不透明 `ContentVersionToken` 乐观锁、持久化级 MarkdownCodec、Asset 服务抽象（AssetStore + `Uint8Array`）、`SearchIndexPort` 与会话去正文、Portable Vault（.e1.zip）导入导出、RecoveryStore / ChangeChannel / SecretStore / StorageHealthService。R006 Electron Desktop 技术验证版阶段 0–C5 已完成（Shell、IPC 契约、Vault 扫描、安全阅读、Markdown 创建与安全保存、写入链路加固、本地附件闭环）；C5 待验收。**
+**当前状态：R003 与 R004 架构整改全部完成——保存协调器（串行 + 代次 + 恢复缓冲 + 乐观锁）、统一文档写入边界（原子创建 + 提交单点）、四状态域 Provider、IndexedDB v5（secrets store）、图片附件化与存储配额治理、多标签页同步与冲突处理、ESLint/Prettier/dependency-cruiser 与 GitHub Actions 工程门禁。R005（Web 优先与 Electron 双端准备）阶段 0–8 已完成——命令/查询服务下沉与 AppServices 收紧、不透明 `ContentVersionToken` 乐观锁、持久化级 MarkdownCodec、Asset 服务抽象（AssetStore + `Uint8Array`）、`SearchIndexPort` 与会话去正文、Portable Vault（.e1.zip）导入导出、RecoveryStore / ChangeChannel / SecretStore / StorageHealthService。R006 Electron Desktop 技术验证版阶段 0–C5 已完成（Shell、IPC 契约、Vault 扫描、安全阅读、Markdown 创建与安全保存、写入链路加固、本地附件闭环）。R007 Desktop 产品化阶段 0–5 已完成（待验收）——元数据写入、设备级收藏/最近、外部文件监听、文件操作闭环（回收站/分组/移动）、系统安全存储 API Key 与「在文件管理器中显示」。**
 
 ## 功能
 
@@ -135,8 +135,8 @@ interface AIProvider {
 
 ## 隐私说明
 
-- 所有数据（页面、内容、标签、偏好、AI 配置）只保存在浏览器 IndexedDB，不上传、不同步。
-- AI 为可选项：未配置时不发起任何外部请求；配置后仅向用户填写的 Endpoint 发送 `chat/completions` 请求，API Key 只用于该请求的 Authorization 头，不写入日志。
+- 所有数据（页面、内容、标签、偏好、AI 配置）只保存在本机（Web：浏览器 IndexedDB；Desktop：本地 Vault 文件夹与 Electron userData），不上传、不同步。
+- AI 为可选项：未配置时不发起任何外部请求；配置后仅向用户填写的 Endpoint 发送 `chat/completions` 请求，API Key 只用于该请求的 Authorization 头，不写入日志。API Key 存储：Web 在 IndexedDB SecretStore；Desktop 经系统安全存储（safeStorage）加密保存，系统安全存储不可用时仅存本次会话（设置页有明确提示），永不明文落盘。
 - AI 返回内容经编辑器白名单解析，且必须经用户确认「应用」后才会写入文档。
 - 图片与 Markdown 导入同样经白名单解析，不向 DOM 注入原始 HTML。
 

@@ -26,7 +26,10 @@ import type {
   ReadNoteInput,
   RenameNoteFileInput,
   RestoreTrashInput,
+  RevealAssetInput,
+  RevealNoteInput,
   SaveNoteInput,
+  SecretSetInput,
   TrashInput,
   VaultFsEvent,
   VaultPageStatePatch,
@@ -457,6 +460,64 @@ export function parseResolveAssetUrlInput(payload: unknown): string {
     invalid("asset.resolveUrl 入参必须为非空 assetId 字符串");
   }
   return payload;
+}
+
+/* ---------------------------------- 阶段 5 ---------------------------------- */
+
+/** R007 阶段 5：note.reveal 入参校验（与 note.read 同形；目录同样允许）。 */
+export function parseRevealNoteInput(payload: unknown): RevealNoteInput {
+  if (!isRecord(payload)) invalid("note.reveal 入参必须为对象");
+  return {
+    vaultId: requireString(payload, "vaultId", { nonEmpty: true }),
+    relativePath: assertRelativePath(
+      requireString(payload, "relativePath", { nonEmpty: true }),
+    ),
+  };
+}
+
+/** R007 阶段 5：asset.reveal 入参校验（与 asset.read 同形）。 */
+export function parseRevealAssetInput(payload: unknown): RevealAssetInput {
+  if (!isRecord(payload)) invalid("asset.reveal 入参必须为对象");
+  return { assetId: requireString(payload, "assetId", { nonEmpty: true }) };
+}
+
+/**
+ * R007 阶段 5：secret 名（"<域>.<键>"）——小写字母开头的域名 + 点 +
+ * 键名段（字母/数字/连字符，键段大小写均可，如 "ai.apiKey"）；上限
+ * 128 字符。白名单形态防止把任意字符串当作存储键
+ *（userData/secrets.json 的 JSON 键）。
+ */
+const SECRET_NAME = /^[a-z][a-z0-9-]*(\.[A-Za-z0-9-]+)+$/;
+const MAX_SECRET_NAME_LENGTH = 128;
+/** secret 值上限（字符）：API Key 远小于此；防异常大 payload 拖垮加密/落盘。 */
+const MAX_SECRET_VALUE_LENGTH = 16_384;
+
+function parseSecretName(value: unknown, field: string): string {
+  if (typeof value !== "string" || value.trim() === "") {
+    invalid(`字段 ${field} 必须为非空字符串`);
+  }
+  if (value.length > MAX_SECRET_NAME_LENGTH || !SECRET_NAME.test(value)) {
+    invalid(`字段 ${field} 不是合法的 secret 名（"<域>.<键>"）`);
+  }
+  return value;
+}
+
+/** secret.get / secret.delete：payload 即 secret 名字符串。 */
+export function parseSecretNameRequest(payload: unknown): string {
+  return parseSecretName(payload, "name");
+}
+
+/** R007 阶段 5：secret.set 入参校验。 */
+export function parseSecretSetInput(payload: unknown): SecretSetInput {
+  if (!isRecord(payload)) invalid("secret.set 入参必须为对象");
+  const name = parseSecretName(payload.name, "name");
+  const value = payload.value;
+  if (typeof value !== "string") invalid("字段 value 必须为字符串");
+  if (value === "") invalid("字段 value 不能为空（清空请用 secret.delete）");
+  if (value.length > MAX_SECRET_VALUE_LENGTH) {
+    invalid("字段 value 超出长度上限（16 KiB）");
+  }
+  return { name, value };
 }
 
 /**

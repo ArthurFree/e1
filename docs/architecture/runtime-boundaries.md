@@ -44,7 +44,9 @@ R005 将项目划分为四层运行时边界：Shared UI、Shared Application、
 - 授权边界（C2.1）：Renderer 全程不接触 absolutePath（一次性 selectionToken + `openRecent` + transient 仅预览，SEC-01）；未初始化目录经三选项确认框后才初始化。
 - **文档读写已真实**：`note.read` / `note.create` / `note.save` 经 PathGuard、NoteFileSystem、AtomicFileWriter；Renderer 侧 `DesktopContentRepository` + `DesktopMarkdownWriteService`（Source/Identity/Output Gate、Frontmatter 保留、Stable ID Adoption）；`documentPersistence: true`，编辑走共享 SaveCoordinator。
 - **附件已真实（C5）**：`asset.pick` / `import` / `read`、`DesktopAssetStore` / Registry / Access、`e1-asset://` 协议、Markdown Hydration 与相对路径写出；`persistentAssetPaths: true`。
-- 能力矩阵见下表（`src/platform/desktop/desktopCapabilities.ts`）：`localDirectory`、`documentPersistence`、`persistentAssetPaths`、`fileWatching` 为 true；`revealInFileManager` / `nativeMenu` / `nativeSecrets` 仍为 false（未实现，不得写「未来全 true」）。
+- 能力矩阵见下表（`src/platform/desktop/desktopCapabilities.ts`）：`localDirectory`、`documentPersistence`、`persistentAssetPaths`、`fileWatching`、`revealInFileManager` 为 true；`nativeMenu` 仍为 false（未实现，不得写「未来全 true」）；`nativeSecrets` 为运行时探测值（R007 阶段 5：safeStorage 可用即 true，由装配根按 `secret.status` 覆盖静态缺省 false）。
+- **机密存储已真实（R007 阶段 5）**：Main `electron/main/state/DesktopSecretPersistence.ts` 用 safeStorage 加密后落 `userData/secrets.json`（密文 base64，永不明文）；`secret.status/get/set/delete` IPC + Renderer `DesktopSecretStore` 实现既有 SecretStore port（替换内存 PoC），AI API Key 重启保持；系统安全存储不可用时 Main 降级会话内存、`secret.status` 报 unavailable，设置页提示「本次会话使用」，不伪装为安全。
+- **文件管理器定位已真实（R007 阶段 5）**：`note.reveal` / `asset.reveal` IPC（resolveVaultRoot + PathGuard 后 `shell.showItemInFolder`，Renderer 不见 absolutePath，目标不存在报 REVEAL_TARGET_NOT_FOUND）；Renderer `DesktopRevealService`（可选 port `AppServices.reveal`），EditorShell 顶栏「在文件管理器中显示」（当前文档）与附件节点「在文件夹中显示」按 `capabilities.revealInFileManager` 门控。
 - **外部文件监听已真实（R007 阶段 3）**：Main 侧 `electron/main/watcher/`（chokidar + coalescing + 自写抑制）经首个单向事件通道 `events:vaultChanges` 推送 `VaultFsEvent` 批次；Renderer 侧 `ExternalVaultChangeService`（application 契约 + Desktop 实现）做静止窗口合并 → 重扫 → stable-id diff → 归一化变更；页面树经 `ExternalVaultChangeBridge` 刷新，当前文档按 clean 自动重载 / dirty 冲突面板 / 外部删除提示处理。
 - 平台专属能力经**平台无关的可选 port** 注入（PR5，原 `AppServices.desktopExtras` PoC 通道已删除）：`AppServices.vaultMaintenance`（`rescan(vaultId)`，FR-26 重新扫描）与 `AppServices.documentSafety`（`approveLossySource` / `approveLossyOutput` / `approveIdentityAdoption` 会话级门闸）。Web/内存容器不装配这两个字段；UI 一律以「能力矩阵字段 + port 是否存在」门控（DUAL-01，不判断平台名称）。
 
@@ -80,13 +82,15 @@ R005 将项目划分为四层运行时边界：Shared UI、Shared Application、
 | ---------------------- | --------------------------------------------------------------------------------------- | :-: | :-----: |
 | `localDirectory`       | 能以本地目录作为 Vault 直接读写（文件夹即页面树）                                      | 否  |   是    |
 | `fileWatching`         | 能监听真实数据源的外部变更并触发刷新/冲突提示                                          | 否  |   是    |
-| `revealInFileManager`  | 能在系统文件管理器中显示笔记或附件文件                                                 | 否  |   否    |
+| `revealInFileManager`  | 能在系统文件管理器中显示笔记或附件文件                                                 | 否  |   是    |
 | `nativeMenu`           | 能使用系统原生菜单（应用菜单/上下文菜单）                                              | 否  |   否    |
-| `nativeSecrets`        | 能使用系统级安全存储保存 AI 密钥等机密                                                 | 否  |   否    |
+| `nativeSecrets`        | 能使用系统级安全存储保存 AI 密钥等机密                                                 | 否  |  探测¹  |
 | `persistentAssetPaths` | 附件拥有稳定文件路径，可被外部软件直接访问（而非 Blob/Object URL）                     | 否  |   是    |
 | `documentPersistence`  | 文档编辑会真实持久化（false 时编辑器不启动 SaveCoordinator，UI 必须提示修改不写回磁盘） | 是  |   是    |
 
 约定：能力为 `false` 时对应 UI 入口隐藏或降级，不做「平台名 + 弹窗提示」式分支；新增平台功能一律先定义能力字段再实现（r005.md §十六）。变更任一字段时须同步更新本表、对应 `*Capabilities.ts` 与 `capabilities.matrix.test.ts`。
+
+¹ `nativeSecrets`（R007 阶段 5）是 Desktop 唯一的运行时探测字段：静态缺省 false，装配根 `main.desktop.tsx` 先查 `secret.status`（Main safeStorage 可用性）再以实际值覆盖——仅当当前系统运行时确认可用时才为 true；`capabilities.matrix.test.ts` 锁定静态缺省 false，探测覆盖路径由 `createDesktopRuntime` 测试锁定。
 
 ## 操作支持矩阵 `RuntimeOperations`（R007 阶段 4 §9）
 

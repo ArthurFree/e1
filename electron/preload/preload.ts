@@ -5,6 +5,8 @@
 // （ipcRenderer.on + 返回取消订阅函数；payload 经 schema 校验后投递）。
 // R007 阶段 4：vault 组新增 createDirectory/trash/listTrash/restore/
 // purgeTrash（回收站闭环），note 组新增 move/renameFile（文件操作）。
+// R007 阶段 5：新增 secret 组（status/get/set/delete，safeStorage 加密
+// 持久化）与 note.reveal / asset.reveal（文件管理器显示）。
 // sandbox 预加载只支持 CJS（构建产物 dist-electron/preload.cjs）。
 //
 // 错误传递策略（与 src/platform/desktop/desktopApi.ts 注释共同锁定）：
@@ -48,8 +50,12 @@ import {
   type RenameNoteFileResult,
   type RestoreTrashInput,
   type RestoreTrashResult,
+  type RevealAssetInput,
+  type RevealNoteInput,
   type SaveNoteInput,
   type SaveNoteResult,
+  type SecretSetInput,
+  type SecretStatusResult,
   type SelectedVault,
   type TrashInput,
   type TrashListResult,
@@ -124,6 +130,14 @@ const api: E1DesktopAPI = {
       invoke<MoveNoteResult>(IPC_CHANNELS.noteMove, input),
     renameFile: (input: RenameNoteFileInput) =>
       invoke<RenameNoteFileResult>(IPC_CHANNELS.noteRenameFile, input),
+    reveal: (input: RevealNoteInput) =>
+      invoke<void>(IPC_CHANNELS.noteReveal, input),
+  },
+  secret: {
+    status: () => invoke<SecretStatusResult>(IPC_CHANNELS.secretStatus),
+    get: (name: string) => invoke<string | null>(IPC_CHANNELS.secretGet, name),
+    set: (input: SecretSetInput) => invoke<void>(IPC_CHANNELS.secretSet, input),
+    remove: (name: string) => invoke<void>(IPC_CHANNELS.secretDelete, name),
   },
   asset: {
     pick: (input?: AssetPickRequest) =>
@@ -134,6 +148,8 @@ const api: E1DesktopAPI = {
       invoke<AssetReadResult>(IPC_CHANNELS.assetRead, input),
     resolveUrl: (assetId) =>
       invoke<string>(IPC_CHANNELS.assetResolveUrl, assetId),
+    reveal: (input: RevealAssetInput) =>
+      invoke<void>(IPC_CHANNELS.assetReveal, input),
   },
   events: {
     subscribeVaultChanges: (listener: (events: VaultFsEvent[]) => void) => {

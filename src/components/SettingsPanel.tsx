@@ -287,6 +287,13 @@ export function SettingsPanel() {
         />
       </label>
 
+      {services.secretStorageStatus &&
+        !services.secretStorageStatus.persistent && (
+          <div className="settings-panel__error" role="alert">
+            系统安全存储不可用，API Key 仅保存在本次会话（重启后需重新填写）。
+          </div>
+        )}
+
       {error && <div className="settings-panel__error">{error}</div>}
       {saved && !error && <div className="settings-panel__saved">已保存。</div>}
 
@@ -310,8 +317,11 @@ export function SettingsPanel() {
       </div>
 
       <p className="settings-panel__note">
-        API Key 仅保存在本机
-        IndexedDB，不会上传、同步或写入日志；未配置时不会发起任何外部请求。
+        {services.secretStorageStatus
+          ? services.secretStorageStatus.persistent
+            ? "API Key 仅保存在本机系统安全存储，不会上传、同步或写入日志；未配置时不会发起任何外部请求。"
+            : "API Key 不会上传、同步或写入日志；未配置时不会发起任何外部请求。"
+          : "API Key 仅保存在本机 IndexedDB，不会上传、同步或写入日志；未配置时不会发起任何外部请求。"}
       </p>
 
       <div className="settings-panel__section">

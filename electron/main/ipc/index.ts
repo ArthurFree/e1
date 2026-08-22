@@ -13,8 +13,11 @@
  * （缺省实现遍历全部窗口 webContents.send events:vaultChanges）推给 Renderer。
  * R007 阶段 4：files 组 handler（目录/回收站/move/renameFile）共用同一
  * selfWrites——trash/restore/move/renameFile 成功后登记路径级自写抑制。
+ * R007 阶段 5：secret 组（DesktopSecretPersistence，safeStorage 加密落
+ * userData/secrets.json）与 reveal 组（note.reveal/asset.reveal，
+ * PathGuard 后 shell.showItemInFolder）。
  */
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, safeStorage } from "electron";
 import { join } from "node:path";
 import {
   IPC_CHANNELS,
@@ -25,8 +28,11 @@ import { registerNoteHandlers } from "./note.js";
 import { registerFileHandlers } from "./files.js";
 import { registerAssetHandlers } from "./asset.js";
 import { registerVaultStateHandlers } from "./vaultState.js";
+import { registerSecretHandlers } from "./secrets.js";
+import { registerRevealHandlers } from "./reveal.js";
 import { VaultRegistry } from "../vaultRegistry.js";
 import { DesktopVaultStateStore } from "../state/DesktopVaultStateStore.js";
+import { DesktopSecretPersistence } from "../state/DesktopSecretPersistence.js";
 import { SelectionTokenStore } from "../SelectionTokenStore.js";
 import { TransientVaultStore } from "../transientVaults.js";
 import {
@@ -46,6 +52,8 @@ export interface RegisterIpcHandlersDeps {
   registry?: VaultRegistry;
   /** R007 阶段 2：设备级交互状态存储（缺省指向 userData/vault-state/）。 */
   vaultStateStore?: DesktopVaultStateStore;
+  /** R007 阶段 5：机密持久化（缺省指向 userData/secrets.json + safeStorage）。 */
+  secretStore?: DesktopSecretPersistence;
   /** R006-C2.1：可注入以控制时钟/隔离状态（测试用）。 */
   selectionTokens?: SelectionTokenStore;
   transients?: TransientVaultStore;
@@ -80,6 +88,12 @@ export function registerIpcHandlers(
   const vaultStateStore =
     deps.vaultStateStore ??
     new DesktopVaultStateStore(join(app.getPath("userData"), "vault-state"));
+  const secretStore =
+    deps.secretStore ??
+    new DesktopSecretPersistence(
+      join(app.getPath("userData"), "secrets.json"),
+      safeStorage,
+    );
   const transients = deps.transients ?? new TransientVaultStore();
   const openDialog = deps.openDialog ?? dialog;
   const selfWrites = deps.selfWrites ?? new SelfWriteRegistry();
@@ -103,6 +117,8 @@ export function registerIpcHandlers(
     registry,
     transients,
   });
+  registerSecretHandlers(bus, { store: secretStore });
+  registerRevealHandlers(bus, { registry, transients });
   registerAssetHandlers(bus, {
     openDialog: openDialog as FileDialogLike,
     registry,

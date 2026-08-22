@@ -64,6 +64,7 @@ function noteResult(markdown: string): ReadNoteResult {
 function makeApi(overrides: {
   markdown?: string;
   noteRead?: E1DesktopAPI["note"]["read"];
+  noteReveal?: E1DesktopAPI["note"]["reveal"];
 }): E1DesktopAPI {
   return {
     platform: "desktop",
@@ -102,12 +103,20 @@ function makeApi(overrides: {
         ),
       create: vi.fn(),
       save: vi.fn(),
+      reveal: overrides.noteReveal ?? vi.fn(async () => {}),
     },
     asset: {
       pick: vi.fn(),
       import: vi.fn(),
       read: vi.fn(),
       resolveUrl: vi.fn(),
+    },
+    // R007 阶段 5：机密存储组（DesktopSecretStore 透传，本文件不触及）。
+    secret: {
+      status: vi.fn(async () => ({ available: true })),
+      get: vi.fn(async () => null),
+      set: vi.fn(async () => {}),
+      remove: vi.fn(async () => {}),
     },
     // R007 阶段 3：外部变更事件订阅（测试不推送事件，空订阅即可）。
     events: { subscribeVaultChanges: vi.fn(() => () => {}) },
@@ -323,5 +332,51 @@ describe("MainArea Desktop 打开链路（R006-C3 §42）", () => {
     );
     // 扫描后文档仍在目录概览中（树经 refreshCurrentWorkspace 刷新）。
     expect(screen.getByText("React 笔记")).toBeInTheDocument();
+  });
+});
+
+describe("EditorShell「在文件管理器中显示」（R007 阶段 5）", () => {
+  beforeEach(() => {
+    cleanup();
+    localStorage.clear();
+  });
+
+  it("顶栏入口可见（能力 + port 双门控），点击经 revealPage 调 note.reveal", async () => {
+    const api = makeApi({});
+    renderDesktopApp(api);
+    await waitForEditorText("这是正文内容");
+    const button = screen.getByRole("button", {
+      name: "在文件管理器中显示",
+    });
+    await act(async () => {
+      button.click();
+    });
+    expect(api.note.reveal).toHaveBeenCalledWith({
+      vaultId: "v1",
+      relativePath: "学习/React.md",
+    });
+  });
+
+  it("reveal 失败显示错误条，可手动关闭", async () => {
+    const api = makeApi({
+      noteReveal: vi.fn(async () => {
+        throw new DesktopIpcError(
+          "REVEAL_TARGET_NOT_FOUND",
+          "目标不存在，无法在文件管理器中显示",
+        );
+      }),
+    });
+    renderDesktopApp(api);
+    await waitForEditorText("这是正文内容");
+    await act(async () => {
+      screen.getByRole("button", { name: "在文件管理器中显示" }).click();
+    });
+    expect(
+      await screen.findByText("目标不存在，无法在文件管理器中显示"),
+    ).toBeInTheDocument();
+    await act(async () => {
+      screen.getByRole("button", { name: "关闭" }).click();
+    });
+    expect(screen.queryByText("目标不存在，无法在文件管理器中显示")).toBeNull();
   });
 });

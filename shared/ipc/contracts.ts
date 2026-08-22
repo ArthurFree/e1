@@ -15,6 +15,10 @@
  * vault.listTrash / vault.restore / vault.purgeTrash（.e1/trash 回收站）与
  * note.move / note.renameFile（纯文件系统 rename，Frontmatter 不动、
  * stable note id 不变）。
+ * R007 阶段 5（Native Secret + Reveal）：secret.status/get/set/delete
+ *（Main safeStorage 加密落 userData/secrets.json；不可用时会话内存降级，
+ * 永不明文落盘）与 note.reveal / asset.reveal（PathGuard 后
+ * shell.showItemInFolder，Renderer 全程不见 absolutePath）。
  *
  * shared/ 为 Renderer（src/platform/desktop）与 Electron Main/Preload 共用
  * 的唯一契约来源：channel 常量、请求/响应类型、E1DesktopAPI 形状。
@@ -46,6 +50,11 @@ export const IPC_CHANNELS = {
   notePatchMetadata: "note:patchMetadata",
   noteMove: "note:move",
   noteRenameFile: "note:renameFile",
+  noteReveal: "note:reveal",
+  secretStatus: "secret:status",
+  secretGet: "secret:get",
+  secretSet: "secret:set",
+  secretDelete: "secret:delete",
   vaultCreateDirectory: "vault:createDirectory",
   vaultTrash: "vault:trash",
   vaultListTrash: "vault:listTrash",
@@ -55,6 +64,7 @@ export const IPC_CHANNELS = {
   assetImport: "asset:import",
   assetRead: "asset:read",
   assetResolveUrl: "asset:resolveUrl",
+  assetReveal: "asset:reveal",
   eventsVaultChanges: "events:vaultChanges",
 } as const;
 
@@ -449,6 +459,37 @@ export interface RenameNoteFileResult {
   relativePath: string;
 }
 
+/**
+ * R007 阶段 5（§5.2）：在系统文件管理器中显示笔记/分组——
+ * Main 侧 resolveVaultRoot + PathGuard 后 shell.showItemInFolder；
+ * relativePath 可为 .md 文件或目录（分组），目标不存在报
+ * REVEAL_TARGET_NOT_FOUND。Renderer 全程不见 absolutePath。
+ * 只读操作：transient 仅预览会话同样允许。
+ */
+export interface RevealNoteInput {
+  vaultId: string;
+  relativePath: string;
+}
+
+/* ---------------------------------- secret ---------------------------------- */
+
+/**
+ * R007 阶段 5（§5.1，G3）：机密存储状态——available=false 表示系统安全
+ * 存储（safeStorage）不可用，Main 降级为会话内存（不落盘、不明文），
+ * Renderer 据此把 capabilities.nativeSecrets 置 false 并提示用户。
+ */
+export interface SecretStatusResult {
+  available: boolean;
+}
+
+/** secret.get / secret.delete 请求：payload 即 secret 名字符串（"<域>.<键>"）。 */
+export type SecretNameRequest = string;
+
+export interface SecretSetInput {
+  name: string;
+  value: string;
+}
+
 /* ---------------------------------- asset ---------------------------------- */
 
 export interface AssetPickRequest {
@@ -489,6 +530,15 @@ export interface ImportedAsset {
 }
 
 export interface ReadAssetInput {
+  assetId: string;
+}
+
+/**
+ * R007 阶段 5（§5.2）：在系统文件管理器中显示附件——assetId 解码出
+ * vaultId + relativePath 后与 note.reveal 同管线（PathGuard →
+ * shell.showItemInFolder）；目标不存在报 REVEAL_TARGET_NOT_FOUND。
+ */
+export interface RevealAssetInput {
   assetId: string;
 }
 
@@ -610,6 +660,27 @@ export interface E1DesktopAPI {
      * 冲突报 VAULT_PATH_COLLISION。transient 拒写。
      */
     renameFile(input: RenameNoteFileInput): Promise<RenameNoteFileResult>;
+    /**
+     * R007 阶段 5（§5.2）：在系统文件管理器中显示笔记/分组（只读，
+     * transient 允许）；目标不存在报 REVEAL_TARGET_NOT_FOUND。
+     */
+    reveal(input: RevealNoteInput): Promise<void>;
+  };
+  /**
+   * R007 阶段 5（§5.1，G3）：机密存储（AI API Key）。Main 用 safeStorage
+   * 加密后落 userData/secrets.json；系统安全存储不可用时降级为会话内存
+   *（status().available=false），永不明文落盘。Renderer 只经本组访问，
+   * 不新增 UI 专属 API（与 SecretStore port 一一对应 + status）。
+   */
+  secret: {
+    /** 系统安全存储是否可用；false 时本组读写为会话内存（重启丢失）。 */
+    status(): Promise<SecretStatusResult>;
+    /** 读取 secret；不存在（或无法解密）返回 null。 */
+    get(name: SecretNameRequest): Promise<string | null>;
+    /** 写入（覆盖）secret。 */
+    set(input: SecretSetInput): Promise<void>;
+    /** 删除 secret；对缺失记录为 no-op。 */
+    remove(name: SecretNameRequest): Promise<void>;
   };
   asset: {
     /** 原生文件选择；取消返回 null。不得返回绝对路径。 */
@@ -618,6 +689,11 @@ export interface E1DesktopAPI {
     read(input: ReadAssetInput): Promise<AssetReadResult>;
     /** 解析为 e1-asset:// URL（不含字节）。 */
     resolveUrl(assetId: string): Promise<string>;
+    /**
+     * R007 阶段 5（§5.2）：在系统文件管理器中显示附件（只读）；
+     * 目标不存在报 REVEAL_TARGET_NOT_FOUND。
+     */
+    reveal(input: RevealAssetInput): Promise<void>;
   };
   /**
    * R007 阶段 3：Main→Renderer 单向事件订阅（唯一推送通道）。

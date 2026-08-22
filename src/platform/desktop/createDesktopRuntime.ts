@@ -11,8 +11,9 @@
  * BrowserMemorySearchIndex / BroadcastChangeChannel / WebRecoveryStore /
  * webNotification 为「只依赖 renderer 标准能力」的实现，Electron renderer
  * 同样可用；附件 Picker/Access 已换 Desktop 实现（R006-C5）。
- * secretStore/storageHealth 用内存实现（nativeSecrets=false，
- * DesktopSecretStore 接系统安全存储属阶段 6+/R007，见 r006 §21）。
+ * R007 阶段 5：secretStore 换 DesktopSecretStore（Main safeStorage
+ * 持久化；不可用时 Main 会话内存降级，nativeSecrets 由装配根按
+ * secret.status 传入实际值）；reveal 接 DesktopRevealService。
  */
 import type {
   AppServices,
@@ -40,7 +41,6 @@ import { BroadcastChangeChannel } from "../web/BroadcastChangeChannel";
 import { WebRecoveryStore } from "../web/webRecoveryStore";
 import { WebNotificationService } from "../web/webNotification";
 import { WebAssetPicker } from "../web/webAssetPicker";
-import { InMemorySecretStore } from "../../infrastructure/memory/secretStore";
 import { InMemoryStorageHealthService } from "../../infrastructure/memory/storageHealth";
 import { createOpenAICompatibleProvider } from "../../infrastructure/aiProvider";
 import { createMarkdownCodec } from "../../editor/markdown/codec";
@@ -52,6 +52,8 @@ import { DesktopIdentityAliasRegistry } from "./DesktopIdentityAliasRegistry";
 import { DesktopMarkdownWriteService } from "./DesktopMarkdownWriteService";
 import { DesktopNoteMetadataService } from "./DesktopNoteMetadataService";
 import { DesktopVaultStateClient } from "./DesktopVaultStateClient";
+import { DesktopSecretStore } from "./DesktopSecretStore";
+import { DesktopRevealService } from "./DesktopRevealService";
 import { DesktopExternalVaultChangeService } from "./DesktopExternalVaultChangeService";
 import { createInMemoryDocumentVersionChannel } from "../../application/services/DocumentVersionChannel";
 import { DesktopAssetRegistry } from "./DesktopAssetRegistry";
@@ -75,8 +77,26 @@ export interface DesktopRuntime {
   capabilities: RuntimeCapabilities;
 }
 
+/**
+ * R007 阶段 5：运行时确认的机密存储能力——nativeSecrets 由装配根
+ *（main.desktop.tsx）先查 secret.status 再传入；缺省 false（安全缺省：
+ * 未确认可用时不声称系统安全存储）。
+ */
+export interface DesktopRuntimeOptions {
+  nativeSecrets?: boolean;
+}
+
 /** 基于桌面桥装配完整 AppServices 容器（读路径真实、写路径诚实失败）。 */
-export function createDesktopRuntime(api: E1DesktopAPI): DesktopRuntime {
+export function createDesktopRuntime(
+  api: E1DesktopAPI,
+  options: DesktopRuntimeOptions = {},
+): DesktopRuntime {
+  // R007 阶段 5：nativeSecrets 是运行时探测值（safeStorage 可用性），
+  // 不是静态常量——以探测结果覆盖静态缺省。
+  const capabilities: RuntimeCapabilities = {
+    ...desktopCapabilities,
+    nativeSecrets: options.nativeSecrets ?? false,
+  };
   // IPC-backed 仓储（扫描缓存跨仓储共享：会话加载的页面/标签读取
   // 与搜索索引准备只触发一次真实扫描）。Alias / Source / WriteService
   // 三份单例：Adoption 后 Session 身份稳定，save 与 replaceContent 共用 Gate。
@@ -162,9 +182,9 @@ export function createDesktopRuntime(api: E1DesktopAPI): DesktopRuntime {
     onError: (err) => console.error("偏好写入失败", err),
     onPersisted: () => syncChannel.publish({ type: "preferences-changed" }),
   });
-  // 机密存储：内存实现（PoC）；apiKey 不持久，重启后需重填——
-  // nativeSecrets 保持 false，接系统安全存储属阶段 6+/R007。
-  const secretStore = new InMemorySecretStore();
+  // 机密存储（R007 阶段 5）：Main safeStorage 加密持久化；系统安全存储
+  // 不可用时 Main 降级会话内存（secret.status 报告，nativeSecrets=false）。
+  const secretStore = new DesktopSecretStore(api);
   const aiConfigService = new AIConfigService({
     preferences: preferencesService,
     secrets: secretStore,
@@ -254,9 +274,11 @@ export function createDesktopRuntime(api: E1DesktopAPI): DesktopRuntime {
     aliases,
   });
   externalVaultChanges.start();
+  // R007 阶段 5：文件管理器定位（note.reveal/asset.reveal）。
+  const reveal = new DesktopRevealService(api, scans);
   const services: AppServices = {
     assets: assetsServices,
-    capabilities: desktopCapabilities,
+    capabilities,
     // 操作支持矩阵（R007 阶段 4 §9）：未实现的操作 false，入口隐藏。
     operations: desktopOperations,
     // FR-26「重新扫描知识库」（PR5：VaultMaintenancePort）：缓存失效 +
@@ -266,6 +288,13 @@ export function createDesktopRuntime(api: E1DesktopAPI): DesktopRuntime {
     documentSafety,
     // 外部 Vault 变更流（R007 阶段 3；消费侧以 capabilities.fileWatching 门控）。
     externalVaultChanges,
+    // 文件管理器定位（R007 阶段 5；消费侧以 capabilities.revealInFileManager 门控）。
+    reveal,
+    // 机密存储落盘能力（R007 阶段 5）：false 时设置页提示「本次会话使用」。
+    secretStorageStatus: {
+      native: capabilities.nativeSecrets,
+      persistent: capabilities.nativeSecrets,
+    },
     preferencesService,
     syncChannel,
     documentVersionChannel,
@@ -291,5 +320,5 @@ export function createDesktopRuntime(api: E1DesktopAPI): DesktopRuntime {
         { initialVersion: options?.initialVersion },
       ),
   };
-  return { services, capabilities: desktopCapabilities };
+  return { services, capabilities };
 }

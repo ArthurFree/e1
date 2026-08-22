@@ -22,7 +22,11 @@ import {
   parseRenameNoteFileInput,
   parseResolveAssetUrlInput,
   parseRestoreTrashInput,
+  parseRevealAssetInput,
+  parseRevealNoteInput,
   parseSaveNoteInput,
+  parseSecretNameRequest,
+  parseSecretSetInput,
   parseTrashInput,
   parseVaultScanRequest,
 } from "./schemas.js";
@@ -612,6 +616,78 @@ describe("R007 阶段 4：文件操作入参校验", () => {
           }),
         "PATH_ESCAPE",
       );
+    });
+  });
+
+  describe("parseRevealNoteInput / parseRevealAssetInput（R007 阶段 5）", () => {
+    it("note.reveal：文件与目录相对路径均通过；逃逸 → PATH_ESCAPE", () => {
+      expect(
+        parseRevealNoteInput({ vaultId: "v-1", relativePath: "学习" }),
+      ).toEqual({ vaultId: "v-1", relativePath: "学习" });
+      expect(
+        parseRevealNoteInput({ vaultId: "v-1", relativePath: "学习/React.md" }),
+      ).toEqual({ vaultId: "v-1", relativePath: "学习/React.md" });
+      for (const payload of [
+        { vaultId: "v-1", relativePath: "../x.md" },
+        { vaultId: "v-1", relativePath: "/abs/x.md" },
+        { vaultId: "v-1", relativePath: "a//b.md" },
+      ]) {
+        expectFailure(() => parseRevealNoteInput(payload), "PATH_ESCAPE");
+      }
+      expectFailure(
+        () => parseRevealNoteInput({ vaultId: "v-1" }),
+        "INVALID_INPUT",
+      );
+    });
+
+    it("asset.reveal：assetId 必填非空", () => {
+      expect(parseRevealAssetInput({ assetId: "asset:v1:v/a.png" })).toEqual({
+        assetId: "asset:v1:v/a.png",
+      });
+      for (const payload of [{}, { assetId: "" }, { assetId: 1 }, "x"]) {
+        expectFailure(() => parseRevealAssetInput(payload), "INVALID_INPUT");
+      }
+    });
+  });
+
+  describe("parseSecretNameRequest / parseSecretSetInput（R007 阶段 5）", () => {
+    it("合法 secret 名（<域>.<键>）通过", () => {
+      expect(parseSecretNameRequest("ai.apiKey")).toBe("ai.apiKey");
+      expect(parseSecretNameRequest("vault-2.master-key")).toBe(
+        "vault-2.master-key",
+      );
+    });
+
+    it("非法 secret 名 → INVALID_INPUT", () => {
+      for (const name of [
+        "",
+        "apiKey",
+        "AI.apiKey",
+        "ai..apiKey",
+        "ai.api key",
+        "ai.apiKey.extra.",
+        `ai.${"x".repeat(200)}`,
+        42,
+        null,
+      ]) {
+        expectFailure(() => parseSecretNameRequest(name), "INVALID_INPUT");
+      }
+    });
+
+    it("secret.set：合法入参通过；空值/非字符串/超长 → INVALID_INPUT", () => {
+      expect(parseSecretSetInput({ name: "ai.apiKey", value: "sk-1" })).toEqual(
+        { name: "ai.apiKey", value: "sk-1" },
+      );
+      for (const payload of [
+        { name: "ai.apiKey" },
+        { name: "ai.apiKey", value: "" },
+        { name: "ai.apiKey", value: 42 },
+        { name: "ai.apiKey", value: "x".repeat(16_385) },
+        { name: "bad name", value: "v" },
+        "ai.apiKey",
+      ]) {
+        expectFailure(() => parseSecretSetInput(payload), "INVALID_INPUT");
+      }
     });
   });
 });

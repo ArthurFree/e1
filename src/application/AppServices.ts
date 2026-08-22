@@ -34,6 +34,7 @@ import type { SecretStore } from "./services/SecretStore";
 import type { AIConfigService } from "./services/AIConfigService";
 import type { StorageHealthService } from "./services/StorageHealthService";
 import type { ExternalVaultChangeService } from "./services/ExternalVaultChangeService";
+import type { RevealService } from "./services/RevealService";
 import type { RuntimeCapabilities } from "../runtime/RuntimeCapabilities";
 import type { RuntimeOperations } from "../runtime/RuntimeOperations";
 
@@ -165,6 +166,22 @@ export interface AppServices {
    * （DUAL-01：只判断能力与服务是否存在，不判断平台名称）。
    */
   externalVaultChanges?: ExternalVaultChangeService;
+  /**
+   * 文件管理器定位 port（可选，R007 阶段 5 §5.2）：「在文件管理器中显示」
+   * 笔记/分组/附件，由具备原生 reveal 能力的运行时装配（Desktop）；
+   * Web/内存容器不装配本字段。UI 一律以
+   * `capabilities.revealInFileManager && services.reveal` 门控
+   *（DUAL-01：只判断能力与服务是否存在，不判断平台名称）。
+   */
+  reveal?: RevealService;
+  /**
+   * 机密存储落盘能力（可选，R007 阶段 5 §5.1）：由使用系统安全存储的
+   * 运行时装配（Desktop）。native/persistent=false 表示系统安全存储
+   * 不可用、机密仅存本次会话（Main 内存降级，不明文落盘）——设置页
+   * 据此提示「本次会话使用」。Web/内存容器不装配本字段（Web 的
+   * IndexedDB SecretStore 本就持久，无需提示）。
+   */
+  secretStorageStatus?: { native: boolean; persistent: boolean };
   /**
    * 命令服务（R005 批次 1）：业务写编排入口，状态层经此触发仓储写、
    * 搜索索引同步与跨标签页广播。

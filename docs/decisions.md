@@ -73,6 +73,7 @@
 | Desktop 本地附件闭环（R006-C5）                    | 新资源只写 `vault.json` 的 `assetsDirectory`；Markdown 只写相对路径；Renderer 不见绝对路径（`pickToken` / `authorized-ref`）；`DesktopAssetStore` + `e1-asset://` 协议；Hydration 把受管相对图/整段附件链升级为节点；删除节点不 `unlink`；`persistentAssetPaths=true`；zip 导入仍走 Renderer 字节通道 | C4 后图片/附件仍是桩，第三方工具看不到真实文件；Web Object URL 不能作为 Desktop 持久化真相 |
 | R006 功能冻结 / 复杂度收敛（fix_001）              | 本轮只做收敛与债务收口（文档事实同步、能力矩阵锁定、unowned async、层内拆分等），**不开 R007**、不新增大产品能力；Desktop 技术验证版以 C5 为功能冻结边界 | 代码能力已超架构文档；继续加功能会放大层内巨石与文档漂移；先把现状锁死再谈产品化 |
 | 操作支持矩阵 RuntimeOperations（R007 阶段 4 §9）    | 新增 `AppServices.operations`（workspace/page/tag/revision 四组 boolean）承载「UI 是否显示操作入口」，与 `RuntimeCapabilities`（底层平台能力）严格分离；未实现的操作 false 隐藏入口，不再点了抛 NOT_IMPLEMENTED；Desktop 文件操作（回收站/新建分组/移动）走统一 IPC，`trash:<vaultId>/<operationId>` 页面 id 携带恢复定位键 | 避免能力矩阵膨胀成几十个字段；Operation=产品允许做什么、Capability=runtime 能做什么；回收站条目无扫描快照可依托，id 自带定位键使命令层零改动 |
+| Desktop 机密存储与运行时探测能力（R007 阶段 5）       | Main `DesktopSecretPersistence` 用 safeStorage 加密落 `userData/secrets.json`（密文 base64，永不明文）；不可用时降级会话内存并经新增的 `secret.status` 上报——`nativeSecrets` 成为能力矩阵唯一的运行时探测字段（静态缺省 false，装配根 `main.desktop.tsx` 先查 status 再覆盖）；降级提示走可选 `AppServices.secretStorageStatus`（Web 不装配）；reveal 走 `note.reveal`/`asset.reveal` IPC（PathGuard 后 `shell.showItemInFolder`）+ 可选 port `AppServices.reveal` | 「不伪装为安全」：安全存储不可用时必须让用户可见且永不明文落盘；能力探测发生在装配前，UI 仍只读 capabilities 不判断平台；reveal 不暴露 absolutePath（DSK-02） |
 
 重大架构决策另有 ADR 详述（背景/替代方案），见 [adr/](./adr/)。
 

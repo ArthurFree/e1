@@ -40,8 +40,8 @@ test.describe("桌面冒烟", () => {
     const window = await app.firstWindow();
 
     // R006 阶段 1 预加载契约：contextBridge 暴露的完整 E1DesktopAPI
-    // （platform + vault/vaultState/note/asset 四组方法 + R007 阶段 3 的
-    // events 事件组；Renderer 拿不到 ipcRenderer）。
+    // （platform + vault/vaultState/note/asset 组方法 + R007 阶段 3 的
+    // events 事件组 + R007 阶段 5 的 secret 组；Renderer 拿不到 ipcRenderer）。
     const bridge = await window.evaluate(() => {
       const e1 = (
         window as unknown as {
@@ -51,6 +51,7 @@ test.describe("桌面冒烟", () => {
             vaultState?: Record<string, unknown>;
             note?: Record<string, unknown>;
             asset?: Record<string, unknown>;
+            secret?: Record<string, unknown>;
             events?: Record<string, unknown>;
           };
         }
@@ -61,6 +62,7 @@ test.describe("桌面冒烟", () => {
         vaultState: Object.keys(e1?.vaultState ?? {}).sort(),
         note: Object.keys(e1?.note ?? {}).sort(),
         asset: Object.keys(e1?.asset ?? {}).sort(),
+        secret: Object.keys(e1?.secret ?? {}).sort(),
         events: Object.keys(e1?.events ?? {}).sort(),
       };
     });
@@ -84,8 +86,20 @@ test.describe("桌面冒烟", () => {
       vaultState: ["get", "patch"],
       // R007 阶段 1：patchMetadata（Frontmatter title/tags 局部写入）。
       // R007 阶段 4：move/renameFile（文件操作闭环）。
-      note: ["create", "move", "patchMetadata", "read", "renameFile", "save"],
-      asset: ["import", "pick", "read", "resolveUrl"],
+      // R007 阶段 5：reveal（在文件管理器中显示）。
+      note: [
+        "create",
+        "move",
+        "patchMetadata",
+        "read",
+        "renameFile",
+        "reveal",
+        "save",
+      ],
+      // R007 阶段 5：reveal（附件在文件管理器中显示）。
+      asset: ["import", "pick", "read", "resolveUrl", "reveal"],
+      // R007 阶段 5：机密存储组（safeStorage 持久化 + 可用性探测）。
+      secret: ["get", "remove", "set", "status"],
       // R007 阶段 3：Main→Renderer 单向事件组（Watcher 事实订阅）。
       events: ["subscribeVaultChanges"],
     });

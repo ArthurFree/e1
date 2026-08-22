@@ -36,6 +36,13 @@ export interface AssetAccessService {
    * @returns false 表示资源缺失或为空（调用方展示「附件不可用」）。
    */
   download(assetId: string): Promise<boolean>;
+  /**
+   * 在系统文件管理器中显示附件文件（可选，R007 阶段 5 §5.2）：
+   * 只有附件拥有真实文件路径的运行时才实现（Desktop）；未实现时
+   * UI 不展示「在文件夹中显示」入口。
+   * @returns false 表示定位失败（资源缺失或平台拒绝）。
+   */
+  reveal?(assetId: string): Promise<boolean>;
 }
 
 /** 文件选择选项。 */
