@@ -13,6 +13,7 @@ import type { ContentRepository } from "../../domain/repositories";
 import { searchPages } from "../../domain/search";
 import type { Page, SearchResult } from "../../domain/types";
 import { increment } from "../devDiagnostics";
+import type { FullTextSearchIndex } from "../search/FullTextSearchIndex";
 import type { SearchIndexPort } from "../services/SearchIndexPort";
 
 export class SearchQueryService {
@@ -20,6 +21,11 @@ export class SearchQueryService {
     private readonly deps: {
       searchIndex: SearchIndexPort;
       content: ContentRepository;
+      /**
+       * R008 Stage 4：全文搜索索引（Desktop 装配；ready 时优先消费，
+       * 未装配/未 ready 回退既有 SearchIndexPort/全量扫描路径）。
+       */
+      fullText?: FullTextSearchIndex;
     },
   ) {}
 
@@ -29,6 +35,22 @@ export class SearchQueryService {
     pages: Page[],
     query: string,
   ): Promise<SearchResult[]> {
+    // R008：Desktop 全文索引 ready 时走 title/tags/body 全文检索。
+    if (
+      workspaceId &&
+      this.deps.fullText &&
+      this.deps.fullText.getStatus(workspaceId).state === "ready"
+    ) {
+      const results = await this.deps.fullText.search({
+        vaultId: workspaceId,
+        query,
+      });
+      return results.map((r) => ({
+        pageId: r.pageId,
+        title: r.title,
+        snippet: r.snippet ?? "",
+      }));
+    }
     if (workspaceId && this.deps.searchIndex.has(workspaceId)) {
       return this.deps.searchIndex.query(workspaceId, query);
     }

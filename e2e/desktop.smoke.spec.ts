@@ -52,6 +52,7 @@ test.describe("桌面冒烟", () => {
             note?: Record<string, unknown>;
             asset?: Record<string, unknown>;
             secret?: Record<string, unknown>;
+            search?: Record<string, unknown>;
             events?: Record<string, unknown>;
           };
         }
@@ -63,6 +64,7 @@ test.describe("桌面冒烟", () => {
         note: Object.keys(e1?.note ?? {}).sort(),
         asset: Object.keys(e1?.asset ?? {}).sort(),
         secret: Object.keys(e1?.secret ?? {}).sort(),
+        search: Object.keys(e1?.search ?? {}).sort(),
         events: Object.keys(e1?.events ?? {}).sort(),
       };
     });
@@ -100,6 +102,8 @@ test.describe("桌面冒烟", () => {
       asset: ["import", "pick", "read", "resolveUrl", "reveal"],
       // R007 阶段 5：机密存储组（safeStorage 持久化 + 可用性探测）。
       secret: ["get", "remove", "set", "status"],
+      // R008 Stage 4：全文搜索索引组（SQLite 派生索引）。
+      search: ["query", "rebuild", "relocate", "remove", "status", "upsert"],
       // R007 阶段 3：Main→Renderer 单向事件组（Watcher 事实订阅）。
       events: ["subscribeVaultChanges"],
     });

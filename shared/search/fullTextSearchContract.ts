@@ -9,11 +9,11 @@
  * frontmatter（frontmatter 语法不进 bodyText——调用方已提取）。
  */
 import { describe, expect, it } from "vitest";
+import { SEARCH_SCORE } from "./textMatch.js";
 import type {
   FullTextSearchIndex,
   SearchDocument,
-} from "../application/search/FullTextSearchIndex";
-import { SEARCH_SCORE } from "../application/search/FullTextSearchIndex";
+} from "./FullTextSearchIndex.js";
 
 const VAULT = "v-contract";
 

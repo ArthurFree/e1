@@ -34,10 +34,12 @@ import { registerAssetHandlers } from "./asset.js";
 import { registerVaultStateHandlers } from "./vaultState.js";
 import { registerSecretHandlers } from "./secrets.js";
 import { registerRevealHandlers } from "./reveal.js";
+import { registerSearchHandlers } from "./search.js";
 import { VaultRegistry } from "../vaultRegistry.js";
 import { DesktopVaultStateStore } from "../state/DesktopVaultStateStore.js";
 import { SecretFilePersistence } from "../secrets/SecretFilePersistence.js";
 import { evaluateSecretBackendStatus } from "../secrets/SecretBackendStatus.js";
+import { DesktopSearchIndexManager } from "../search/DesktopSearchDatabase.js";
 import { SelectionTokenStore } from "../SelectionTokenStore.js";
 import { TransientVaultStore } from "../transientVaults.js";
 import {
@@ -62,6 +64,8 @@ export interface RegisterIpcHandlersDeps {
   secretStore?: SecretFilePersistence;
   /** R008 Stage 1：后端状态评估（缺省 evaluateSecretBackendStatus(safeStorage)）。 */
   secretStatus?: () => SecretStorageStatus;
+  /** R008 Stage 4：全文搜索索引库集合（缺省 userData/search-index/）。 */
+  searchIndexes?: DesktopSearchIndexManager;
   /** R006-C2.1：可注入以控制时钟/隔离状态（测试用）。 */
   selectionTokens?: SelectionTokenStore;
   transients?: TransientVaultStore;
@@ -105,6 +109,11 @@ export function registerIpcHandlers(
       safeStorage,
       () => secretStatus().mode,
     );
+  const searchIndexes =
+    deps.searchIndexes ??
+    new DesktopSearchIndexManager(
+      join(app.getPath("userData"), "search-index"),
+    );
   const transients = deps.transients ?? new TransientVaultStore();
   const openDialog = deps.openDialog ?? dialog;
   const selfWrites = deps.selfWrites ?? new SelfWriteRegistry();
@@ -130,6 +139,7 @@ export function registerIpcHandlers(
   });
   registerSecretHandlers(bus, { store: secretStore, status: secretStatus });
   registerRevealHandlers(bus, { registry, transients });
+  registerSearchHandlers(bus, { registry, transients, indexes: searchIndexes });
   registerAssetHandlers(bus, {
     openDialog: openDialog as FileDialogLike,
     registry,

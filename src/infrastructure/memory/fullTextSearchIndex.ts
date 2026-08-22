@@ -3,9 +3,9 @@
  * 契约语义的基准（与 Desktop SQLite 实现跑同一套契约套件，
  * src/test/fullTextSearchContract.ts）。
  *
- * 匹配/评分/排序规则全部来自 shared/search/textMatch 与
- * application/search/FullTextSearchIndex 的冻结定义；纯内存 Map，
- * 不触碰浏览器/Node API（内存测试容器同形状复用）。
+ * 匹配/评分/排序全部委托 shared/search/textMatch 的冻结实现
+ *（scoreDocument/compareSearchResults），与 SQLite 实现逐点一致；
+ * 纯内存 Map，不触碰浏览器/Node API（内存测试容器同形状复用）。
  */
 import type {
   FullTextSearchIndex,
@@ -16,15 +16,12 @@ import type {
 import {
   DEFAULT_SEARCH_LIMIT,
   MAX_SEARCH_LIMIT,
-  SEARCH_SCORE,
 } from "../../application/search/FullTextSearchIndex";
 import type { SearchIndexStatus } from "../../application/search/SearchIndexStatus";
 import {
-  bodyMatches,
-  fieldMatches,
-  makeTextSnippet,
+  compareSearchResults,
   normalizeSearchText,
-  splitQueryTerms,
+  scoreDocument,
   tokenizeForIndex,
 } from "../../../shared/search/textMatch";
 
@@ -69,9 +66,9 @@ export class InMemoryFullTextSearchIndex implements FullTextSearchIndex {
   }
 
   search(input: FullTextSearchInput): Promise<FullTextSearchResult[]> {
-    const normalized = normalizeSearchText(input.query.trim());
-    if (normalized === "") return Promise.resolve([]);
-    const terms = splitQueryTerms(normalized);
+    if (normalizeSearchText(input.query.trim()) === "") {
+      return Promise.resolve([]);
+    }
     const limit = Math.min(
       input.limit ?? DEFAULT_SEARCH_LIMIT,
       MAX_SEARCH_LIMIT,
@@ -83,11 +80,28 @@ export class InMemoryFullTextSearchIndex implements FullTextSearchIndex {
     for (const bucket of buckets) {
       if (!bucket) continue;
       for (const entry of bucket.values()) {
-        const scored = scoreEntry(entry, normalized, terms);
-        if (scored) results.push(scored);
+        const scored = scoreDocument(
+          {
+            title: entry.document.title,
+            titleNormalized: entry.titleNormalized,
+            tagsNormalized: entry.tagsNormalized,
+            bodyTokens: entry.bodyTokens,
+            bodyText: entry.document.bodyText,
+          },
+          input.query,
+        );
+        if (!scored) continue;
+        results.push({
+          pageId: entry.document.pageId,
+          title: entry.document.title,
+          matchedField: scored.matchedField,
+          snippet: scored.snippet,
+          score: scored.score,
+          relativePath: entry.document.relativePath,
+        });
       }
     }
-    results.sort(compareResults);
+    results.sort(compareSearchResults);
     return Promise.resolve(results.slice(0, limit));
   }
 
@@ -130,56 +144,6 @@ export class InMemoryFullTextSearchIndex implements FullTextSearchIndex {
   getStatus(vaultId: string): SearchIndexStatus {
     return this.status.get(vaultId) ?? { state: "missing" };
   }
-}
-
-/** 按冻结评分表给单条文档打分；未命中返回 null。 */
-function scoreEntry(
-  entry: Entry,
-  normalizedQuery: string,
-  terms: string[],
-): FullTextSearchResult | null {
-  const { document, titleNormalized, tagsNormalized, bodyTokens } = entry;
-  let score = 0;
-  let matchedField: FullTextSearchResult["matchedField"] | null = null;
-  if (titleNormalized === normalizedQuery) {
-    score = SEARCH_SCORE.titleExact;
-    matchedField = "title";
-  } else if (titleNormalized.startsWith(normalizedQuery)) {
-    score = SEARCH_SCORE.titlePrefix;
-    matchedField = "title";
-  } else if (fieldMatches(titleNormalized, normalizedQuery)) {
-    score = SEARCH_SCORE.titleContains;
-    matchedField = "title";
-  } else if (tagsNormalized.some((tag) => fieldMatches(tag, normalizedQuery))) {
-    score = SEARCH_SCORE.tagMatch;
-    matchedField = "tag";
-  } else if (bodyMatches(terms, bodyTokens)) {
-    score = SEARCH_SCORE.bodyMatch;
-    matchedField = "body";
-  }
-  if (matchedField === null) return null;
-  return {
-    pageId: document.pageId,
-    title: document.title,
-    matchedField,
-    snippet:
-      matchedField === "body"
-        ? makeTextSnippet(document.bodyText, normalizedQuery)
-        : null,
-    score,
-    relativePath: document.relativePath,
-  };
-}
-
-/** 稳定排序：score 降序 → title zh-CN → pageId。 */
-function compareResults(
-  a: FullTextSearchResult,
-  b: FullTextSearchResult,
-): number {
-  if (a.score !== b.score) return b.score - a.score;
-  const byTitle = a.title.localeCompare(b.title, "zh-CN");
-  if (byTitle !== 0) return byTitle;
-  return a.pageId.localeCompare(b.pageId);
 }
 
 async function* toAsyncIterable(

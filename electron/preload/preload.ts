@@ -54,6 +54,16 @@ import {
   type RevealNoteInput,
   type SaveNoteInput,
   type SaveNoteResult,
+  type SearchIndexStatus,
+  type SearchQueryInput,
+  type SearchQueryRow,
+  type SearchRebuildInput,
+  type SearchRebuildResult,
+  type SearchRelocateInput,
+  type SearchRemoveInput,
+  type SearchStatusInput,
+  type SearchUpsertInput,
+  type SearchUpsertResult,
   type SecretSetInput,
   type SecretStorageStatus,
   type SelectedVault,
@@ -138,6 +148,20 @@ const api: E1DesktopAPI = {
     get: (name: string) => invoke<string | null>(IPC_CHANNELS.secretGet, name),
     set: (input: SecretSetInput) => invoke<void>(IPC_CHANNELS.secretSet, input),
     remove: (name: string) => invoke<void>(IPC_CHANNELS.secretDelete, name),
+  },
+  search: {
+    query: (input: SearchQueryInput) =>
+      invoke<SearchQueryRow[]>(IPC_CHANNELS.searchQuery, input),
+    rebuild: (input: SearchRebuildInput) =>
+      invoke<SearchRebuildResult>(IPC_CHANNELS.searchRebuild, input),
+    upsert: (input: SearchUpsertInput) =>
+      invoke<SearchUpsertResult>(IPC_CHANNELS.searchUpsert, input),
+    remove: (input: SearchRemoveInput) =>
+      invoke<void>(IPC_CHANNELS.searchRemove, input),
+    relocate: (input: SearchRelocateInput) =>
+      invoke<void>(IPC_CHANNELS.searchRelocate, input),
+    status: (input: SearchStatusInput) =>
+      invoke<SearchIndexStatus>(IPC_CHANNELS.searchStatus, input),
   },
   asset: {
     pick: (input?: AssetPickRequest) =>

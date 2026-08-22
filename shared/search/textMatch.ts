@@ -110,7 +110,6 @@ export function fieldMatches(
 
 /** snippet 截取半径（命中点前后字符数）。 */
 const SNIPPET_RADIUS = 40;
-
 /**
  * 纯文本 snippet：命中点前后各 SNIPPET_RADIUS 字符，首尾省略号。
  * 只返回纯文本（§14.2：DB 不返回 HTML）；body 未命中返回 null。
@@ -148,4 +147,93 @@ export function makeTextSnippet(
   const start = Math.max(0, hit - SNIPPET_RADIUS);
   const end = Math.min(bodyText.length, hit + hitLength + SNIPPET_RADIUS);
   return `${start > 0 ? "…" : ""}${bodyText.slice(start, end)}${end < bodyText.length ? "…" : ""}`;
+}
+
+/* ------------------------------ 评分与排序（§11.7） ------------------------------ */
+
+/** 命中字段（title > tag > body 优先级）。 */
+export type SearchMatchField = "title" | "tag" | "body";
+
+/** §10.6：limit 上限 / 缺省值。 */
+export const MAX_SEARCH_LIMIT = 100;
+export const DEFAULT_SEARCH_LIMIT = 50;
+
+/** §11.7 评分表（契约套件锁定）。 */
+export const SEARCH_SCORE = {
+  titleExact: 100,
+  titlePrefix: 80,
+  titleContains: 60,
+  tagMatch: 40,
+  bodyMatch: 20,
+} as const;
+
+/** 单文档评分输入（归一化字段 + body 词元 + snippet 用原文）。 */
+export interface ScoreDocumentInput {
+  title: string;
+  titleNormalized: string;
+  tagsNormalized: string[];
+  bodyTokens: Set<string>;
+  bodyText: string;
+}
+
+export interface ScoreDocumentResult {
+  matchedField: SearchMatchField;
+  snippet: string | null;
+  score: number;
+}
+
+/**
+ * 按冻结评分表给单条文档打分（exact title 100 > prefix 80 > contains 60
+ * > tag 40 > body 20）；未命中返回 null。内存与 SQLite 实现共用本函数，
+ * 保证两实现评分语义逐点一致（契约套件锁定）。
+ */
+export function scoreDocument(
+  input: ScoreDocumentInput,
+  query: string,
+): ScoreDocumentResult | null {
+  const normalized = normalizeSearchText(query.trim());
+  if (normalized === "") return null;
+  const { titleNormalized, tagsNormalized, bodyTokens, bodyText } = input;
+  if (titleNormalized === normalized) {
+    return {
+      matchedField: "title",
+      snippet: null,
+      score: SEARCH_SCORE.titleExact,
+    };
+  }
+  if (titleNormalized.startsWith(normalized)) {
+    return {
+      matchedField: "title",
+      snippet: null,
+      score: SEARCH_SCORE.titlePrefix,
+    };
+  }
+  if (fieldMatches(titleNormalized, normalized)) {
+    return {
+      matchedField: "title",
+      snippet: null,
+      score: SEARCH_SCORE.titleContains,
+    };
+  }
+  if (tagsNormalized.some((tag) => fieldMatches(tag, normalized))) {
+    return { matchedField: "tag", snippet: null, score: SEARCH_SCORE.tagMatch };
+  }
+  if (bodyMatches(splitQueryTerms(normalized), bodyTokens)) {
+    return {
+      matchedField: "body",
+      snippet: makeTextSnippet(bodyText, normalized),
+      score: SEARCH_SCORE.bodyMatch,
+    };
+  }
+  return null;
+}
+
+/** 稳定排序：score 降序 → title zh-CN → pageId。 */
+export function compareSearchResults<
+  T extends { score: number; title: string; pageId: string },
+>(a: T, b: T): number {
+  if (a.score !== b.score) return b.score - a.score;
+  const byTitle = a.title.localeCompare(b.title, "zh-CN");
+  if (byTitle !== 0) return byTitle;
+  return a.pageId.localeCompare(b.pageId);
 }

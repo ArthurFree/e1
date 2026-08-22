@@ -76,6 +76,15 @@ describe("preload 暴露形状", () => {
       "set",
       "status",
     ]);
+    // R008 Stage 4：全文搜索索引组（SQLite 派生索引）。
+    expect(Object.keys(api.search).sort()).toEqual([
+      "query",
+      "rebuild",
+      "relocate",
+      "remove",
+      "status",
+      "upsert",
+    ]);
   });
 });
 

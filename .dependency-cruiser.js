@@ -72,9 +72,9 @@ export default {
     {
       name: "electron-no-src",
       comment:
-        "R006 阶段 1：electron 不得依赖 src（Main/Preload 与 Renderer 只经 shared/ 共享契约）",
+        "R006 阶段 1：electron 不得依赖 src（Main/Preload 与 Renderer 只经 shared/ 共享契约）；测试文件豁免（契约套件跨边界共享，R008 Stage 4）",
       severity: "error",
-      from: { path: "^electron" },
+      from: { path: "^electron", pathNot: TEST_LIKE },
       to: { path: "^src" },
     },
     {

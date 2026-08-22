@@ -19,6 +19,9 @@
  *（Main safeStorage 加密落 userData/secrets.json；不可用时会话内存降级，
  * 永不明文落盘）与 note.reveal / asset.reveal（PathGuard 后
  * shell.showItemInFolder，Renderer 全程不见 absolutePath）。
+ * R008 Stage 1：secret.status 改 SecretStorageStatus 三模式（R8-02）。
+ * R008 Stage 4：search.* 组——SQLite（node:sqlite，Main）全文索引的
+ * 查询/重建/增量维护通道（索引是 derived data，R8-03）。
  *
  * shared/ 为 Renderer（src/platform/desktop）与 Electron Main/Preload 共用
  * 的唯一契约来源：channel 常量、请求/响应类型、E1DesktopAPI 形状。
@@ -65,6 +68,12 @@ export const IPC_CHANNELS = {
   assetRead: "asset:read",
   assetResolveUrl: "asset:resolveUrl",
   assetReveal: "asset:reveal",
+  searchQuery: "search:query",
+  searchRebuild: "search:rebuild",
+  searchUpsert: "search:upsert",
+  searchRemove: "search:remove",
+  searchRelocate: "search:relocate",
+  searchStatus: "search:status",
   eventsVaultChanges: "events:vaultChanges",
 } as const;
 
@@ -503,6 +512,93 @@ export interface SecretSetInput {
   value: string;
 }
 
+/* ---------------------------------- search ---------------------------------- */
+
+/**
+ * 搜索索引状态机（R008 Stage 3 §13.1 的 wire 形态；application 层经
+ * src/application/search/SearchIndexStatus.ts 重导出同一类型）：
+ * missing 无索引 / building 重建中 / ready 可用 / degraded 增量失败 /
+ * corrupt 库损坏（派生索引优先 rebuild，R8-03）。
+ */
+export type SearchIndexStatus =
+  | { state: "missing" }
+  | { state: "building"; progress?: number }
+  | { state: "ready"; indexedDocuments: number }
+  | { state: "degraded"; reason: string }
+  | { state: "corrupt"; reason: string };
+
+/** search.query 请求（R008 Stage 4 §10.5）。 */
+export interface SearchQueryInput {
+  /** 缺省表示跨全部已索引 Vault。 */
+  vaultId?: string;
+  query: string;
+  /** 缺省 50，上限 100。 */
+  limit?: number;
+}
+
+/** 命中字段（title > tag > body 优先级）。 */
+export type SearchMatchField =
+  import("../search/textMatch.js").SearchMatchField;
+export {
+  DEFAULT_SEARCH_LIMIT,
+  MAX_SEARCH_LIMIT,
+  SEARCH_SCORE,
+} from "../search/textMatch.js";
+
+/**
+ * search.query 结果行（§10.4 的 wire 形态）：pageId 为 Main 侧稳定键
+ *（stableNoteId ?? path:<relativePath>），Renderer 适配层负责翻译为
+ * 会话页面 id（Adoption 别名解析）。
+ */
+export interface SearchQueryRow {
+  pageId: string;
+  title: string;
+  matchedField: SearchMatchField;
+  /** body 命中的纯文本 snippet（无 HTML）；title/tag 命中为 null。 */
+  snippet: string | null;
+  score: number;
+  relativePath: string;
+  stableNoteId: string | null;
+}
+
+/** search.rebuild 请求：Main 全量重扫 Vault 并重建该库索引。 */
+export interface SearchRebuildInput {
+  vaultId: string;
+}
+
+export interface SearchRebuildResult {
+  indexedDocuments: number;
+}
+
+/** search.upsert 请求：指定笔记已变化，Main 读盘解析后 upsert。 */
+export interface SearchUpsertInput {
+  vaultId: string;
+  relativePath: string;
+}
+
+export interface SearchUpsertResult {
+  /** false：文件已不存在（调用方按 deleted 处理）。 */
+  indexed: boolean;
+}
+
+/** search.remove 请求：按路径删除索引行（文件已不存在，无法读盘取键）。 */
+export interface SearchRemoveInput {
+  vaultId: string;
+  relativePath: string;
+}
+
+/** search.relocate 请求：移动/重命名——保持身份，只改路径。 */
+export interface SearchRelocateInput {
+  vaultId: string;
+  from: string;
+  to: string;
+}
+
+/** search.status 请求：payload 即 { vaultId }。 */
+export interface SearchStatusInput {
+  vaultId: string;
+}
+
 /* ---------------------------------- asset ---------------------------------- */
 
 export interface AssetPickRequest {
@@ -697,6 +793,23 @@ export interface E1DesktopAPI {
     set(input: SecretSetInput): Promise<void>;
     /** 删除 secret；对缺失记录为 no-op。 */
     remove(name: SecretNameRequest): Promise<void>;
+  };
+  /**
+   * R008 Stage 4（R8-03/04）：全文搜索索引——SQLite 派生索引的
+   * 查询/重建/增量维护。结果行 pageId 为 Main 稳定键，会话身份翻译
+   * 在 Renderer 适配层（DesktopSearchIndex）。
+   */
+  search: {
+    query(input: SearchQueryInput): Promise<SearchQueryRow[]>;
+    /** 全量重扫 Vault 重建索引（幂等；期间 status=building）。 */
+    rebuild(input: SearchRebuildInput): Promise<SearchRebuildResult>;
+    /** 指定笔记已变化：Main 读盘解析 upsert；文件已消失返回 indexed=false。 */
+    upsert(input: SearchUpsertInput): Promise<SearchUpsertResult>;
+    /** 按路径删除索引行（幂等）。 */
+    remove(input: SearchRemoveInput): Promise<void>;
+    /** 移动/重命名：保持身份只改路径。 */
+    relocate(input: SearchRelocateInput): Promise<void>;
+    status(input: SearchStatusInput): Promise<SearchIndexStatus>;
   };
   asset: {
     /** 原生文件选择；取消返回 null。不得返回绝对路径。 */

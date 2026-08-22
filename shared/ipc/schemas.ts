@@ -29,6 +29,10 @@ import type {
   RevealAssetInput,
   RevealNoteInput,
   SaveNoteInput,
+  SearchQueryInput,
+  SearchRebuildInput,
+  SearchRelocateInput,
+  SearchUpsertInput,
   SecretSetInput,
   TrashInput,
   VaultFsEvent,
@@ -518,6 +522,69 @@ export function parseSecretSetInput(payload: unknown): SecretSetInput {
     invalid("字段 value 超出长度上限（16 KiB）");
   }
   return { name, value };
+}
+
+/* ------------------------------- 阶段 4：search ------------------------------- */
+
+/** search.query 入参校验（R008 Stage 4 §10.6：query 必填字符串，limit 上限 100）。 */
+export function parseSearchQueryInput(payload: unknown): SearchQueryInput {
+  if (!isRecord(payload)) invalid("search.query 入参必须为对象");
+  const query = requireString(payload, "query");
+  if (query.length > 500) invalid("字段 query 超出长度上限（500 字符）");
+  const vaultId = payload.vaultId;
+  if (vaultId !== undefined && typeof vaultId !== "string") {
+    invalid("字段 vaultId 必须为字符串");
+  }
+  const limit = payload.limit;
+  if (
+    limit !== undefined &&
+    (typeof limit !== "number" ||
+      !Number.isInteger(limit) ||
+      limit < 1 ||
+      limit > 100)
+  ) {
+    invalid("字段 limit 必须为 1–100 的整数");
+  }
+  return {
+    ...(vaultId !== undefined ? { vaultId } : {}),
+    query,
+    ...(limit !== undefined ? { limit } : {}),
+  };
+}
+
+/** search.rebuild / search.status 入参校验（vaultId 必填）。 */
+export function parseSearchVaultInput(payload: unknown): SearchRebuildInput {
+  if (!isRecord(payload)) invalid("search 入参必须为对象");
+  return { vaultId: requireString(payload, "vaultId", { nonEmpty: true }) };
+}
+
+/** search.upsert / search.remove 入参校验（vaultId + relativePath）。 */
+export function parseSearchUpsertInput(payload: unknown): SearchUpsertInput {
+  if (!isRecord(payload)) invalid("search.upsert/remove 入参必须为对象");
+  return {
+    vaultId: requireString(payload, "vaultId", { nonEmpty: true }),
+    relativePath: assertRelativePath(
+      requireString(payload, "relativePath", { nonEmpty: true }),
+    ),
+  };
+}
+
+/** search.relocate 入参校验（from/to 双路径）。 */
+export function parseSearchRelocateInput(
+  payload: unknown,
+): SearchRelocateInput {
+  if (!isRecord(payload)) invalid("search.relocate 入参必须为对象");
+  return {
+    vaultId: requireString(payload, "vaultId", { nonEmpty: true }),
+    from: assertRelativePath(
+      requireString(payload, "from", { nonEmpty: true }),
+      "from",
+    ),
+    to: assertRelativePath(
+      requireString(payload, "to", { nonEmpty: true }),
+      "to",
+    ),
+  };
 }
 
 /**

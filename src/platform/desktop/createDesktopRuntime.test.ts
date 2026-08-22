@@ -76,6 +76,15 @@ function mockApi(
       set: vi.fn(async () => {}),
       remove: vi.fn(async () => {}),
     },
+    // R008 Stage 4：全文搜索组（DesktopSearchIndex 透传）。
+    search: {
+      query: vi.fn(async () => []),
+      rebuild: vi.fn(async () => ({ indexedDocuments: 0 })),
+      upsert: vi.fn(async () => ({ indexed: true })),
+      remove: vi.fn(async () => {}),
+      relocate: vi.fn(async () => {}),
+      status: vi.fn(async () => ({ state: "missing" })),
+    },
     // R007 阶段 3：事件组（createDesktopRuntime 装配即 start 订阅）。
     events: {
       subscribeVaultChanges: vi.fn(() => () => {}),

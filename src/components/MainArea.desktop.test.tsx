@@ -118,6 +118,15 @@ function makeApi(overrides: {
       set: vi.fn(async () => {}),
       remove: vi.fn(async () => {}),
     },
+    // R008 Stage 4：全文搜索组（DesktopSearchIndex 透传，本文件不触及）。
+    search: {
+      query: vi.fn(async () => []),
+      rebuild: vi.fn(async () => ({ indexedDocuments: 0 })),
+      upsert: vi.fn(async () => ({ indexed: true })),
+      remove: vi.fn(async () => {}),
+      relocate: vi.fn(async () => {}),
+      status: vi.fn(async () => ({ state: "missing" })),
+    },
     // R007 阶段 3：外部变更事件订阅（测试不推送事件，空订阅即可）。
     events: { subscribeVaultChanges: vi.fn(() => () => {}) },
   } as unknown as E1DesktopAPI;

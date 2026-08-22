@@ -55,6 +55,7 @@ import { DesktopNoteMetadataService } from "./DesktopNoteMetadataService";
 import { DesktopVaultStateClient } from "./DesktopVaultStateClient";
 import { DesktopSecretStore } from "./DesktopSecretStore";
 import { DesktopRevealService } from "./DesktopRevealService";
+import { DesktopSearchIndex } from "./DesktopSearchIndex";
 import { DesktopExternalVaultChangeService } from "./DesktopExternalVaultChangeService";
 import { createInMemoryDocumentVersionChannel } from "../../application/services/DocumentVersionChannel";
 import { DesktopAssetRegistry } from "./DesktopAssetRegistry";
@@ -159,6 +160,8 @@ export function createDesktopRuntime(
       content: contentRepository,
     }),
   );
+  // R008 Stage 4：全文搜索索引（Main SQLite 派生索引的 IPC 适配）。
+  const fullTextSearch = new DesktopSearchIndex(api, scans);
   // 变更广播：桌面单窗口无多标签页同步需求，null 传输层即 no-op 实例
   // （ChangeChannel port 形状保留，未来多窗口时再接真实传输）。
   const syncChannel = new BroadcastChangeChannel(null, "desktop-main-window");
@@ -212,6 +215,8 @@ export function createDesktopRuntime(
     search: new SearchQueryService({
       searchIndex,
       content: contentRepository,
+      // R008 Stage 4：全文搜索（ready 时优先；未 ready 回退标题索引）。
+      fullText: fullTextSearch,
     }),
   };
   // 资源服务组：Desktop 真实 Store/Picker/Access；notify 复用 Web alert。
@@ -285,6 +290,8 @@ export function createDesktopRuntime(
     externalVaultChanges,
     // 文件管理器定位（R007 阶段 5；消费侧以 capabilities.revealInFileManager 门控）。
     reveal,
+    // 全文搜索索引（R008 Stage 4；SearchQueryService 在 ready 时优先消费）。
+    fullTextSearch,
     // 机密存储运行状态（R008 Stage 1，R8-02）：secure-persistent 才持久，
     // 其余模式设置页提示「本次会话使用」；缺省未探测按 unavailable。
     secretStorageStatus: options.secretStatus ?? {

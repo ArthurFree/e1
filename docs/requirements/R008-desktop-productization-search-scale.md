@@ -1,7 +1,7 @@
 # R008：Desktop 产品化收尾与搜索规模化
 
 - **版本**：0.1
-- **状态**：实现中（Stage 0–3 已完成）
+- **状态**：实现中（Stage 0–4 已完成）
 - **更新时间**：2026-08-22
 - **前置需求**：R007（Desktop Local Vault 产品化基础闭环）
 - **基线 Commit**：`065a0174657e5ea9c4c6510970b5809ed66a87c0`
@@ -1012,6 +1012,20 @@ Perf 独立运行，不塞进普通 unit test hard SLA。
 ---
 
 # 11. Stage 4：Desktop Search Database + Full Text
+
+**状态：已完成（2026-08-22）**
+
+实际实现与偏差记录：
+
+- 技术选型（§11.1）：**node:sqlite 成立**——Electron 43 内置 Node 24.18.1，`node:sqlite` + FTS5 实测可用（本机 Node v24.15.0 同验）；零 native addon，esbuild platform:node 自动 external（无需改构建配置）。
+- Main（`electron/main/search/`）：`DesktopSearchDatabase.ts`（index_meta + notes + notes_fts；schema/index_format_version 不兼容 → 备份 `.corrupt-<ts>` 整库重建；损坏同理自愈；候选 = title/tags 归一化 LIKE + body FTS5 MATCH，评分/snippet/排序全量复用 `shared/search/textMatch` 的 scoreDocument——与内存参照实现逐点一致）+ `DesktopSearchIndexer.ts`（scanVault → readNoteFile → Frontmatter/plainText 提取 → 200 篇/事务分批 upsert，批间让出事件循环；单篇读失败跳过不阻断）。
+- 中文（§11.4）：方案 B 落地——body 词元流为 CJK unigram+bigram；emoji 等非词字符编码 `u<码点hex>` 词元保证 FTS 可检索（unicode61 不为 emoji 建词，契约用例暴露后修复）；MATCH 表达式 CJK 引号 AND、纯拉丁词前缀。
+- DB 位置（§11.2）：`userData/search-index/<vaultId>.sqlite`；transient:<uuid> 等非常规 id 走确定性 sha1 哈希文件名（路径不可逃逸，handler 测试暴露后修复）。
+- IPC（`search.query/rebuild/upsert/remove/relocate/status`）：upsert 为「Main 读盘解析」（Renderer 不传正文）；remove/relocate 按路径定位（文件已消失也可维护）；transient 仅预览允许（只读派生能力）。
+- Renderer（R8-04）：`DesktopSearchIndex`（FullTextSearchIndex port IPC 实现——稳定键 → 会话 id 经 Adoption 别名翻译；状态镜像 + refreshStatus）+ `AppServices.fullTextSearch` 可选字段 + `SearchQueryService` 优先消费（ready 时；building/degraded/missing 回退既有标题索引/全量扫描，§20 搜索可降级）。
+- 契约双实现：SQLite 实现与内存参照实现跑同一契约套件（16 例）全绿——含中文子串/跨词 AND/拉丁前缀/emoji/评分排序/幂等/relocate/rebuild。
+- 测试：DB 单测 6 例（损坏自愈/版本不兼容/按路径维护/FTS 编码/管理器）+ Indexer 3 例 + IPC handler 4 例（含 transient/schema/全链路）+ Renderer 适配 5 例 + SearchQueryService 集成 3 例 + 桥形状断言（preload + desktop.smoke）。
+- **偏差**：§17.4 G14–G16（title/body/中文搜索 E2E）依赖「无索引自动 rebuild」入口（§11.5 的 rebuilding 流程），随 Stage 5/6 的会话接线一并落地；本阶段索引重建经 search.rebuild IPC 显式驱动。
 
 ## 11.1 技术选型
 

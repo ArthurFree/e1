@@ -36,6 +36,7 @@ import type { StorageHealthService } from "./services/StorageHealthService";
 import type { ExternalVaultChangeService } from "./services/ExternalVaultChangeService";
 import type { RevealService } from "./services/RevealService";
 import type { SecretStorageStatus } from "./services/SecretStorageStatus";
+import type { FullTextSearchIndex } from "./search/FullTextSearchIndex";
 import type { RuntimeCapabilities } from "../runtime/RuntimeCapabilities";
 import type { RuntimeOperations } from "../runtime/RuntimeOperations";
 
@@ -184,6 +185,13 @@ export interface AppServices {
    * Web/内存容器不装配本字段（Web 的 IndexedDB SecretStore 本就持久）。
    */
   secretStorageStatus?: SecretStorageStatus;
+  /**
+   * 全文搜索索引（可选，R008 Stage 4，R8-04）：Desktop 装配——SQLite
+   * 派生全文索引（Main node:sqlite）的 IPC-backed port；Web/内存容器
+   * 不装配（Web 继续走 SearchIndexPort 内存索引）。搜索查询经
+   * SearchQueryService 优先消费（ready 时），未装配/未 ready 回退既有路径。
+   */
+  fullTextSearch?: FullTextSearchIndex;
   /**
    * 命令服务（R005 批次 1）：业务写编排入口，状态层经此触发仓储写、
    * 搜索索引同步与跨标签页广播。

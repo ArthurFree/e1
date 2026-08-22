@@ -15,10 +15,7 @@
  * null 值表达，错误一律走异常通道。
  */
 import type { E1DesktopAPI } from "../../../shared/ipc/contracts";
-import {
-  DesktopIpcError,
-  decodeIpcBridgeError,
-} from "../../../shared/errors";
+import { DesktopIpcError, decodeIpcBridgeError } from "../../../shared/errors";
 
 export type {
   CreateNoteInput,
@@ -35,6 +32,8 @@ export type {
   RecentVault,
   SaveNoteInput,
   SaveNoteResult,
+  SearchIndexStatus,
+  SearchQueryRow,
   SelectedVault,
   VaultScanEntry,
   VaultScanResult,
