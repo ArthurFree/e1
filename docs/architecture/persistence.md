@@ -34,7 +34,7 @@
 - **索引查询**：listByWorkspace（页面/正文/标签/标签关联）/create/move/remove/restore/purge 全部走索引；跨库全量查询（`listAll`）仅用于最近/收藏等全局视图与 WorkspaceHome 总字数。
 - **关系约束（R003 阶段 4）**：create/move 校验父级存在/同知识库/未删除；`setPageTags` 校验页面与标签存在且同知识库；kind 与标题入参校验。错误统一为 `DomainError` + 稳定错误码（`src/domain/errors.ts`）。
 - **seed**：首次启动惰性写入预置知识库，模块级 Promise 防并发重复种子。
-- **机密**：AI `apiKey` 不经 preferences 仓储读写；经 `SecretStore`（Web：`src/platform/web/persistence/secretStore.ts`，store `secrets`；Desktop：`src/platform/desktop/DesktopSecretStore.ts` → IPC → Main `electron/main/state/DesktopSecretPersistence.ts`，safeStorage 密文落 `userData/secrets.json`，不可用时会话内存降级不明文落盘，R007 阶段 5）与 `AIConfigService` 组装。
+- **机密**：AI `apiKey` 不经 preferences 仓储读写；经 `SecretStore`（Web：`src/platform/web/persistence/secretStore.ts`，store `secrets`；Desktop：`src/platform/desktop/DesktopSecretStore.ts` → IPC → Main `electron/main/secrets/SecretFilePersistence.ts`，safeStorage 密文落 `userData/secrets.json`；Linux basic_text 等不安全后端只 session-only 会话内存、绝不弱保护落盘，R008 Stage 1）与 `AIConfigService` 组装。
 
 ## 内存仓储
 

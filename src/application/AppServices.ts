@@ -35,6 +35,7 @@ import type { AIConfigService } from "./services/AIConfigService";
 import type { StorageHealthService } from "./services/StorageHealthService";
 import type { ExternalVaultChangeService } from "./services/ExternalVaultChangeService";
 import type { RevealService } from "./services/RevealService";
+import type { SecretStorageStatus } from "./services/SecretStorageStatus";
 import type { RuntimeCapabilities } from "../runtime/RuntimeCapabilities";
 import type { RuntimeOperations } from "../runtime/RuntimeOperations";
 
@@ -175,13 +176,14 @@ export interface AppServices {
    */
   reveal?: RevealService;
   /**
-   * 机密存储落盘能力（可选，R007 阶段 5 §5.1）：由使用系统安全存储的
-   * 运行时装配（Desktop）。native/persistent=false 表示系统安全存储
-   * 不可用、机密仅存本次会话（Main 内存降级，不明文落盘）——设置页
-   * 据此提示「本次会话使用」。Web/内存容器不装配本字段（Web 的
-   * IndexedDB SecretStore 本就持久，无需提示）。
+   * 机密存储运行状态（可选，R008 Stage 1 §8.6，R8-02）：由接入系统安全
+   * 存储的运行时装配（Desktop）。mode 表达本机实际后端——
+   * secure-persistent 安全持久化；session-only / unavailable 仅存本次
+   * 会话（Main 内存降级，绝不弱保护落盘），设置页据此提示。
+   * 与 capabilities.nativeSecrets（集成是否存在）分离；
+   * Web/内存容器不装配本字段（Web 的 IndexedDB SecretStore 本就持久）。
    */
-  secretStorageStatus?: { native: boolean; persistent: boolean };
+  secretStorageStatus?: SecretStorageStatus;
   /**
    * 命令服务（R005 批次 1）：业务写编排入口，状态层经此触发仓储写、
    * 搜索索引同步与跨标签页广播。

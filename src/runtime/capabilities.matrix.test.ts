@@ -20,13 +20,13 @@ describe("RuntimeCapabilities matrix（锁定 architecture/runtime-boundaries.md
     });
   });
 
-  it("desktopCapabilities：仅 nativeMenu + nativeSecrets 为 false（R007 阶段 5）", () => {
+  it("desktopCapabilities：仅 nativeMenu 为 false（R008 Stage 1）", () => {
     expect(desktopCapabilities).toEqual({
       localDirectory: true,
       fileWatching: true,
       revealInFileManager: true,
       nativeMenu: false,
-      nativeSecrets: false,
+      nativeSecrets: true,
       persistentAssetPaths: true,
       documentPersistence: true,
     });

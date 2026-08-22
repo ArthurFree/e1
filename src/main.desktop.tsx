@@ -4,8 +4,9 @@
  * bootstrap 挂载应用。getDesktopApi 在纯浏览器误开 desktop.html 时
  * 显式抛错（见 platform/desktop/desktopApi.ts）。
  *
- * R007 阶段 5：nativeSecrets 是运行时探测值——先查 secret.status
- *（safeStorage 是否可用）再装配，探测失败按不可用处理（安全缺省）。
+ * R008 Stage 1（R8-02）：secretStorageStatus 是运行时探测值——先查
+ * secret.status（本机安全后端模式）再装配，探测失败按 unavailable
+ *（安全缺省：不声称安全持久化）。
  */
 import { createDesktopRuntime } from "./platform/desktop/createDesktopRuntime";
 import { getDesktopApi } from "./platform/desktop/desktopApi";
@@ -13,10 +14,10 @@ import { mountApplication } from "./bootstrap/mountApplication";
 
 async function bootstrap(): Promise<void> {
   const api = getDesktopApi();
-  const status = await api.secret.status().catch(() => ({ available: false }));
-  const runtime = createDesktopRuntime(api, {
-    nativeSecrets: status.available,
-  });
+  const secretStatus = await api.secret
+    .status()
+    .catch(() => ({ mode: "unavailable" as const, reason: "状态探测失败" }));
+  const runtime = createDesktopRuntime(api, { secretStatus });
   mountApplication(
     document.getElementById("root") as HTMLElement,
     runtime.services,

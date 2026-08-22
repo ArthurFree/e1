@@ -26,6 +26,7 @@ import { DocumentSaveCoordinator } from "../../application/services/SaveCoordina
 import { WorkspaceSessionService } from "../../application/services/WorkspaceSessionService";
 import { PreferencesService } from "../../application/services/PreferencesService";
 import { AIConfigService } from "../../application/services/AIConfigService";
+import type { SecretStorageStatus } from "../../application/services/SecretStorageStatus";
 import { WorkspaceCommandService } from "../../application/commands/WorkspaceCommandService";
 import { PageCommandService } from "../../application/commands/PageCommandService";
 import { TagCommandService } from "../../application/commands/TagCommandService";
@@ -78,12 +79,11 @@ export interface DesktopRuntime {
 }
 
 /**
- * R007 阶段 5：运行时确认的机密存储能力——nativeSecrets 由装配根
- *（main.desktop.tsx）先查 secret.status 再传入；缺省 false（安全缺省：
- * 未确认可用时不声称系统安全存储）。
+ * R008 Stage 1（R8-02）：机密存储运行状态——由装配根（main.desktop.tsx）
+ * 先查 secret.status 再传入；缺省 unavailable（未探测时不声称安全）。
  */
 export interface DesktopRuntimeOptions {
-  nativeSecrets?: boolean;
+  secretStatus?: SecretStorageStatus;
 }
 
 /** 基于桌面桥装配完整 AppServices 容器（读路径真实、写路径诚实失败）。 */
@@ -91,12 +91,7 @@ export function createDesktopRuntime(
   api: E1DesktopAPI,
   options: DesktopRuntimeOptions = {},
 ): DesktopRuntime {
-  // R007 阶段 5：nativeSecrets 是运行时探测值（safeStorage 可用性），
-  // 不是静态常量——以探测结果覆盖静态缺省。
-  const capabilities: RuntimeCapabilities = {
-    ...desktopCapabilities,
-    nativeSecrets: options.nativeSecrets ?? false,
-  };
+  const capabilities: RuntimeCapabilities = desktopCapabilities;
   // IPC-backed 仓储（扫描缓存跨仓储共享：会话加载的页面/标签读取
   // 与搜索索引准备只触发一次真实扫描）。Alias / Source / WriteService
   // 三份单例：Adoption 后 Session 身份稳定，save 与 replaceContent 共用 Gate。
@@ -290,10 +285,11 @@ export function createDesktopRuntime(
     externalVaultChanges,
     // 文件管理器定位（R007 阶段 5；消费侧以 capabilities.revealInFileManager 门控）。
     reveal,
-    // 机密存储落盘能力（R007 阶段 5）：false 时设置页提示「本次会话使用」。
-    secretStorageStatus: {
-      native: capabilities.nativeSecrets,
-      persistent: capabilities.nativeSecrets,
+    // 机密存储运行状态（R008 Stage 1，R8-02）：secure-persistent 才持久，
+    // 其余模式设置页提示「本次会话使用」；缺省未探测按 unavailable。
+    secretStorageStatus: options.secretStatus ?? {
+      mode: "unavailable",
+      reason: "运行时未探测",
     },
     preferencesService,
     syncChannel,

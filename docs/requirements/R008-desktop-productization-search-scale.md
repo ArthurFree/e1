@@ -1,7 +1,7 @@
 # R008：Desktop 产品化收尾与搜索规模化
 
 - **版本**：0.1
-- **状态**：实现中（Stage 0 已完成）
+- **状态**：实现中（Stage 0–1 已完成）
 - **更新时间**：2026-08-22
 - **前置需求**：R007（Desktop Local Vault 产品化基础闭环）
 - **基线 Commit**：`065a0174657e5ea9c4c6510970b5809ed66a87c0`
@@ -54,7 +54,7 @@ R006 已经验证 Electron Desktop + Local Markdown Vault 的双 Runtime 技术�
 
 ## 2.1 当前 RuntimeCapabilities
 
-> 2026-08-22 事实同步（R007 阶段 5 已交付）：`revealInFileManager` 已翻 true；`nativeSecrets` 为运行时探测字段（静态缺省 false，装配根按 `secret.status` 覆盖）。
+> 2026-08-22 事实同步（R007 阶段 5 已交付 + Stage 1 对齐）：`revealInFileManager` 已翻 true；`nativeSecrets` 为「集成存在」静态 true（R8-02），本机实际安全后端由运行时 `secret.status` / `AppServices.secretStorageStatus` 表达。
 
 当前 Desktop 能力约为：
 
@@ -64,7 +64,7 @@ R006 已经验证 Electron Desktop + Local Markdown Vault 的双 Runtime 技术�
   fileWatching: true,
   revealInFileManager: true,   // R007 阶段 5 已实现（note.reveal / asset.reveal）
   nativeMenu: false,
-  nativeSecrets: false,        // 静态缺省；运行时探测可用即覆盖为 true
+  nativeSecrets: true,         // 集成存在（R8-02）；持久性见 secretStorageStatus
   persistentAssetPaths: true,
   documentPersistence: true,
 }
@@ -77,7 +77,7 @@ R006 已经验证 Electron Desktop + Local Markdown Vault 的双 Runtime 技术�
 - `persistentAssetPaths`：真实；
 - `documentPersistence`：真实；
 - `revealInFileManager`：真实（R007 阶段 5）；
-- `nativeSecrets`：DesktopSecretStore 已接 Main safeStorage（R007 阶段 5），Stage 1 做 R008 口径对齐；
+- `nativeSecrets`：DesktopSecretStore 已接 Main safeStorage（R007 阶段 5 落地 + Stage 1 对齐 R8-02），「集成存在」恒 true；持久性由 `SecretStorageStatus.mode` 决定；
 - `nativeMenu`：本需求不实现。
 
 ## 2.2 当前 RuntimeOperations
@@ -573,6 +573,21 @@ R007 文档中的 Current State 必须同步真实状态：
 ---
 
 # 8. Stage 1：Native Secret Store
+
+**状态：已完成（2026-08-22）**
+
+实际实现与偏差记录：
+
+- 主体链路已在 R007 阶段 5 交付（safeStorage 密文落 `userData/secrets.json` + `secret.status/get/set/delete` IPC + Renderer DesktopSecretStore + 设置页降级提示）；本阶段按 R008 口径对齐，Application 层 secret 使用方式不变（§8.2）。
+- 模块迁移（§8.4/§16）：`electron/main/state/DesktopSecretPersistence` → `electron/main/secrets/SecretFilePersistence.ts` + `SecretBackendStatus.ts`。
+- 文件格式对齐 §8.4：`{ version: 1, entries: { <name>: { ciphertext, updatedAt } } }`；读兼容 R007 阶段 5 的 `{ secrets: { name: base64 } }`（未发布格式，静默迁移，下次写盘即新格式）。
+- §8.5 安全后端判定（`SecretBackendStatus.evaluate`）：非 Linux 看 `isEncryptionAvailable()`（Keychain/DPAPI）；Linux 必须 `getSelectedStorageBackend()` ∈ gnome_libsecret/kwallet* 才算 secure-persistent，`basic_text`/`unknown` → session-only，**绝不弱保护落盘**。加解密优先 Electron 43 的 `encryptStringAsync/decryptStringAsync`（`shouldReEncrypt` 时顺带重写该条），缺省回退同步接口。
+- §8.6 SecretStorageStatus：`{ mode: "secure-persistent" | "session-only" | "unavailable", backend?, reason? }` 取代 R007 的 `{ available }` 布尔；R8-02 落地——`capabilities.nativeSecrets` 翻为静态 true（集成存在），本机实际状态由 `secret.status` → `AppServices.secretStorageStatus` 表达（平台无关视图 `application/services/SecretStorageStatus.ts`）；`main.desktop.tsx` 探测失败按 unavailable（安全缺省）。
+- §8.7 Renderer 文案：secure-persistent →「API Key 会安全保存在本机系统凭据存储中」；session-only →「当前系统安全存储不可用，API Key 仅在本次会话有效」；unavailable →「无法使用系统安全存储…」。禁止 fallback localStorage（沿用，无此路径）。
+- 设置页状态修正（G2 顺带）：「AI 已配置」改为 endpoint/model **且** apiKey 同时在场才成立——session-only 重启后偏好仍在但 Key 已丢，不再显示半配置的「已配置」。
+- unknown schema version（§8.8）：与损坏同口径——先备份（`.corrupt-<ts>`，原内容字节级保留）再自愈为空表；测试断言备份完整保留未知版本内容（「不湮灭不理解的格式」，备份即不覆盖原内容）。
+- E2E（§17.4 映射：G10=本文 G09）：`desktop.secrets.spec.ts` 重写为双用例按 `secret.status` 实测分流——@golden G09 安全后端（重启保持 + 无明文 + 凭据存储文案，后端不安全时 skip）与 @golden G11 不安全后端（session-only 提示 + 重启后 Key 不存在 + 不弱保护落盘，后端安全时 skip）；启动保留 `--password-store=basic` 使 Linux CI 确定落在 G11。
+- 偏差：IPC 形状沿用 R007 的 `secret.status/get/set/remove`（未改名 `getStatus`）；模块落 `electron/main/secrets/` 两文件（未再细分 DesktopSecretStore.ts/SecretBackendStatus 独立目录层）。
 
 ## 8.1 目标
 

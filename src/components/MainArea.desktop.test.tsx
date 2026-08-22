@@ -113,7 +113,7 @@ function makeApi(overrides: {
     },
     // R007 阶段 5：机密存储组（DesktopSecretStore 透传，本文件不触及）。
     secret: {
-      status: vi.fn(async () => ({ available: true })),
+      status: vi.fn(async () => ({ mode: "secure-persistent" })),
       get: vi.fn(async () => null),
       set: vi.fn(async () => {}),
       remove: vi.fn(async () => {}),

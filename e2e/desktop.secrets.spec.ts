@@ -1,11 +1,11 @@
-// R007 阶段 5（§5.1，G3）：Desktop 机密存储 E2E（Playwright _electron，生产模式）。
+// R008 Stage 1（§8，G2）：Desktop 机密存储 E2E（Playwright _electron，生产模式）。
 // describe 以「桌面冒烟」为前缀：默认 test:e2e 经 --grep-invert 排除，
 // 独立运行用 npm run test:e2e:desktop。
 //
-// @golden G09：AI Key 经系统安全存储持久化——重启保持 + 磁盘无明文。
-// Linux CI（xvfb）无系统密钥链，以 Chromium 开关 --password-store=basic
-// 强制 safeStorage 可用（Electron 会把该开关转发给 Chromium）；不可用
-// 降级路径（会话内存 + status=false）由单元测试覆盖。
+// @golden G09（安全后端）：AI Key 系统安全存储持久化——重启保持 + 磁盘无明文。
+// @golden G11（不安全后端）：session-only——重启后 Key 不存在 + UI 提示。
+// 两条用例按 secret.status 实测模式分流：macOS/Windows 安全后端跑 G09
+//（G11 skip），Linux CI（basic_text/无密钥链）跑 G11（G09 skip）。
 import { test, expect, _electron as electron } from "@playwright/test";
 import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -15,6 +15,8 @@ import { requireDesktopArtifacts } from "./desktopArtifacts";
 
 const VAULT_ID = "v-e2e-secrets";
 const API_KEY = "sk-golden-机密-0123456789";
+
+type SecretMode = "secure-persistent" | "session-only" | "unavailable";
 
 interface SecretsFixture {
   vaultDir: string;
@@ -76,9 +78,23 @@ async function createFixture(): Promise<SecretsFixture> {
 
 function launch(userDataDir: string) {
   return electron.launch({
-    // Linux CI 无密钥链：强制 basic password store 使 safeStorage 可用。
+    // Linux CI 无密钥链：basic password store 使 safeStorage 可评估，
+    // R008 §8.5 判定 basic_text 为不安全后端 → session-only（G11 路径）。
     args: [".", "--password-store=basic"],
     env: { ...process.env, E1_USER_DATA_DIR: userDataDir },
+  });
+}
+
+async function readSecretMode(
+  window: import("@playwright/test").Page,
+): Promise<SecretMode | null> {
+  return window.evaluate(async () => {
+    const e1 = (
+      window as unknown as {
+        e1?: { secret?: { status(): Promise<{ mode: SecretMode }> } };
+      }
+    ).e1;
+    return (await e1?.secret?.status())?.mode ?? null;
   });
 }
 
@@ -96,30 +112,22 @@ async function configureAiKey(window: import("@playwright/test").Page) {
   await expect(dialog).not.toBeVisible();
 }
 
-test.describe("桌面冒烟：机密存储（R007 阶段 5）", () => {
+test.describe("桌面冒烟：机密存储（R008 Stage 1）", () => {
   test.beforeAll(() => {
     requireDesktopArtifacts();
   });
 
-  test("@golden G09：AI Key 系统安全存储持久化——重启保持且磁盘无明文", async () => {
+  test("@golden G09：安全后端——AI Key 重启保持且磁盘无明文", async () => {
     const fixture = await createFixture();
     const secretsFile = path.join(fixture.userDataDir, "secrets.json");
     const app1 = await launch(fixture.userDataDir);
     try {
       const window = await app1.firstWindow();
-      // 装配根探测 safeStorage 可用性（basic password store 下应为可用）。
-      await expect
-        .poll(async () =>
-          window.evaluate(async () => {
-            const e1 = (
-              window as unknown as {
-                e1?: { secret?: { status(): Promise<{ available: boolean }> } };
-              }
-            ).e1;
-            return (await e1?.secret?.status())?.available ?? null;
-          }),
-        )
-        .toBe(true);
+      const mode = await readSecretMode(window);
+      test.skip(
+        mode !== "secure-persistent",
+        `当前后端为 ${mode}，G09 仅覆盖安全后端（见 G11）`,
+      );
       await configureAiKey(window);
     } finally {
       await app1.close();
@@ -140,11 +148,53 @@ test.describe("桌面冒烟：机密存储（R007 阶段 5）", () => {
       const dialog = window.getByRole("dialog", { name: "设置" });
       await expect(dialog).toBeVisible();
       await expect(window.getByText("AI 已配置")).toBeVisible();
-      // 保存的 Key 读回掩码输入框（SettingsPanel 启动时经 SecretStore 载入）。
       await expect(dialog.getByLabel("API Key")).toHaveValue(API_KEY);
       await expect(dialog.getByLabel("Endpoint")).toHaveValue(
         "https://ai.local/v1",
       );
+      // 安全后端文案（§8.7）。
+      await expect(dialog.getByText(/系统凭据存储/)).toBeVisible();
+    } finally {
+      await app2.close();
+      await fixture.cleanup();
+    }
+  });
+
+  test("@golden G11：不安全后端——session-only，重启后 Key 不存在且有 UI 提示", async () => {
+    const fixture = await createFixture();
+    const secretsFile = path.join(fixture.userDataDir, "secrets.json");
+    const app1 = await launch(fixture.userDataDir);
+    try {
+      const window = await app1.firstWindow();
+      const mode = await readSecretMode(window);
+      test.skip(
+        mode === "secure-persistent",
+        "当前后端安全，G11 仅覆盖不安全后端（见 G09）",
+      );
+      await configureAiKey(window);
+      // session-only 提示（§8.7：不伪装为安全）。
+      await window.getByLabel("设置").click();
+      await expect(window.getByText(/本次会话有效/)).toBeVisible();
+      await window.keyboard.press("Escape");
+    } finally {
+      await app1.close();
+    }
+
+    // 绝不弱保护落盘：secrets.json 不存在或不含该 Key。
+    if (existsSync(secretsFile)) {
+      expect(await readFile(secretsFile, "utf8")).not.toContain(API_KEY);
+    }
+
+    // 重启：会话内存已消失，配置不再可用。
+    const app2 = await launch(fixture.userDataDir);
+    try {
+      const window = await app2.firstWindow();
+      await window.getByLabel("设置").click();
+      const dialog = window.getByRole("dialog", { name: "设置" });
+      await expect(dialog).toBeVisible();
+      await expect(window.getByText("AI 未配置")).toBeVisible();
+      await expect(dialog.getByLabel("API Key")).toHaveValue("");
+      await expect(window.getByText(/本次会话有效/)).toBeVisible();
     } finally {
       await app2.close();
       await fixture.cleanup();

@@ -242,7 +242,9 @@ export function SettingsPanel() {
       <div className="dialog__header">
         <span>设置</span>
         <span className="settings-panel__status">
-          {current ? "AI 已配置" : "AI 未配置"}
+          {/* R008 Stage 1（G2）：endpoint/model 在偏好、apiKey 在 SecretStore——
+              session-only 重启后偏好仍在但 Key 已丢，只有两者都在才算已配置。 */}
+          {current && apiKey.trim() !== "" ? "AI 已配置" : "AI 未配置"}
         </span>
       </div>
 
@@ -288,9 +290,11 @@ export function SettingsPanel() {
       </label>
 
       {services.secretStorageStatus &&
-        !services.secretStorageStatus.persistent && (
+        services.secretStorageStatus.mode !== "secure-persistent" && (
           <div className="settings-panel__error" role="alert">
-            系统安全存储不可用，API Key 仅保存在本次会话（重启后需重新填写）。
+            {services.secretStorageStatus.mode === "session-only"
+              ? "当前系统安全存储不可用，API Key 仅在本次会话有效（重启后需重新填写）。"
+              : "无法使用系统安全存储，API Key 仅在本次会话有效（重启后需重新填写）。"}
           </div>
         )}
 
@@ -318,8 +322,8 @@ export function SettingsPanel() {
 
       <p className="settings-panel__note">
         {services.secretStorageStatus
-          ? services.secretStorageStatus.persistent
-            ? "API Key 仅保存在本机系统安全存储，不会上传、同步或写入日志；未配置时不会发起任何外部请求。"
+          ? services.secretStorageStatus.mode === "secure-persistent"
+            ? "API Key 会安全保存在本机系统凭据存储中，不会上传、同步或写入日志；未配置时不会发起任何外部请求。"
             : "API Key 不会上传、同步或写入日志；未配置时不会发起任何外部请求。"
           : "API Key 仅保存在本机 IndexedDB，不会上传、同步或写入日志；未配置时不会发起任何外部请求。"}
       </p>

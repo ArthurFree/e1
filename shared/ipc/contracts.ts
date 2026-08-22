@@ -474,12 +474,25 @@ export interface RevealNoteInput {
 /* ---------------------------------- secret ---------------------------------- */
 
 /**
- * R007 阶段 5（§5.1，G3）：机密存储状态——available=false 表示系统安全
- * 存储（safeStorage）不可用，Main 降级为会话内存（不落盘、不明文），
- * Renderer 据此把 capabilities.nativeSecrets 置 false 并提示用户。
+ * R008 Stage 1（§8.6，R8-02）：机密存储运行状态——与能力字段分离：
+ * capabilities.nativeSecrets 表示「Runtime 接入了系统安全存储集成」，
+ * 本结构的 mode 表示「这台机器当前实际的安全后端状态」。
+ *
+ * - secure-persistent：安全后端可用（macOS Keychain / Windows DPAPI /
+ *   Linux gnome-libsecret/kwallet），机密安全持久化；
+ * - session-only：只能使用不安全后端（Linux basic_text/unknown），
+ *   机密仅存本次会话（内存降级，绝不弱保护落盘）；
+ * - unavailable：安全存储完全不可用（评估即失败），同样只允许会话内存。
  */
-export interface SecretStatusResult {
-  available: boolean;
+export type SecretStorageMode =
+  "secure-persistent" | "session-only" | "unavailable";
+
+export interface SecretStorageStatus {
+  mode: SecretStorageMode;
+  /** 后端标识（如 keychain/dpapi/kwallet6/basic_text；仅诊断展示用）。 */
+  backend?: string;
+  /** 降级原因（中文，供 UI 提示；不含机密内容）。 */
+  reason?: string;
 }
 
 /** secret.get / secret.delete 请求：payload 即 secret 名字符串（"<域>.<键>"）。 */
@@ -673,8 +686,11 @@ export interface E1DesktopAPI {
    * 不新增 UI 专属 API（与 SecretStore port 一一对应 + status）。
    */
   secret: {
-    /** 系统安全存储是否可用；false 时本组读写为会话内存（重启丢失）。 */
-    status(): Promise<SecretStatusResult>;
+    /**
+     * 机密存储运行状态（R008 §8.6）：secure-persistent 才安全持久化；
+     * session-only / unavailable 时本组读写为会话内存（重启丢失）。
+     */
+    status(): Promise<SecretStorageStatus>;
     /** 读取 secret；不存在（或无法解密）返回 null。 */
     get(name: SecretNameRequest): Promise<string | null>;
     /** 写入（覆盖）secret。 */

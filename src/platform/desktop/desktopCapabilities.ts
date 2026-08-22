@@ -18,11 +18,11 @@ export const desktopCapabilities: RuntimeCapabilities = {
   revealInFileManager: true,
   // R007：原生菜单体系属桌面产品化范围（r006 §3 非目标）。
   nativeMenu: false,
-  // R007 阶段 5：DesktopSecretStore 已接 Main safeStorage 持久化，
-  // 但是否真用系统安全存储取决于运行时可用性（safeStorage 不可用时
-  // Main 降级会话内存）——本静态缺省保持 false，装配根
-  //（createDesktopRuntime）按 secret.status 实际值覆盖。
-  nativeSecrets: false,
+  // R008 Stage 1（R8-02）：DesktopSecretStore 已接 Main safeStorage 集成
+  // （R007 阶段 5 落地），故「集成存在」恒为 true；本机实际安全后端
+  // （secure-persistent / session-only / unavailable）由运行时探测的
+  // AppServices.secretStorageStatus 表达，二者分离。
+  nativeSecrets: true,
   // R006-C5：附件落 Vault assets/ 真实文件 + Hydration/Serialize 闭环。
   persistentAssetPaths: true,
   // R006-C4-E：note.save + DesktopContentRepository.save + Lossy Gate

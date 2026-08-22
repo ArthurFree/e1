@@ -16,11 +16,15 @@
  * R007 阶段 5：secret 组（DesktopSecretPersistence，safeStorage 加密落
  * userData/secrets.json）与 reveal 组（note.reveal/asset.reveal，
  * PathGuard 后 shell.showItemInFolder）。
+ * R008 Stage 1：secret 持久化迁移 electron/main/secrets/（SecretFilePersistence
+ * + SecretBackendStatus——secure-persistent 才落盘，basic_text 等不安全
+ * 后端只 session-only）。
  */
 import { app, BrowserWindow, dialog, ipcMain, safeStorage } from "electron";
 import { join } from "node:path";
 import {
   IPC_CHANNELS,
+  type SecretStorageStatus,
   type VaultFsEvent,
 } from "../../../shared/ipc/contracts.js";
 import { registerVaultHandlers } from "./vault.js";
@@ -32,7 +36,8 @@ import { registerSecretHandlers } from "./secrets.js";
 import { registerRevealHandlers } from "./reveal.js";
 import { VaultRegistry } from "../vaultRegistry.js";
 import { DesktopVaultStateStore } from "../state/DesktopVaultStateStore.js";
-import { DesktopSecretPersistence } from "../state/DesktopSecretPersistence.js";
+import { SecretFilePersistence } from "../secrets/SecretFilePersistence.js";
+import { evaluateSecretBackendStatus } from "../secrets/SecretBackendStatus.js";
 import { SelectionTokenStore } from "../SelectionTokenStore.js";
 import { TransientVaultStore } from "../transientVaults.js";
 import {
@@ -52,8 +57,11 @@ export interface RegisterIpcHandlersDeps {
   registry?: VaultRegistry;
   /** R007 阶段 2：设备级交互状态存储（缺省指向 userData/vault-state/）。 */
   vaultStateStore?: DesktopVaultStateStore;
-  /** R007 阶段 5：机密持久化（缺省指向 userData/secrets.json + safeStorage）。 */
-  secretStore?: DesktopSecretPersistence;
+  /** R008 Stage 1：机密持久化（缺省 userData/secrets.json + safeStorage，
+   *  持久化与否由 SecretBackendStatus 模式决定）。 */
+  secretStore?: SecretFilePersistence;
+  /** R008 Stage 1：后端状态评估（缺省 evaluateSecretBackendStatus(safeStorage)）。 */
+  secretStatus?: () => SecretStorageStatus;
   /** R006-C2.1：可注入以控制时钟/隔离状态（测试用）。 */
   selectionTokens?: SelectionTokenStore;
   transients?: TransientVaultStore;
@@ -88,11 +96,14 @@ export function registerIpcHandlers(
   const vaultStateStore =
     deps.vaultStateStore ??
     new DesktopVaultStateStore(join(app.getPath("userData"), "vault-state"));
+  const secretStatus =
+    deps.secretStatus ?? (() => evaluateSecretBackendStatus(safeStorage));
   const secretStore =
     deps.secretStore ??
-    new DesktopSecretPersistence(
+    new SecretFilePersistence(
       join(app.getPath("userData"), "secrets.json"),
       safeStorage,
+      () => secretStatus().mode,
     );
   const transients = deps.transients ?? new TransientVaultStore();
   const openDialog = deps.openDialog ?? dialog;
@@ -117,7 +128,7 @@ export function registerIpcHandlers(
     registry,
     transients,
   });
-  registerSecretHandlers(bus, { store: secretStore });
+  registerSecretHandlers(bus, { store: secretStore, status: secretStatus });
   registerRevealHandlers(bus, { registry, transients });
   registerAssetHandlers(bus, {
     openDialog: openDialog as FileDialogLike,

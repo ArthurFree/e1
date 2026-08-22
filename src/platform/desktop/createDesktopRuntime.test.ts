@@ -71,7 +71,7 @@ function mockApi(
     },
     // R007 阶段 5：机密存储组（DesktopSecretStore 透传）。
     secret: {
-      status: vi.fn(async () => ({ available: true })),
+      status: vi.fn(async () => ({ mode: "secure-persistent" })),
       get: vi.fn(async () => null),
       set: vi.fn(async () => {}),
       remove: vi.fn(async () => {}),
@@ -90,30 +90,31 @@ describe("createDesktopRuntime（IPC-backed）", () => {
 
   it("capabilities 为桌面能力矩阵（runtime 与 services 两处一致）", () => {
     const runtime = createDesktopRuntime(mockApi());
-    // R007 阶段 5：capabilities 是静态矩阵的运行时副本（nativeSecrets 探测覆盖），
-    // 缺省与静态矩阵等值但不是同一对象引用。
-    expect(runtime.capabilities).toEqual(desktopCapabilities);
+    expect(runtime.capabilities).toBe(desktopCapabilities);
     expect(runtime.services.capabilities).toBe(runtime.capabilities);
   });
 
-  it("nativeSecrets 按 secret.status 探测值覆盖（R007 阶段 5，G3）", () => {
-    const available = createDesktopRuntime(mockApi(), { nativeSecrets: true });
-    expect(available.capabilities.nativeSecrets).toBe(true);
-    expect(available.services.capabilities.nativeSecrets).toBe(true);
-    expect(available.services.secretStorageStatus).toEqual({
-      native: true,
-      persistent: true,
+  it("secretStorageStatus 按 secret.status 探测值装配（R008 Stage 1，R8-02）", () => {
+    // 安全后端：集成（nativeSecrets=true）与实际状态（secure-persistent）分离表达。
+    const secure = createDesktopRuntime(mockApi(), {
+      secretStatus: { mode: "secure-persistent", backend: "keychain" },
     });
-    // 缺省/显式 false：安全降级——不声称系统安全存储。
-    const degraded = createDesktopRuntime(mockApi(), { nativeSecrets: false });
-    expect(degraded.capabilities.nativeSecrets).toBe(false);
-    expect(degraded.services.secretStorageStatus).toEqual({
-      native: false,
-      persistent: false,
+    expect(secure.capabilities.nativeSecrets).toBe(true);
+    expect(secure.services.secretStorageStatus).toEqual({
+      mode: "secure-persistent",
+      backend: "keychain",
     });
-    expect(createDesktopRuntime(mockApi()).capabilities.nativeSecrets).toBe(
-      false,
-    );
+    // 不安全后端/未探测：不声称持久（设置页据此提示「本次会话使用」）。
+    const sessionOnly = createDesktopRuntime(mockApi(), {
+      secretStatus: { mode: "session-only", backend: "basic_text" },
+    });
+    expect(sessionOnly.services.secretStorageStatus).toEqual({
+      mode: "session-only",
+      backend: "basic_text",
+    });
+    expect(
+      createDesktopRuntime(mockApi()).services.secretStorageStatus,
+    ).toEqual({ mode: "unavailable", reason: "运行时未探测" });
   });
 
   it("secretStore 经 api.secret 透传（R007 阶段 5：替换内存 PoC）", async () => {

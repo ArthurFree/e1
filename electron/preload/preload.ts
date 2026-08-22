@@ -55,7 +55,7 @@ import {
   type SaveNoteInput,
   type SaveNoteResult,
   type SecretSetInput,
-  type SecretStatusResult,
+  type SecretStorageStatus,
   type SelectedVault,
   type TrashInput,
   type TrashListResult,
@@ -134,7 +134,7 @@ const api: E1DesktopAPI = {
       invoke<void>(IPC_CHANNELS.noteReveal, input),
   },
   secret: {
-    status: () => invoke<SecretStatusResult>(IPC_CHANNELS.secretStatus),
+    status: () => invoke<SecretStorageStatus>(IPC_CHANNELS.secretStatus),
     get: (name: string) => invoke<string | null>(IPC_CHANNELS.secretGet, name),
     set: (input: SecretSetInput) => invoke<void>(IPC_CHANNELS.secretSet, input),
     remove: (name: string) => invoke<void>(IPC_CHANNELS.secretDelete, name),

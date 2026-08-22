@@ -11,6 +11,7 @@ import {
 } from "../platform/web/persistence/repositories";
 import { secretStore } from "../platform/web/persistence/secretStore";
 import { AI_API_KEY_SECRET } from "../application/services/SecretStore";
+import type { SecretStorageStatus } from "../application/services/SecretStorageStatus";
 import { WebAssetPicker } from "../platform/web/webAssetPicker";
 import { SettingsPanel } from "./SettingsPanel";
 
@@ -374,11 +375,8 @@ describe("SettingsPanel 本地存储区（R004 阶段 6）", () => {
   });
 });
 
-/** 携带 secretStorageStatus 的装配（R007 阶段 5：Desktop 运行时注入）。 */
-function renderWithSecretStatus(status: {
-  native: boolean;
-  persistent: boolean;
-}) {
+/** 携带 secretStorageStatus 的装配（R008 Stage 1：Desktop 运行时注入）。 */
+function renderWithSecretStatus(status: SecretStorageStatus) {
   // createBrowserAppServices 是进程单例——浅拷贝后再覆盖可选字段，
   // 避免污染其他用例共享的容器实例。
   const services = {
@@ -394,30 +392,39 @@ function renderWithSecretStatus(status: {
   );
 }
 
-describe("SettingsPanel 机密存储提示（R007 阶段 5）", () => {
+describe("SettingsPanel 机密存储提示（R008 Stage 1）", () => {
   beforeEach(async () => {
     cleanup();
     await resetDB();
   });
 
-  it("persistent=false：提示「本次会话使用」，底部说明不提 IndexedDB/系统安全存储", async () => {
-    renderWithSecretStatus({ native: false, persistent: false });
+  it("session-only：提示「仅在本次会话有效」，底部说明不提 IndexedDB/凭据存储", async () => {
+    renderWithSecretStatus({ mode: "session-only", backend: "basic_text" });
     expect(
       await screen.findByText(
-        "系统安全存储不可用，API Key 仅保存在本次会话（重启后需重新填写）。",
+        "当前系统安全存储不可用，API Key 仅在本次会话有效（重启后需重新填写）。",
       ),
     ).toBeInTheDocument();
     const note = document.querySelector(".settings-panel__note");
     expect(note?.textContent).not.toContain("IndexedDB");
-    expect(note?.textContent).not.toContain("系统安全存储");
+    expect(note?.textContent).not.toContain("系统凭据存储");
   });
 
-  it("persistent=true：无降级提示，底部说明为系统安全存储", async () => {
-    renderWithSecretStatus({ native: true, persistent: true });
+  it("unavailable：提示无法使用系统安全存储", async () => {
+    renderWithSecretStatus({ mode: "unavailable" });
+    expect(
+      await screen.findByText(
+        "无法使用系统安全存储，API Key 仅在本次会话有效（重启后需重新填写）。",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("secure-persistent：无降级提示，底部说明为系统凭据存储", async () => {
+    renderWithSecretStatus({ mode: "secure-persistent", backend: "keychain" });
     expect(await screen.findByText(/AI 未配置|AI 已配置/)).toBeInTheDocument();
-    expect(screen.queryByText(/系统安全存储不可用/)).toBeNull();
+    expect(screen.queryByText(/本次会话有效/)).toBeNull();
     const note = document.querySelector(".settings-panel__note");
-    expect(note?.textContent).toContain("系统安全存储");
+    expect(note?.textContent).toContain("系统凭据存储");
   });
 
   it("未装配 secretStorageStatus（Web）：底部说明保持 IndexedDB 文案", async () => {
@@ -429,6 +436,6 @@ describe("SettingsPanel 机密存储提示（R007 阶段 5）", () => {
     await screen.findByText(/AI 未配置|AI 已配置/);
     const note = document.querySelector(".settings-panel__note");
     expect(note?.textContent).toContain("IndexedDB");
-    expect(screen.queryByText(/系统安全存储不可用/)).toBeNull();
+    expect(screen.queryByText(/本次会话有效/)).toBeNull();
   });
 });
