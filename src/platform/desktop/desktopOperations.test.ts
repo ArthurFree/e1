@@ -24,19 +24,25 @@ describe("RuntimeOperations 装配矩阵（R007 §9）", () => {
     expectAllBoolean(webOperations, true);
   });
 
-  it("Desktop：未实现的操作 false（workspace.rename / page.renameFile / revision）", () => {
+  it("Desktop：未实现的操作 false（workspace.rename / document.renameFile / group.rename+move / revision）", () => {
     expect(desktopOperations).toEqual({
       workspace: { rename: false, favorite: true },
       page: {
-        createDocument: true,
-        createGroup: true,
-        renameTitle: true,
-        renameFile: false,
-        move: true,
-        trash: true,
-        restore: true,
-        purge: true,
-        favorite: true,
+        document: {
+          create: true,
+          renameTitle: true,
+          renameFile: false,
+          move: true,
+          trash: true,
+          favorite: true,
+        },
+        group: {
+          create: true,
+          rename: false,
+          move: false,
+          trash: true,
+        },
+        trash: { restore: true, purge: true },
       },
       tag: { write: true },
       revision: { read: false, write: false },
@@ -49,12 +55,15 @@ describe("RuntimeOperations 装配矩阵（R007 §9）", () => {
 
     const custom = {
       ...webOperations,
-      page: { ...webOperations.page, trash: false },
+      page: {
+        ...webOperations.page,
+        document: { ...webOperations.page.document, trash: false },
+      },
     };
     const { services: overridden } = createInMemoryAppServices({
       operations: custom,
     });
-    expect(overridden.operations.page.trash).toBe(false);
-    expect(overridden.operations.page.move).toBe(true);
+    expect(overridden.operations.page.document.trash).toBe(false);
+    expect(overridden.operations.page.document.move).toBe(true);
   });
 });

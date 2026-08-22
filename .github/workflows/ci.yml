@@ -56,6 +56,22 @@ jobs:
             dist-electron
           if-no-files-found: error
 
+  desktop-runtime-deps:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build:desktop
+      # R008 Stage 0（§7.4）：production-pruned 运行时依赖 sanity——
+      # Electron Main 的第三方 external（chokidar 等）在 omit=dev 裁剪后
+      # 仍可解析（分发/打包场景不再有 devDependencies）。
+      - run: npm prune --omit=dev
+      - run: node scripts/verifyElectronRuntimeDeps.mjs --resolve
+
   e2e-web:
     runs-on: ubuntu-latest
     steps:

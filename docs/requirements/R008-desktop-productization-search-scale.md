@@ -1,8 +1,8 @@
 # R008：Desktop 产品化收尾与搜索规模化
 
 - **版本**：0.1
-- **状态**：草案
-- **更新时间**：2026-08-21
+- **状态**：实现中（Stage 0 已完成）
+- **更新时间**：2026-08-22
 - **前置需求**：R007（Desktop Local Vault 产品化基础闭环）
 - **基线 Commit**：`065a0174657e5ea9c4c6510970b5809ed66a87c0`
 - **建议目标分支**：`feat/r008-desktop-productization-search-scale`
@@ -54,15 +54,17 @@ R006 已经验证 Electron Desktop + Local Markdown Vault 的双 Runtime 技术�
 
 ## 2.1 当前 RuntimeCapabilities
 
+> 2026-08-22 事实同步（R007 阶段 5 已交付）：`revealInFileManager` 已翻 true；`nativeSecrets` 为运行时探测字段（静态缺省 false，装配根按 `secret.status` 覆盖）。
+
 当前 Desktop 能力约为：
 
 ```ts
 {
   localDirectory: true,
   fileWatching: true,
-  revealInFileManager: false,
+  revealInFileManager: true,   // R007 阶段 5 已实现（note.reveal / asset.reveal）
   nativeMenu: false,
-  nativeSecrets: false,
+  nativeSecrets: false,        // 静态缺省；运行时探测可用即覆盖为 true
   persistentAssetPaths: true,
   documentPersistence: true,
 }
@@ -74,70 +76,31 @@ R006 已经验证 Electron Desktop + Local Markdown Vault 的双 Runtime 技术�
 - `fileWatching`：真实；
 - `persistentAssetPaths`：真实；
 - `documentPersistence`：真实；
-- `revealInFileManager`：未实现；
-- `nativeSecrets`：未实现；
+- `revealInFileManager`：真实（R007 阶段 5）；
+- `nativeSecrets`：DesktopSecretStore 已接 Main safeStorage（R007 阶段 5），Stage 1 做 R008 口径对齐；
 - `nativeMenu`：本需求不实现。
 
 ## 2.2 当前 RuntimeOperations
 
-当前 Desktop 操作矩阵约为：
+> 2026-08-22 事实同步（Stage 0 已按 §7.2 完成细分）：page 已拆为 document / group / trash 三组的静态矩阵。
 
 ```ts
 {
-  workspace: {
-    rename: false,
-    favorite: true,
-  },
+  workspace: { rename: false, favorite: true },
   page: {
-    createDocument: true,
-    createGroup: true,
-    renameTitle: true,
-    renameFile: false,
-    move: true,
-    trash: true,
-    restore: true,
-    purge: true,
-    favorite: true,
+    document: {
+      create: true, renameTitle: true, renameFile: false,
+      move: true, trash: true, favorite: true,
+    },
+    group: { create: true, rename: false, move: false, trash: true },
+    trash: { restore: true, purge: true },
   },
-  tag: {
-    write: true,
-  },
-  revision: {
-    read: false,
-    write: false,
-  },
+  tag: { write: true },
+  revision: { read: false, write: false },
 }
 ```
 
-这个矩阵目前存在一个语义问题：
-
-```text
-page.renameTitle = true
-page.move = true
-```
-
-实际上只完整适用于 document：
-
-```text
-Document rename title    ✅
-Group rename directory   ❌
-
-Document move            ✅
-Group move directory     ❌
-```
-
-因此当前某些 Group UI 操作仍可能出现：
-
-```text
-入口可见
-→ 用户操作
-→ Repository
-→ NOT_IMPLEMENTED
-```
-
-这违反 R007 的 G4 原则：
-
-> 已显示给 Desktop 用户的主操作，要么真实可用，要么明确隐藏 / 禁用。
+Stage 0 之前矩阵存在的语义问题（`page.renameTitle = true` / `page.move = true` 只完整适用于 document，Group UI 仍可能「入口可见 → 操作 → NOT_IMPLEMENTED」）已通过 document/group 细分消除，违反 R007 G4 原则的路径已收口。
 
 ## 2.3 当前 Desktop Search
 
@@ -451,6 +414,16 @@ Stage 6  Rebuild / Recovery / Scale Acceptance
 ---
 
 # 7. Stage 0：R007 遗留一致性收口
+
+**状态：已完成（2026-08-22）**
+
+实际实现与偏差记录：
+
+- RuntimeOperations 按 §7.2 推荐的静态矩阵细分（未采用 PageOperationPolicy 备选）：`page.document{create,renameTitle,renameFile,move,trash,favorite}` / `page.group{create,rename,move,trash}` / `page.trash{restore,purge}`；Desktop `group.rename/group.move=false`（R011）、`document.renameFile=false`，Web 全 true；内存容器缺省同步。
+- PageTreeSidebar（§7.3）：行内动作/F2/拖拽按页面 kind 取 operation 子组——Group 隐藏重命名按钮、`draggable=false`、F2 不触发；`group.rename=false` 时新建分组不再自动进入必然失败的重命名流程（renamingSeed 按 `group.rename` 门控）；拖拽视觉提示随 `draggable=false` 整体不出现。
+- chokidar（§7.4）：devDependencies → dependencies；新增 `scripts/verifyElectronRuntimeDeps.mjs`（构建脚本 external 提取 + production dependencies 声明校验 + `--resolve` 运行时解析模式）与 `scripts/verifyElectronRuntimeDeps.test.mjs` 构建级回归锁；CI 新增 `desktop-runtime-deps` job（npm ci → build:desktop → `npm prune --omit=dev` → 运行时解析 sanity）。
+- 文档（§7.5）：R007 文档状态已由 R007 阶段 5 批次同步（待验收）；本文件 §2.1/§2.2 已按真实状态回写；runtime-boundaries 操作矩阵表同步细分。
+- 偏差：无（§7.2 推荐方案直接落地）。
 
 ## 7.1 目标
 

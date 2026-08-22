@@ -101,23 +101,26 @@ R005 将项目划分为四层运行时边界：Shared UI、Shared Application、
 
 不为每个动作膨胀 capabilities 的 boolean；组件经 `useAppServices().operations` 门控入口（DUAL-01 同样适用：不判断平台名称）。未实现的操作必须保持 false——入口隐藏，而不是点了才抛 NOT_IMPLEMENTED。
 
-下表为**当前实现值**（源：`src/platform/web/webOperations.ts`、`src/platform/desktop/desktopOperations.ts`；由 `src/platform/desktop/desktopOperations.test.ts` 锁定）：
+下表为**当前实现值**（源：`src/platform/web/webOperations.ts`、`src/platform/desktop/desktopOperations.ts`；由 `src/platform/desktop/desktopOperations.test.ts` 锁定）。R008 Stage 0（R8-01）起 page 按业务对象细分为 document / group / trash 三组——Document 与 Group 能力不同，UI 按页面 kind 取对应子组门控：
 
-| 字段                    | 语义                                                             | Web | Desktop |
-| ----------------------- | ---------------------------------------------------------------- | :-: | :-----: |
-| `workspace.rename`      | 重命名知识库（Desktop 库名取自 vault.json/目录名，未实现）      | 是  |   否    |
-| `workspace.favorite`    | 收藏/取消收藏知识库                                              | 是  |   是    |
-| `page.createDocument`   | 新建文档                                                         | 是  |   是    |
-| `page.createGroup`      | 新建分组（Desktop = 真实目录）                                   | 是  |   是    |
-| `page.renameTitle`      | 标题重命名（Desktop 写 Frontmatter title）                       | 是  |   是    |
-| `page.renameFile`       | 物理文件名重命名（§4.4 P2，与标题重命名分开；UI 入口属后续批次） | 是  |   否    |
-| `page.move`             | 移动页面（Desktop 仅 document → directory，不支持自定义排序）    | 是  |   是    |
-| `page.trash`            | 移入回收站（Desktop = rename 进 .e1/trash）                      | 是  |   是    |
-| `page.restore`          | 从回收站恢复                                                     | 是  |   是    |
-| `page.purge`            | 永久删除（含清空回收站）                                         | 是  |   是    |
-| `page.favorite`         | 收藏/取消收藏页面                                                | 是  |   是    |
-| `tag.write`             | 标签写入（create / setPageTags）                                 | 是  |   是    |
-| `revision.read`         | 读取版本历史（false 时 UI 必须隐藏版本历史入口，R007 §8）        | 是  |   否    |
-| `revision.write`        | 写入版本快照（Desktop 版本历史为空实现）                         | 是  |   否    |
+| 字段                      | 语义                                                             | Web | Desktop |
+| ------------------------- | ---------------------------------------------------------------- | :-: | :-----: |
+| `workspace.rename`        | 重命名知识库（Desktop 库名取自 vault.json/目录名，未实现）      | 是  |   否    |
+| `workspace.favorite`      | 收藏/取消收藏知识库                                              | 是  |   是    |
+| `page.document.create`    | 新建文档                                                         | 是  |   是    |
+| `page.document.renameTitle` | 标题重命名（Desktop 写 Frontmatter title）                     | 是  |   是    |
+| `page.document.renameFile` | 物理文件名重命名（§4.4 P2，与标题重命名分开；UI 入口属 R011）   | 是  |   否    |
+| `page.document.move`      | 移动文档（Desktop 仅 document → directory，不支持自定义排序）    | 是  |   是    |
+| `page.document.trash`     | 文档移入回收站（Desktop = rename 进 .e1/trash）                  | 是  |   是    |
+| `page.document.favorite`  | 收藏/取消收藏文档                                                | 是  |   是    |
+| `page.group.create`       | 新建分组（Desktop = 真实目录）                                   | 是  |   是    |
+| `page.group.rename`       | 分组重命名（目录 rename；Desktop 待 Main 目录 IPC，R011）        | 是  |   否    |
+| `page.group.move`         | 分组移动（目录 move；Desktop 未实现，R011）                      | 是  |   否    |
+| `page.group.trash`        | 分组移入回收站                                                   | 是  |   是    |
+| `page.trash.restore`      | 从回收站恢复                                                     | 是  |   是    |
+| `page.trash.purge`        | 永久删除（含清空回收站）                                         | 是  |   是    |
+| `tag.write`               | 标签写入（create / setPageTags）                                 | 是  |   是    |
+| `revision.read`           | 读取版本历史（false 时 UI 必须隐藏版本历史入口，R007 §8）        | 是  |   否    |
+| `revision.write`          | 写入版本快照（Desktop 版本历史为空实现）                         | 是  |   否    |
 
-注意：operations 为 true 不代表每个细分动作都已实现——Desktop 的 `page.renameTitle` 仅覆盖文档标题（Frontmatter），分组（目录）改名/移动因 Main 契约暂无目录 IPC 仍诚实 NOT_IMPLEMENTED（见 R007 阶段 4 偏差记录）。变更任一字段时须同步更新本表与 `desktopOperations.test.ts`。
+注意：false 的操作必须整体不可达——入口隐藏、不可拖拽、F2 不触发（R008 §7.3：PageTreeSidebar 按页面 kind 门控；group.rename=false 时新建分组不自动进入重命名流程）。变更任一字段时须同步更新本表与 `desktopOperations.test.ts`。
