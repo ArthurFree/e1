@@ -6,3 +6,6 @@ test-results/
 playwright-report/
 *.local
 .DS_Store
+
+# R008 搜索 benchmark 生成产物（fixtures/search/generator.mjs 按需生成，不提交）
+fixtures/search/generated/

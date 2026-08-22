@@ -1,7 +1,7 @@
 # R008：Desktop 产品化收尾与搜索规模化
 
 - **版本**：0.1
-- **状态**：实现中（Stage 0–2 已完成）
+- **状态**：实现中（Stage 0–3 已完成）
 - **更新时间**：2026-08-22
 - **前置需求**：R007（Desktop Local Vault 产品化基础闭环）
 - **基线 Commit**：`065a0174657e5ea9c4c6510970b5809ed66a87c0`
@@ -838,6 +838,18 @@ Attachment context menu
 ---
 
 # 10. Stage 3：Search Contract + Benchmark
+
+**状态：已完成（2026-08-22）**
+
+实际实现与偏差记录：
+
+- 契约（§10.3–10.6 冻结）：`src/application/search/FullTextSearchIndex.ts`（SearchDocument / FullTextSearchResult{matchedField,snippet,score,relativePath} / SearchIndexStatus / port：rebuild/search/upsert/remove/relocate/getStatus）——与既有 SearchIndexPort（Web 语义）**并存**，不改 Web 搜索行为；评分表 exact title 100 > prefix 80 > contains 60 > tag 40 > body 20（§11.7），排序 score 降序 → title zh-CN → pageId；limit 缺省 50 上限 100。
+- 中文方案（§11.4）：选定**方案 B**——应用层 CJK unigram+bigram 词元（`shared/search/textMatch.ts`，环境中立零依赖，Main/Renderer 共用）；body 命中 = 查询切词后逐项 CJK bigram 覆盖 / 拉丁词前缀（AND）；title/tag = 归一化子串；归一 = NFKC + lowercase（全角 ＲＵＳＴ 可查 rust）。语义以契约套件冻结，两实现（内存/SQLite）必须一致。
+- bodyText 提取（§10.3）：`shared/markdown/plainText.ts`——剥离 Frontmatter 与语法标记（围栏/链接 URL/图片语法/表格管道/HTML 标签/强调/标题列表标记），保留代码、链接文字、alt、单元格内容为可搜索文本；不依赖 Tiptap（Main 可用，R006 约束）。
+- 契约套件（§17.2）：`src/test/fullTextSearchContract.ts` 16 例——title 三级评分排序、tag/body 命中、中文子串与跨词 AND、拉丁前缀、大小写/NFKC、emoji、code/表格/链接、空查询、limit、稳定排序、upsert 幂等+旧文本消失、remove 幂等、relocate 身份保持、rebuild 一致、跨 Vault 与状态机；语料覆盖 §10.7 分布（中文/英文/混合/多标签/长短文/深目录/重复高频词/emoji/code/links/tables）。内存参照实现 `src/infrastructure/memory/fullTextSearchIndex.ts` 全绿。
+- Benchmark（§10.7/§10.8/§18）：`fixtures/search/generator.mjs`（种子确定性，CLI 按需生成 1k/10k/50k，产物 `fixtures/search/generated/` 不入库）+ `src/infrastructure/memory/fullTextSearchIndex.perf-wallclock.test.ts`（npm run test:perf，输出 §18 JSON 形状）。**开发机基线（内存参照实现）**：1k build 24ms / query p50 1.32ms p95 2.58ms / upsert 0.31ms；10k build 210ms / query p50 16.6ms p95 19.39ms / upsert 0.27ms——远在 §10.8 目标区间内（SQLite 实现基线在 Stage 4/6 补测回写）。
+- **偏差 1**：§10.7 的 `fixtures/search/1k|10k` 目录不入库（11k 文件的提交体积不可接受）——改为确定性生成器按需产出 + 契约套件内置 14 篇精选语料覆盖同一分布，语义验收不依赖大体积 fixture。
+- **偏差 2**：port 形状相对 §10.5 建议有两处调整——`rebuild(vaultId, documents?)`（调用方供给真实数据源快照，Main 批量索引实现可忽略自读）；`getStatus` 为同步签名（IPC 实现以 Renderer 侧镜像满足）；`remove/relocate` 入参为对象（与既有 IPC 契约风格一致）。
 
 ## 10.1 目标
 
