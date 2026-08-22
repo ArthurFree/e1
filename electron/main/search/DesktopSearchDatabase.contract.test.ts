@@ -16,6 +16,7 @@ import { DesktopSearchDatabase } from "./DesktopSearchDatabase.js";
 /** DB 类 → FullTextSearchIndex 端口形状的薄适配（生产侧由 IPC/Indexer 驱动）。 */
 function adapt(db: DesktopSearchDatabase): FullTextSearchIndex {
   return {
+    prepare: () => Promise.resolve(),
     rebuild: (_vaultId: string, documents) =>
       db.rebuild(documents as Iterable<SearchDocument>),
     search: (input) => db.search(input),
