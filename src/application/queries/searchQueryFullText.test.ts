@@ -38,6 +38,7 @@ function stubFullText(status: SearchIndexStatus): FullTextSearchIndex {
         relativePath: "学习/React.md",
       },
     ]),
+    prepare: vi.fn(async () => {}),
     rebuild: vi.fn(),
     upsert: vi.fn(),
     remove: vi.fn(),

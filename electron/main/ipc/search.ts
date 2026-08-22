@@ -16,6 +16,7 @@ import {
 import {
   parseSearchQueryInput,
   parseSearchRelocateInput,
+  parseSearchRemoveInput,
   parseSearchUpsertInput,
   parseSearchVaultInput,
 } from "../../../shared/ipc/schemas.js";
@@ -107,11 +108,14 @@ export function registerSearchHandlers(
 
   bus.handle(
     IPC_CHANNELS.searchRemove,
-    handleRequest(parseSearchUpsertInput, async (input): Promise<void> => {
+    handleRequest(parseSearchRemoveInput, async (input): Promise<void> => {
       await resolveVaultRoot(input.vaultId, deps);
-      await indexes
-        .forVault(input.vaultId)
-        .removeByPath(input.vaultId, input.relativePath);
+      const db = indexes.forVault(input.vaultId);
+      if (input.relativePath) {
+        await db.removeByPath(input.vaultId, input.relativePath);
+      } else if (input.noteKey) {
+        await db.remove(input.noteKey);
+      }
     }),
   );
 

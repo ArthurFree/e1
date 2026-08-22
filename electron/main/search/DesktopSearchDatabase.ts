@@ -301,9 +301,22 @@ export class DesktopSearchDatabase {
     upsertFts.run(document.pageId, ftsTokenStream(document.bodyText));
   }
 
-  /** 单文档 upsert（幂等）。 */
+  /** 单文档 upsert（幂等）；versionToken 未变的重复提交跳过写入（§12.3）。 */
   async upsert(document: SearchDocumentRow): Promise<void> {
     const db = await this.open();
+    const existing = db
+      .prepare(
+        "SELECT version_token, relative_path FROM notes WHERE note_key = ?",
+      )
+      .get(document.pageId) as
+      { version_token: string; relative_path: string } | undefined;
+    if (
+      existing &&
+      existing.version_token === document.versionToken &&
+      existing.relative_path === document.relativePath
+    ) {
+      return;
+    }
     this.upsertBatch(db, [document]);
     const count = (
       db.prepare("SELECT COUNT(*) AS c FROM notes").get() as { c: number }

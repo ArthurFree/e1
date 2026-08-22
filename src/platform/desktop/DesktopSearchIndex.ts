@@ -29,10 +29,35 @@ export class DesktopSearchIndex implements FullTextSearchIndex {
   ) {}
 
   async rebuild(vaultId: string): Promise<void> {
-    const result = await this.api.search.rebuild({ vaultId });
+    this.statusCache.set(vaultId, { state: "building" });
+    try {
+      const result = await this.api.search.rebuild({ vaultId });
+      this.statusCache.set(vaultId, {
+        state: "ready",
+        indexedDocuments: result.indexedDocuments,
+      });
+    } catch (error) {
+      this.markDegraded(vaultId, error);
+      throw error;
+    }
+  }
+
+  /**
+   * R008 Stage 5（§11.5）：确保索引可用——刷新状态镜像，missing 即重建
+   *（building 状态先行，期间 SearchQueryService 回退标题索引）。
+   */
+  async prepare(vaultId: string): Promise<void> {
+    await this.refreshStatus(vaultId);
+    if (this.getStatus(vaultId).state === "missing") {
+      await this.rebuild(vaultId);
+    }
+  }
+
+  /** R008 Stage 5（§12.5）：增量维护失败 → degraded（正文保存不受影响）。 */
+  markDegraded(vaultId: string, reason: unknown): void {
     this.statusCache.set(vaultId, {
-      state: "ready",
-      indexedDocuments: result.indexedDocuments,
+      state: "degraded",
+      reason: reason instanceof Error ? reason.message : String(reason),
     });
   }
 

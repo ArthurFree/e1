@@ -4,7 +4,11 @@
  * remove/relocate 路径派生、状态镜像。
  */
 import { describe, expect, it, vi } from "vitest";
-import type { E1DesktopAPI, SearchIndexStatus, VaultScanResult } from "./desktopApi";
+import type {
+  E1DesktopAPI,
+  SearchIndexStatus,
+  VaultScanResult,
+} from "./desktopApi";
 import { DesktopSearchIndex } from "./DesktopSearchIndex";
 import { DesktopVaultScanCache } from "./DesktopVaultScanCache";
 
@@ -39,12 +43,10 @@ function mockApi() {
     upsert: vi.fn(async () => ({ indexed: true })),
     remove: vi.fn(async () => {}),
     relocate: vi.fn(async () => {}),
-    status: vi.fn(
-      async (): Promise<SearchIndexStatus> => ({
-        state: "ready",
-        indexedDocuments: 1,
-      }),
-    ),
+    status: vi.fn(async (): Promise<SearchIndexStatus> => ({
+      state: "ready",
+      indexedDocuments: 1,
+    })),
   };
   const api = {
     vault: { scan: vi.fn(async () => SCAN) },
@@ -125,6 +127,32 @@ describe("DesktopSearchIndex", () => {
     expect(search.remove).toHaveBeenCalledWith({
       vaultId: "v1",
       relativePath: "学习/React.md",
+    });
+  });
+
+  it("prepare：missing 时先刷新状态再触发 rebuild（building → ready）", async () => {
+    const { api, search } = mockApi();
+    search.status.mockResolvedValue({ state: "missing" });
+    const index = new DesktopSearchIndex(api, new DesktopVaultScanCache(api));
+    await index.prepare("v1");
+    expect(search.status).toHaveBeenCalledWith({ vaultId: "v1" });
+    expect(search.rebuild).toHaveBeenCalledWith({ vaultId: "v1" });
+    expect(index.getStatus("v1")).toEqual({
+      state: "ready",
+      indexedDocuments: 1,
+    });
+    // 已 ready：prepare 为 no-op（不再 rebuild）。
+    await index.prepare("v1");
+    expect(search.rebuild).toHaveBeenCalledTimes(1);
+  });
+
+  it("markDegraded：增量失败状态表达（§12.5）", async () => {
+    const { api } = mockApi();
+    const index = new DesktopSearchIndex(api, new DesktopVaultScanCache(api));
+    index.markDegraded("v1", new Error("sqlite busy"));
+    expect(index.getStatus("v1")).toEqual({
+      state: "degraded",
+      reason: "sqlite busy",
     });
   });
 

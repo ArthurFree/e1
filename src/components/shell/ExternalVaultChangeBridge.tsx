@@ -30,6 +30,9 @@ export function ExternalVaultChangeBridge() {
 
   useEffect(() => {
     if (!enabled || !service || vaultId === null) return;
+    // R008 Stage 5（§11.5）：打开 Vault 自动确保全文索引（missing → 重建，
+    // 期间搜索回退标题索引，页面树与编辑器先用不阻断）。
+    void services.fullTextSearch?.prepare(vaultId);
     return service.subscribe((changes) => {
       // 任意命中当前库的变更都刷新树镜像：结构性变更（created/moved/
       // deleted）改变树形状，modified 可能携带外部改过的标题/标签。
@@ -37,7 +40,7 @@ export function ExternalVaultChangeBridge() {
         void refreshCurrentWorkspace();
       }
     });
-  }, [enabled, service, vaultId, refreshCurrentWorkspace]);
+  }, [enabled, service, vaultId, refreshCurrentWorkspace, services]);
 
   return null;
 }

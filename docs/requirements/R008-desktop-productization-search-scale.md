@@ -1,7 +1,7 @@
 # R008：Desktop 产品化收尾与搜索规模化
 
 - **版本**：0.1
-- **状态**：实现中（Stage 0–4 已完成）
+- **状态**：实现中（Stage 0–5 已完成）
 - **更新时间**：2026-08-22
 - **前置需求**：R007（Desktop Local Vault 产品化基础闭环）
 - **基线 Commit**：`065a0174657e5ea9c4c6510970b5809ed66a87c0`
@@ -1202,6 +1202,20 @@ exact title
 ---
 
 # 12. Stage 5：Watcher Incremental Index
+
+**状态：已完成（2026-08-22）**
+
+实际实现与偏差记录：
+
+- 数据流（§12.2/R8-05）：`DesktopSearchIndexReconciler`（`src/platform/desktop/`）订阅 `DesktopExternalVaultChangeService` 归一化事件（装配根 `createDesktopRuntime` 接线）——Watcher 只发事实，索引语义全在 reconciler。
+- 事件行为（§12.3）：created/modified → `search.upsert`（Main 读盘解析；**versionToken 未变即跳过写入**——DB.upsert 内置去重，modified 同令牌 no-op）；moved → `search.relocate`（事件 from/to 路径，身份保持——`relocateByPath` UPDATE 不重读文件）；deleted → `search.remove`（**新增 noteKey 通道**：stable id / Adoption 别名解析出的 stableNoteId 直删 note_key，path 身份按 relativePath）。
+- 自写（§12.4）：`DesktopTitleSearchIndex` 新增 `onCommitted` 钩子——`DocumentCommitService` 的 commit/replaceContent（→ updateText）与 createWithContent（→ upsertDocument）成功后通知 reconciler 做 best-effort `search.upsert`；索引维护不依赖 watcher 自写抑制路径，不会漏更新。
+- 首次建库（§11.5）：port 新增 `prepare(vaultId)`（契约补充，Stage 3 冻结后增补，见偏差）——`ExternalVaultChangeBridge` 在 vaultId 生效时调用：refreshStatus → missing 即 rebuild（building 先行，期间 SearchQueryService 回退标题索引，页面树与编辑器先用不阻断）；reconciler 应用事件前同样先 prepare。
+- 失败降级（§12.5/R8-06）：任何索引动作失败 → `markDegraded`（status=degraded）+ 每库一次 30s 防抖延迟 rebuild；reconcile/onDocumentCommitted 绝不向上抛错，正文保存不受影响（测试锁定：失败后 status=degraded、调度 rebuild 后回 ready）。
+- E2E（§17.4）：`desktop.search.spec.ts`——@golden G14 title / G15 body / G16 中文正文（打开 Vault 自动 prepare → 搜索面板可见结果）、G17 外部编辑 → watcher → 新正文可搜索（IPC 层轮询索引 + UI 断言）、G18 外部删除 → 结果消失。
+- **偏差 1**：FullTextSearchIndex port 在 Stage 3 冻结后增补 `prepare(vaultId)`（§11.5 自动建库的运行时入口；内存实现 no-op）；契约套件 16 例不受影响，接口增补已同步 shared/search 与 application 重导出。
+- **偏差 2**：modified 的 versionToken 比较下推到 Main DB.upsert（读盘即得令牌，避免「相同也重写 FTS」的无效写），而非 Renderer 侧预比较——语义等价且省一次往返。
+- **偏差 3**：G17 的 UI 断言前先经 `search.query` IPC 轮询索引就绪——watcher 链路（chokidar 200ms + coalesce 150ms + 静止窗口 200ms + rescan）总延迟超过搜索面板单次防抖窗口，一次性 fill 无法等待；数据层与 UI 层分开断言更诚实。
 
 ## 12.1 目标
 

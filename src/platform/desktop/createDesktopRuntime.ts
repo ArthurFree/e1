@@ -56,6 +56,7 @@ import { DesktopVaultStateClient } from "./DesktopVaultStateClient";
 import { DesktopSecretStore } from "./DesktopSecretStore";
 import { DesktopRevealService } from "./DesktopRevealService";
 import { DesktopSearchIndex } from "./DesktopSearchIndex";
+import { DesktopSearchIndexReconciler } from "./DesktopSearchIndexReconciler";
 import { DesktopExternalVaultChangeService } from "./DesktopExternalVaultChangeService";
 import { createInMemoryDocumentVersionChannel } from "../../application/services/DocumentVersionChannel";
 import { DesktopAssetRegistry } from "./DesktopAssetRegistry";
@@ -153,15 +154,28 @@ export function createDesktopRuntime(
     pages: pageRepository,
     tags: tagRepository,
   });
-  // 搜索索引：标题搜索；updateText no-op（§53，避免半完整全文搜索）。
+  // R008 Stage 4：全文搜索索引（Main SQLite 派生索引的 IPC 适配）。
+  const fullTextSearch = new DesktopSearchIndex(api, scans);
+  // R008 Stage 5：搜索索引 reconciler（外部事件 → 索引动作；自写钩子）。
+  const searchReconciler = new DesktopSearchIndexReconciler({
+    api,
+    scans,
+    aliases,
+    fullText: fullTextSearch,
+  });
+  // 搜索索引：标题搜索（fallback 路径）；onCommitted 钩子——正文提交
+  // 成功后通知 reconciler（自写 upsert，§12.4）。
   const searchIndex = new DesktopTitleSearchIndex(
     new BrowserMemorySearchIndex({
       pages: pageRepository,
       content: contentRepository,
     }),
+    {
+      onCommitted: (pageId) => {
+        void searchReconciler.onDocumentCommitted(pageId);
+      },
+    },
   );
-  // R008 Stage 4：全文搜索索引（Main SQLite 派生索引的 IPC 适配）。
-  const fullTextSearch = new DesktopSearchIndex(api, scans);
   // 变更广播：桌面单窗口无多标签页同步需求，null 传输层即 no-op 实例
   // （ChangeChannel port 形状保留，未来多窗口时再接真实传输）。
   const syncChannel = new BroadcastChangeChannel(null, "desktop-main-window");
@@ -274,6 +288,10 @@ export function createDesktopRuntime(
     aliases,
   });
   externalVaultChanges.start();
+  // R008 Stage 5（R8-05）：Watcher 事实 → 搜索索引动作（增量维护）。
+  externalVaultChanges.subscribe((changes) => {
+    void searchReconciler.reconcile(changes);
+  });
   // R007 阶段 5：文件管理器定位（note.reveal/asset.reveal）。
   const reveal = new DesktopRevealService(api, scans);
   const services: AppServices = {

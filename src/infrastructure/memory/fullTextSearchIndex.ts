@@ -144,6 +144,11 @@ export class InMemoryFullTextSearchIndex implements FullTextSearchIndex {
   getStatus(vaultId: string): SearchIndexStatus {
     return this.status.get(vaultId) ?? { state: "missing" };
   }
+
+  /** 内存实现无外部触发源：rebuild 即准备（调用方供给 documents 时）。 */
+  prepare(): Promise<void> {
+    return Promise.resolve();
+  }
 }
 
 async function* toAsyncIterable(

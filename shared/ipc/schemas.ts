@@ -32,6 +32,7 @@ import type {
   SearchQueryInput,
   SearchRebuildInput,
   SearchRelocateInput,
+  SearchRemoveInput,
   SearchUpsertInput,
   SecretSetInput,
   TrashInput,
@@ -558,14 +559,38 @@ export function parseSearchVaultInput(payload: unknown): SearchRebuildInput {
   return { vaultId: requireString(payload, "vaultId", { nonEmpty: true }) };
 }
 
-/** search.upsert / search.remove 入参校验（vaultId + relativePath）。 */
+/** search.upsert 入参校验（vaultId + relativePath）。 */
 export function parseSearchUpsertInput(payload: unknown): SearchUpsertInput {
-  if (!isRecord(payload)) invalid("search.upsert/remove 入参必须为对象");
+  if (!isRecord(payload)) invalid("search.upsert 入参必须为对象");
   return {
     vaultId: requireString(payload, "vaultId", { nonEmpty: true }),
     relativePath: assertRelativePath(
       requireString(payload, "relativePath", { nonEmpty: true }),
     ),
+  };
+}
+
+/** search.remove 入参校验（relativePath / noteKey 二选一，至少其一）。 */
+export function parseSearchRemoveInput(payload: unknown): SearchRemoveInput {
+  if (!isRecord(payload)) invalid("search.remove 入参必须为对象");
+  const vaultId = requireString(payload, "vaultId", { nonEmpty: true });
+  const relativePath = payload.relativePath;
+  const noteKey = payload.noteKey;
+  if (relativePath === undefined && noteKey === undefined) {
+    invalid("search.remove 需要 relativePath 或 noteKey 之一");
+  }
+  return {
+    vaultId,
+    ...(relativePath !== undefined
+      ? {
+          relativePath: assertRelativePath(
+            requireString(payload, "relativePath", { nonEmpty: true }),
+          ),
+        }
+      : {}),
+    ...(noteKey !== undefined
+      ? { noteKey: requireString(payload, "noteKey", { nonEmpty: true }) }
+      : {}),
   };
 }
 

@@ -581,10 +581,13 @@ export interface SearchUpsertResult {
   indexed: boolean;
 }
 
-/** search.remove 请求：按路径删除索引行（文件已不存在，无法读盘取键）。 */
+/** search.remove 请求：按路径或稳定键删除索引行（二选一；幂等）。
+ *  文件已消失且仅有身份（stable note id）时走 noteKey。 */
 export interface SearchRemoveInput {
   vaultId: string;
-  relativePath: string;
+  relativePath?: string;
+  /** R008 Stage 5：deleted 事件的稳定键（note_key 直删）。 */
+  noteKey?: string;
 }
 
 /** search.relocate 请求：移动/重命名——保持身份，只改路径。 */

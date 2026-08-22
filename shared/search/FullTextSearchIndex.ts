@@ -72,6 +72,13 @@ export {
 
 export interface FullTextSearchIndex {
   /**
+   * 确保索引可用（R008 Stage 5 §11.5）：状态 missing 时触发重建
+   *（building → ready，页面树与编辑器先用不阻断）；已 ready 为 no-op。
+   * 会话打开 Vault / 外部事件到达时的自动入口。
+   */
+  prepare(vaultId: string): Promise<void>;
+
+  /**
    * 删除并重建指定 Vault 的索引。documents 由调用方从真实数据源
    *（Markdown）供给；实现侧自读的实现（Main 批量索引）可忽略该参数。
    * 幂等；完成后 getStatus(vaultId).state === "ready"。
