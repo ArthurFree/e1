@@ -1,7 +1,7 @@
 # R008：Desktop 产品化收尾与搜索规模化
 
 - **版本**：0.1
-- **状态**：实现中（Stage 0–1 已完成）
+- **状态**：实现中（Stage 0–2 已完成）
 - **更新时间**：2026-08-22
 - **前置需求**：R007（Desktop Local Vault 产品化基础闭环）
 - **基线 Commit**：`065a0174657e5ea9c4c6510970b5809ed66a87c0`
@@ -272,7 +272,7 @@ delete
 错误：
 
 ```ts
-page.move = true
+page.move = true;
 ```
 
 如果 document 和 group 的实现不同。
@@ -280,15 +280,15 @@ page.move = true
 正确方向：
 
 ```ts
-page.document.move
-page.group.move
+page.document.move;
+page.group.move;
 ```
 
 或提供：
 
 ```ts
-operations.canMove(page)
-operations.canRename(page)
+operations.canMove(page);
+operations.canRename(page);
 ```
 
 UI 不得自己判断平台名称。
@@ -374,13 +374,17 @@ Markdown commit success
 Renderer 仅允许：
 
 ```ts
-{ vaultId, relativePath }
+{
+  (vaultId, relativePath);
+}
 ```
 
 或：
 
 ```ts
-{ vaultId, assetId }
+{
+  (vaultId, assetId);
+}
 ```
 
 Main：
@@ -477,11 +481,11 @@ interface RuntimeOperations {
 Desktop：
 
 ```ts
-page.document.renameTitle = true
-page.document.move = true
+page.document.renameTitle = true;
+page.document.move = true;
 
-page.group.rename = false
-page.group.move = false
+page.group.rename = false;
+page.group.move = false;
 ```
 
 Web 可保持完整 true。
@@ -526,7 +530,7 @@ Group
 当前 Electron Main bundle：
 
 ```js
-external: ["electron", "chokidar"]
+external: ["electron", "chokidar"];
 ```
 
 因此 `chokidar` 是 runtime dependency。
@@ -614,10 +618,10 @@ Application 层不改变 secret 使用方式。
 新增：
 
 ```ts
-secret.get({ name })
-secret.set({ name, value })
-secret.remove({ name })
-secret.getStatus()
+secret.get({ name });
+secret.set({ name, value });
+secret.remove({ name });
+secret.getStatus();
 ```
 
 Renderer 不得知道：
@@ -666,8 +670,8 @@ userData/secrets.json
 优先异步接口：
 
 ```ts
-safeStorage.encryptStringAsync()
-safeStorage.decryptStringAsync()
+safeStorage.encryptStringAsync();
+safeStorage.decryptStringAsync();
 ```
 
 如果当前 Electron API 可用。
@@ -675,7 +679,7 @@ safeStorage.decryptStringAsync()
 需要检查：
 
 ```ts
-safeStorage.isEncryptionAvailable()
+safeStorage.isEncryptionAvailable();
 ```
 
 Linux 还必须检查 encryption backend。
@@ -694,10 +698,7 @@ mode = "session-only"
 
 ```ts
 export interface SecretStorageStatus {
-  mode:
-    | "secure-persistent"
-    | "session-only"
-    | "unavailable";
+  mode: "secure-persistent" | "session-only" | "unavailable";
 
   backend?: string;
   reason?: string;
@@ -748,6 +749,16 @@ Session-only：
 
 # 9. Stage 2：Reveal in File Manager
 
+**状态：已完成（2026-08-22）**
+
+实际实现与偏差记录：
+
+- 主体链路已在 R007 阶段 5 交付：`note.reveal({vaultId, relativePath})` / `asset.reveal` IPC（schema 校验 → resolveVaultRoot 授权 → PathGuard（realpath 符号链接逃逸防护）→ `shell.showItemInFolder`，§9.3 全链路；目标不存在归一 `REVEAL_TARGET_NOT_FOUND`）+ Renderer `DesktopRevealService`（可选 port `AppServices.reveal`）+ `capabilities.revealInFileManager` 翻 true。本阶段做验收口径对齐与 E2E 补齐。
+- **偏差 1（§9.2 asset.reveal 入参）**：实际为 `{ assetId }` 而非 `{ vaultId, assetId }`——assetId 本身编码 vaultId + relativePath（`shared/assets/desktopAssetId`），Main 解码后重新 resolveVaultRoot + PathGuard，授权语义等价且不增加冗余参数。
+- **偏差 2（§9.4 UI 形态）**：EditorShell 无「更多」菜单，文档入口为顶栏「在文件管理器中显示」图标按钮（当前文档；树行内方案因第 4 按钮覆盖行点击中心被弃用，见 R007 阶段 5 偏差 3）；附件无 context menu，入口为附件块「在文件夹中显示」按钮（`AssetAccessService.reveal?` 可选方法，仅 Desktop 实现）。均按 `capabilities.revealInFileManager` 门控，Web 不出现（组件测试锁定）。
+- transient 行为（§9.5）：允许（只读操作，与 note.read 同口径，Main 单元测试锁定）。
+- E2E（§17.4）：`desktop.reveal.spec.ts`——@golden G12 当前文档顶栏 reveal（入口可见 + 点击后无错误条，真实 IPC + Main 真实路径解析）与 @golden G13 附件节点 reveal（无「无法定位文件」）；GUI 文件管理器效果不可断言（CI xvfb），malformed/逃逸/缺失拒绝由 Main 单元测试覆盖（reveal.test.ts 9 例）。
+
 ## 9.1 目标
 
 Desktop 用户可以定位：
@@ -762,8 +773,8 @@ Desktop 用户可以定位：
 ```ts
 note.reveal({
   vaultId,
-  relativePath
-})
+  relativePath,
+});
 ```
 
 附件：
@@ -771,8 +782,8 @@ note.reveal({
 ```ts
 asset.reveal({
   vaultId,
-  assetId
-})
+  assetId,
+});
 ```
 
 ## 9.3 Main 安全链路
@@ -790,7 +801,7 @@ Renderer vaultId + relativePath
 禁止：
 
 ```ts
-shell.showItemInFolder(rendererProvidedAbsolutePath)
+shell.showItemInFolder(rendererProvidedAbsolutePath);
 ```
 
 ## 9.4 UI
@@ -893,10 +904,7 @@ interface SearchResult {
   pageId: string;
   title: string;
 
-  matchedField:
-    | "title"
-    | "tag"
-    | "body";
+  matchedField: "title" | "tag" | "body";
 
   snippet: string | null;
   score: number;
