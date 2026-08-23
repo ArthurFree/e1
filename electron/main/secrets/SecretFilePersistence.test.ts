@@ -108,12 +108,19 @@ describe("SecretFilePersistence（secure-persistent）", () => {
       shouldReEncrypt: true,
       result: encrypted.toString("utf8").slice("enc:".length),
     });
-    const store = makeStore(file, "secure-persistent", safeStorage, () => 999);
+    let nowValue = 100;
+    const store = new SecretFilePersistence(
+      file,
+      safeStorage,
+      () => "secure-persistent",
+      () => nowValue,
+    );
     await store.set("ai.apiKey", "sk-轮换");
     const before = JSON.parse(await readFile(file, "utf8")) as {
       entries: Record<string, { updatedAt: number }>;
     };
-    expect(before.entries["ai.apiKey"].updatedAt).not.toBe(999);
+    expect(before.entries["ai.apiKey"].updatedAt).toBe(100);
+    nowValue = 999;
     expect(await store.get("ai.apiKey")).toBe("sk-轮换");
     const after = JSON.parse(await readFile(file, "utf8")) as {
       entries: Record<string, { updatedAt: number }>;

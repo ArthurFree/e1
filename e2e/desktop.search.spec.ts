@@ -11,7 +11,6 @@ import type { Page } from "@playwright/test";
 import {
   mkdtemp,
   mkdir,
-  readFile,
   rm,
   writeFile,
   appendFile,

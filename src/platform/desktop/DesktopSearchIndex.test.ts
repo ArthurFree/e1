@@ -132,7 +132,8 @@ describe("DesktopSearchIndex", () => {
 
   it("prepare：missing 时先刷新状态再触发 rebuild（building → ready）", async () => {
     const { api, search } = mockApi();
-    search.status.mockResolvedValue({ state: "missing" });
+    // 仅第一次探测为 missing；rebuild 后回到 ready（持久 mock 会重复触发 rebuild）。
+    search.status.mockResolvedValueOnce({ state: "missing" });
     const index = new DesktopSearchIndex(api, new DesktopVaultScanCache(api));
     await index.prepare("v1");
     expect(search.status).toHaveBeenCalledWith({ vaultId: "v1" });

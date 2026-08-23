@@ -1,6 +1,6 @@
 /**
  * R008 Stage 3（§10.8/§18）：全文搜索性能基准（wall-clock，不进 CI 门禁）。
- * 运行：npm run test:perf（vitest.perf.config 只收 **​/*perf-wallclock.test.ts）。
+ * 运行：npm run test:perf（vitest.perf.config 只收 perf-wallclock 命名文件）。
  *
  * 以 fixtures/search/generator.mjs 确定性生成 1k / 10k 语料（tmp 目录），
  * 对内存参照实现测量 build / query(p50/p95) / upsert，输出 §18 的 JSON

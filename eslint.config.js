@@ -52,13 +52,18 @@ export default tseslint.config(
   },
   {
     // R006 阶段 0：Electron 主进程/预加载与 node 脚本的 Node 全局。
-    files: ["electron/**/*.ts", "scripts/*.{mjs,js}"],
+    files: [
+      "electron/**/*.ts",
+      "scripts/*.{mjs,js}",
+      "fixtures/**/*.mjs",
+    ],
     languageOptions: {
       globals: {
         process: "readonly",
         console: "readonly",
         fetch: "readonly",
         setTimeout: "readonly",
+        URL: "readonly",
       },
     },
   },

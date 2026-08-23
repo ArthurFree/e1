@@ -6,7 +6,7 @@
 
 `notion-like-web` 是一个独立的 Web 笔记应用：以 Tiptap 的 Notion-like 模板为交互和视觉参考，提供本地优先（离线可用）的知识库、页面树和块编辑能力。面向简体中文个人用户。
 
-**当前状态：第 1–5 阶段、R001–R006（含 C1–C5）、PR6 与 R007 阶段 0–5 均已完成（待验收）。** 各阶段完整细节见 `docs/requirements/`（R003–R007 规划）与 `docs/architecture/`；此处只保留代理日常工作所需的要点：
+**当前状态：第 1–5 阶段、R001–R006（含 C1–C5）、PR6、R007（阶段 0–5）与 R008（Stage 0–6）均已完成（待验收）。** 各阶段完整细节见 `docs/requirements/`（R003–R008 规划）与 `docs/architecture/`；此处只保留代理日常工作所需的要点：
 
 - **R001/R002（UI 设计系统与视觉重构）**：语义设计令牌（浅/深颜色、字体、圆角、阴影、z-index、动效 + `prefers-reduced-motion`，主色 `#22A06B`）、240px 全局侧栏（1024–1279px 折叠 64px）、开始首页/知识库首页/编辑器外框重构、统一 `ui/Dialog` 与 `ui/EmptyState`、`ui/icons.tsx` 56 枚 SVG 系统图标（系统 Emoji 图标清零，用户自定义图标仍允许 Emoji）、页面树键盘导航、Cascade Layers 样式结构。
 - **R003（架构整改，八阶段全完成）**：`SaveCoordinator` 保存系统（每文档串行队列 + 代次管理 + 恢复缓冲）、`WorkspaceSessionService` 会话原子加载（requestId 丢弃过期响应）、偏好事务化（串行队列 + 防抖）、正文 JSON 白名单校验 + 损坏面板、统一 `DomainError` 错误码、页面/标签关系不变量、`AppServices` 服务容器 + 依赖注入、AppState 拆分四状态域 + 渲染隔离、IndexedDB v3 索引优化、`docs/architecture/` 六主题文档 + `application/devDiagnostics.ts`（仅 dev 启用）。

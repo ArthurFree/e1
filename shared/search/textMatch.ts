@@ -21,8 +21,8 @@
 
 /** CJK 统一表意文字（基本区 + 扩展 A + 兼容区）。 */
 const CJK = /[㐀-䶿一-鿿豈-﫿]/u;
-const LATIN_CHAR = /[a-z0-9_+\-]/;
-const WORD_CHAR_RUN = /[a-z0-9_+\-]+/g;
+const LATIN_CHAR = /[a-z0-9_+-]/;
+const WORD_CHAR_RUN = /[a-z0-9_+-]+/g;
 
 /** 归一化：NFKC + 小写（查询与索引两侧同规则）。 */
 export function normalizeSearchText(text: string): string {

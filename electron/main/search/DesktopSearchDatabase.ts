@@ -91,7 +91,7 @@ export interface SearchQueryRowOut {
 
 /** 非词字符 unigram（emoji 等）的 FTS 安全编码（unicode61 不会为其建词）。 */
 function ftsEncodeToken(token: string): string {
-  if (/^[a-z0-9_+\-一-鿿㐀-䶿豈-﫿]+$/u.test(token)) return token;
+  if (/^[a-z0-9_+\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff-]+$/u.test(token)) return token;
   return `u${[...token].map((ch) => ch.codePointAt(0)!.toString(16)).join("_")}`;
 }
 
@@ -106,7 +106,7 @@ export function buildFtsMatchQuery(query: string): string | null {
   if (terms.length === 0) return null;
   const parts: string[] = [];
   for (const term of terms) {
-    if (/^[a-z0-9_+\-]+$/.test(term)) {
+    if (/^[a-z0-9_+-]+$/.test(term)) {
       // 纯拉丁词：前缀匹配（字符集经归一化必然安全，无需引号）。
       parts.push(`${term}*`);
       continue;
@@ -217,7 +217,9 @@ export class DesktopSearchDatabase {
     );
   }
 
-  getStatus(_vaultId: string): SearchIndexStatus {
+  getStatus(vaultId: string): SearchIndexStatus {
+    // DB 文件已按 vault 隔离，参数仅作调用方语义对齐（与 port 形状一致）。
+    void vaultId;
     return this.status;
   }
 
