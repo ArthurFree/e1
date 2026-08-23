@@ -12,6 +12,7 @@ import {
 import { secretStore } from "../platform/web/persistence/secretStore";
 import { AI_API_KEY_SECRET } from "../application/services/SecretStore";
 import type { SecretStorageStatus } from "../application/services/SecretStorageStatus";
+import type { FullTextSearchIndex } from "../application/search/FullTextSearchIndex";
 import { WebAssetPicker } from "../platform/web/webAssetPicker";
 import { SettingsPanel } from "./SettingsPanel";
 
@@ -437,5 +438,57 @@ describe("SettingsPanel 机密存储提示（R008 Stage 1）", () => {
     const note = document.querySelector(".settings-panel__note");
     expect(note?.textContent).toContain("IndexedDB");
     expect(screen.queryByText(/本次会话有效/)).toBeNull();
+  });
+});
+
+describe("SettingsPanel 重建搜索索引（R008 Stage 6 §13.4）", () => {
+  beforeEach(async () => {
+    cleanup();
+    await resetDB();
+  });
+
+  function renderWithFullTextSearch() {
+    const rebuild = vi.fn(async () => {});
+    const fullTextSearch: FullTextSearchIndex = {
+      getStatus: () => ({ state: "ready", indexedDocuments: 7 }),
+      prepare: vi.fn(async () => {}),
+      rebuild,
+      search: vi.fn(async () => []),
+      upsert: vi.fn(async () => {}),
+      remove: vi.fn(async () => {}),
+      relocate: vi.fn(async () => {}),
+    };
+    const services = {
+      ...createBrowserAppServices(),
+      fullTextSearch,
+    };
+    render(
+      <AppServicesProvider services={services}>
+        <AppProvider>
+          <ReadySettingsPanel />
+        </AppProvider>
+      </AppServicesProvider>,
+    );
+    return { rebuild };
+  }
+
+  it("Desktop 装配：入口可见，点击触发 rebuild 并显示结果", async () => {
+    const { rebuild } = renderWithFullTextSearch();
+    const button = await screen.findByRole("button", {
+      name: "重建搜索索引",
+    });
+    fireEvent.click(button);
+    await screen.findByText("索引已重建：7 篇文档。");
+    expect(rebuild).toHaveBeenCalledTimes(1);
+  });
+
+  it("未装配 fullTextSearch（Web）：无重建入口", async () => {
+    render(
+      <TestApp>
+        <ReadySettingsPanel />
+      </TestApp>,
+    );
+    await screen.findByText(/AI 未配置|AI 已配置/);
+    expect(screen.queryByRole("button", { name: "重建搜索索引" })).toBeNull();
   });
 });

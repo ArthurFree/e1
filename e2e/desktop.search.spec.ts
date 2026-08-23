@@ -250,3 +250,40 @@ test.describe("桌面冒烟：全文搜索（R008 Stage 5）", () => {
     }
   });
 });
+
+test.describe("桌面冒烟：搜索索引恢复（R008 Stage 6）", () => {
+  test.beforeAll(() => {
+    requireDesktopArtifacts();
+  });
+
+  test("@golden G20：删除 search DB → 重启 → 自动 rebuild，搜索恢复", async () => {
+    const fixture = await createFixture();
+    const app1 = await launch(fixture.userDataDir);
+    try {
+      const window = await app1.firstWindow();
+      await waitIndexReady(window);
+      const dialog = await search(window, "分词");
+      await expect(dialog.getByText("随想")).toBeVisible();
+    } finally {
+      await app1.close();
+    }
+
+    // 删除派生索引库（Markdown 不动）。
+    await rm(path.join(fixture.userDataDir, "search-index"), {
+      recursive: true,
+      force: true,
+    });
+
+    const app2 = await launch(fixture.userDataDir);
+    try {
+      const window = await app2.firstWindow();
+      // 自动 prepare：missing → building → ready（§13.2/§13.3 恢复通道）。
+      await waitIndexReady(window);
+      const dialog = await search(window, "分词");
+      await expect(dialog.getByText("随想")).toBeVisible();
+    } finally {
+      await app2.close();
+      await fixture.cleanup();
+    }
+  });
+});

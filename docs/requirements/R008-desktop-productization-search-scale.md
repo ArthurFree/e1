@@ -1,8 +1,8 @@
 # R008：Desktop 产品化收尾与搜索规模化
 
 - **版本**：0.1
-- **状态**：实现中（Stage 0–5 已完成）
-- **更新时间**：2026-08-22
+- **状态**：实现中（Stage 0–6 已完成，待统一测试与验收）
+- **更新时间**：2026-08-23
 - **前置需求**：R007（Desktop Local Vault 产品化基础闭环）
 - **基线 Commit**：`065a0174657e5ea9c4c6510970b5809ed66a87c0`
 - **建议目标分支**：`feat/r008-desktop-productization-search-scale`
@@ -1312,6 +1312,21 @@ schedule rebuild
 ---
 
 # 13. Stage 6：Rebuild / Recovery / Scale Acceptance
+
+**状态：已完成（2026-08-23）**
+
+实际实现与偏差记录：
+
+- 状态机 / 版本 / 损坏恢复（§13.1–13.3）：均在 Stage 4 落地（SearchIndexStatus 五态；schema/index_format_version 不兼容 → 备份整库重建；open/integrity 失败 → `.corrupt-<ts>` 备份 + 重建空库，Vault 打开不受影响）——本阶段以 G20 E2E 端到端验收恢复通道（删除 search-index 目录 → 重启自动 prepare rebuild → 搜索恢复）。
+- 手动重建（§13.4）：设置页「本地存储」区新增「重建搜索索引」入口（仅 `services.fullTextSearch` 装配时出现；rebuild 只重建派生索引，不触碰 Markdown）+ 结果一行（N 篇文档已索引）；SearchPanel degraded 态同入口（见下）。
+- 搜索 UI 状态（§14.1）：SearchPanel 新增全文索引状态条（仅 Desktop 装配时出现）——building「正在建立本地搜索索引…」（500ms 轮询直至 ready/degraded）；degraded「搜索索引需要修复」+「重建索引」CTA（触发 rebuild 并回读状态）；Web/未装配零变化（组件测试锁定）。
+- 搜索输入（§14.3）：查询 request id——慢查询后至丢弃过期结果不回填（组件测试：慢第一次/快第二次，慢结果后被拒）；防抖/Escape/键盘导航沿用既有。
+- 规模验收（§13.5，`DesktopSearchDatabase.perf-wallclock.test.ts`，vitest.perf.config 扩 electron 路径；真实 Vault 扫描管线 + 生成器语料）**开发机实测**：
+  - 1k：build 306ms（目标 ≤2s ✓）、query p50 14.15ms / p95 16.28ms（≤100ms ✓）、upsert 1.79ms；
+  - 10k：build 2734ms（≤10s ✓）、query p50 23.39ms / p95 38.08ms（≤150ms ✓）、upsert 2.1ms；
+  - 50k sanity：build 14834ms、query p50 34.67ms / p95 50.65ms、upsert 2.89ms——无 OOM、增量 upsert 毫秒级不退化（✓）。
+- E2E：@golden G20（删除 search DB → 重启 → 自动 rebuild → 搜索恢复）；G14–G18 复跑全绿。
+- **偏差**：SearchPanel 状态条仅覆盖 building/degraded（ready 无打扰、missing 由 prepare 自动接管无需提示）；§14.2 命中词高亮维持既有 snippet 展示（matchedField 辅助信息不追加，保持「不重新设计大 UI」）。
 
 ## 13.1 Index Status
 

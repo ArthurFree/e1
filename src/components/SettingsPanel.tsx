@@ -67,6 +67,11 @@ export function SettingsPanel() {
   // Portable Vault 导入（R005 阶段 7B）：同上，一行摘要 + console 明细。
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<string | null>(null);
+  // 手动重建全文搜索索引（R008 Stage 6 §13.4）：进行中禁用 + 结果一行。
+  const [rebuildingIndex, setRebuildingIndex] = useState(false);
+  const [indexRebuildResult, setIndexRebuildResult] = useState<string | null>(
+    null,
+  );
 
   // 本地存储估算（R004 §6.3；R005 阶段 8 §8.4 起经 storageHealth port）：
   // 仅在面板打开时读取一次。
@@ -144,6 +149,29 @@ export function SettingsPanel() {
     setApiKey("");
     setError(null);
     setSaved(false);
+  };
+
+  // 手动重建全文搜索索引（R008 §13.4）：只重建派生索引，不触碰 Markdown。
+  const rebuildSearchIndex = async () => {
+    const fullText = services.fullTextSearch;
+    if (!fullText || !workspace || rebuildingIndex) return;
+    setRebuildingIndex(true);
+    setIndexRebuildResult(null);
+    try {
+      await fullText.rebuild(workspace.id);
+      const status = fullText.getStatus(workspace.id);
+      setIndexRebuildResult(
+        status.state === "ready"
+          ? `索引已重建：${status.indexedDocuments} 篇文档。`
+          : "索引重建完成。",
+      );
+    } catch (err) {
+      setIndexRebuildResult(
+        err instanceof Error ? err.message : "索引重建失败，请重试。",
+      );
+    } finally {
+      setRebuildingIndex(false);
+    }
   };
 
   // 导出当前知识库为 Portable Vault（.e1.zip，R005 阶段 7A）。
@@ -358,6 +386,23 @@ export function SettingsPanel() {
             当前文档版本历史：{revisionUsage.count} 条，约{" "}
             {formatBytes(revisionUsage.bytes)}
           </p>
+        )}
+        {/* R008 Stage 6（§13.4）：手动重建全文搜索索引（仅 Desktop 装配；
+            只重建派生索引，不触碰 Markdown）。 */}
+        {services.fullTextSearch && workspace && (
+          <div className="settings-panel__actions">
+            <button
+              type="button"
+              className="settings-panel__secondary"
+              disabled={rebuildingIndex}
+              onClick={() => void rebuildSearchIndex()}
+            >
+              {rebuildingIndex ? "正在重建索引…" : "重建搜索索引"}
+            </button>
+            {indexRebuildResult && (
+              <p className="settings-panel__storage">{indexRebuildResult}</p>
+            )}
+          </div>
         )}
         {/* Portable Vault 导出/导入（R005 阶段 7A/7B）：知识库级备份通道。 */}
         <div className="settings-panel__actions">
