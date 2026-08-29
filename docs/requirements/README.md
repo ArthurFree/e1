@@ -23,7 +23,7 @@
 | R005 | [Web 优先与 Electron 双端准备方案](./r005.md)（[执行版](./r005-web-first-dual-runtime.md)） | — | 已完成 | 2026-08-08 |
 | R006 | [Electron Desktop 本地 Vault 技术验证版](./r006.md)                            | —        | 已完成 | 2026-08-29 |
 | R007 | [Desktop Local Vault 产品化基础闭环](./R007-desktop-local-vault-productization.md) | 0.1  | 已完成 | 2026-08-29 |
-| R008 | [Desktop 产品化收尾与搜索规模化](./R008-desktop-productization-search-scale.md) | 0.2  | 待验收 | 2026-08-29 |
+| R008 | [Desktop 产品化收尾与搜索规模化](./R008-desktop-productization-search-scale.md) | 0.2  | 已完成 | 2026-08-29 |
 
 ## 单份需求的完成定义
 
