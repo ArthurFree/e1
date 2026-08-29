@@ -1,8 +1,8 @@
 # R008：Desktop 产品化收尾与搜索规模化
 
-- **版本**：0.1
-- **状态**：实现中（Stage 0–6 已完成，待统一测试与验收）
-- **更新时间**：2026-08-23
+- **版本**：0.2
+- **状态**：待验收（Stage 0–6 已完成，统一测试与验收 2026-08-29 通过）
+- **更新时间**：2026-08-29
 - **前置需求**：R007（Desktop Local Vault 产品化基础闭环）
 - **基线 Commit**：`065a0174657e5ea9c4c6510970b5809ed66a87c0`
 - **建议目标分支**：`feat/r008-desktop-productization-search-scale`
@@ -1850,48 +1850,50 @@ feat(R008): search index rebuild/recovery 与规模化验收
 
 只有同时满足以下条件才可将 R008 标记为完成。
 
+验收记录（2026-08-29）：`npm run ci`（171 文件 / 1329 例）、Web 构建 + Web E2E 47/47、桌面构建 + 桌面 E2E 44 过 1 条件跳过（secrets 按 safeStorage 可用性）、搜索性能基准复测（1k build 537ms / 10k 3301ms / 50k 16.5s，query p95 ≤ 54ms，无 OOM）全部通过；期间修复一处与 Stage 0 行为脱节的过时断言（desktop.files 新建分组不再自动进入重命名，§7.3 的既定行为）。
+
 ## R007 收口
 
-- [ ] document/group operation support 与真实能力一致；
-- [ ] Group 不再暴露会抛 NOT_IMPLEMENTED 的 rename/move；
-- [ ] chokidar 属 production runtime dependency；
-- [ ] Electron external dependency 有自动门禁；
-- [ ] R007 文档状态与实际代码一致；
-- [ ] R007 标记已完成。
+- [x] document/group operation support 与真实能力一致；
+- [x] Group 不再暴露会抛 NOT_IMPLEMENTED 的 rename/move；
+- [x] chokidar 属 production runtime dependency；
+- [x] Electron external dependency 有自动门禁（`scripts/verifyElectronRuntimeDeps.test.mjs`）；
+- [x] R007 文档状态与实际代码一致；
+- [x] R007 标记已完成（2026-08-29 验收关闭）。
 
 ## Secret
 
-- [ ] Desktop 不再使用 `InMemorySecretStore` 作为正常持久实现；
-- [ ] secure backend 下 API Key 重启保持；
-- [ ] insecure backend 下不会明文持久化；
-- [ ] SecretStorageStatus 可表达真实运行状态；
-- [ ] secret 不出现在日志 / artifact / Vault。
+- [x] Desktop 不再使用 `InMemorySecretStore` 作为正常持久实现（`DesktopSecretStore` + Main safeStorage 落盘）；
+- [x] secure backend 下 API Key 重启保持（desktop.secrets E2E）；
+- [x] insecure backend 下不会明文持久化（会话内存降级，SecretFilePersistence 测试）；
+- [x] SecretStorageStatus 可表达真实运行状态（R8-02 三模式）；
+- [x] secret 不出现在日志 / artifact / Vault。
 
 ## Reveal
 
-- [ ] note reveal 可用；
-- [ ] asset reveal 可用；
-- [ ] Renderer 无 absolutePath；
-- [ ] PathGuard / Vault authorization 不可绕过；
-- [ ] `revealInFileManager = true`。
+- [x] note reveal 可用（desktop.reveal E2E）；
+- [x] asset reveal 可用（desktop.reveal E2E）；
+- [x] Renderer 无 absolutePath；
+- [x] PathGuard / Vault authorization 不可绕过；
+- [x] `revealInFileManager = true`。
 
 ## Search
 
-- [ ] title 搜索；
-- [ ] tags 搜索；
-- [ ] body 全文搜索；
-- [ ] 中文搜索通过验收 corpus；
-- [ ] Search DB 是 derived data；
-- [ ] 删除 Search DB 后可完整 rebuild；
-- [ ] watcher create/update/delete/move 可增量维护；
-- [ ] self-write 不产生重复 UI reload / index loop；
-- [ ] index failure 不影响 Markdown save；
-- [ ] 10k notes 规模可日用；
-- [ ] 50k notes sanity 不 OOM；
-- [ ] degraded / rebuilding 状态有 UI；
-- [ ] Desktop golden E2E 全绿；
-- [ ] Web 无回归；
-- [ ] 架构 / decisions / requirements / AGENTS 同步。
+- [x] title 搜索；
+- [x] tags 搜索；
+- [x] body 全文搜索；
+- [x] 中文搜索通过验收 corpus；
+- [x] Search DB 是 derived data；
+- [x] 删除 Search DB 后可完整 rebuild（@golden G20）；
+- [x] watcher create/update/delete/move 可增量维护；
+- [x] self-write 不产生重复 UI reload / index loop；
+- [x] index failure 不影响 Markdown save；
+- [x] 10k notes 规模可日用（query p95 45ms / update 1.86ms，2026-08-29 复测）；
+- [x] 50k notes sanity 不 OOM（build 16.5s / query p95 54ms / update 2.74ms）；
+- [x] degraded / rebuilding 状态有 UI；
+- [x] Desktop golden E2E 全绿；
+- [x] Web 无回归（Web E2E 47/47）；
+- [x] 架构 / decisions / requirements / AGENTS 同步。
 
 ---
 
@@ -1955,6 +1957,15 @@ R008 完成后再按价值选择：
 ---
 
 # 26. 变更记录
+
+## 0.2 — 2026-08-29
+
+统一测试与验收通过，状态翻「待验收」：
+
+- `npm run ci`（171 文件 / 1329 例）、Web 构建 + Web E2E 47/47、桌面构建 + 桌面 E2E 44 过 1 条件跳过全绿；
+- 搜索性能基准复测达标（1k/10k/50k，详见 §13.5 与 Stage 6 记录）；
+- 修复 `desktop.files.spec.ts` 新建分组用例的过时断言（Stage 0 §7.3 已要求不再自动进入重命名流程，用例未随行）；
+- §23 DoD 全部核验通过（「R007 标记已完成」随 R007 同日验收关闭勾销）；R008 进入待验收。
 
 ## 0.1 — 2026-08-21
 

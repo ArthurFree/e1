@@ -185,11 +185,8 @@ test.describe("桌面冒烟：文件操作闭环（R007 阶段 4）", () => {
       await expect(tree).toContainText("已有笔记", { timeout: UI_TIMEOUT });
 
       await window.getByRole("button", { name: "新建分组" }).click();
-      // 创建后自动进入行内重命名；分组改名属后续批次，Escape 退出即可。
-      const renameInput = window.getByRole("textbox", { name: "重命名" });
-      await expect(renameInput).toBeVisible();
-      await renameInput.press("Escape");
-
+      // R008 Stage 0（§7.3）：Desktop 不支持 group.rename，新建分组后
+      // 不再自动进入必然失败的重命名流程，直接断言落盘结果。
       await expect(tree).toContainText("新建分组", { timeout: UI_TIMEOUT });
       await expect
         .poll(
@@ -200,7 +197,7 @@ test.describe("桌面冒烟：文件操作闭环（R007 阶段 4）", () => {
           { timeout: UI_TIMEOUT },
         )
         .toBe(true);
-      // 目录改名未实现的错误条不得出现（Escape 未触发 rename）。
+      // 未发起重命名，不得出现操作错误条（R008 §7.3）。
       await expect(window.locator(".tree-sidebar__error")).toHaveCount(0);
     } finally {
       await app.close();
