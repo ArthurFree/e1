@@ -21,6 +21,9 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
+    // 测试临时目录收口到项目内 test-results/tmp（每次运行前清空），
+    // 语义见 src/test/projectTmp.ts。
+    globalSetup: ["./src/test/globalSetup.ts"],
     // wall-clock 基准（*perf-wallclock.test.ts）由 npm run test:perf 单独跑，
     // 不进 npm test / ci——fake-indexeddb 耗时在 CI runner 上会抖动失败。
     // 不用 *.bench.*：Vitest 会把含 .bench. 的文件当成 benchmark 模式跳过。

@@ -11,6 +11,8 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
+    // 测试临时目录收口到项目内 test-results/tmp（同 vite.config.ts）。
+    globalSetup: ["./src/test/globalSetup.ts"],
     include: [
       "src/**/*perf-wallclock.test.ts",
       "electron/**/*perf-wallclock.test.ts",
