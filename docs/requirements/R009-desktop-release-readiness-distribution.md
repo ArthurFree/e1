@@ -1,7 +1,7 @@
 # R009：Desktop 发布就绪与跨平台分发
 
 > 版本：0.1  
-> 状态：实现中（Stage 0–5 已完成，Stage 6 Auto Update 延期；产品身份冻结为 e1 / E1 / com.e1.notes / 0.1.0；无签名证书，Stage 4 以延期记录闭合）  
+> 状态：实现中（Stage 0–5 完成、远端 CI 全绿；Stage 4 签名与 Stage 6 Auto Update 延期；DoD 仅剩 Windows 构建实测与首次真实 tag 发布）  
 > 更新时间：2026-08-30  
 > 前置需求：R006、R007、R008  
 > 基线提交：`5fd2f7359878162f12e4ef7a1cb003d6f32a4948`
@@ -1501,57 +1501,59 @@ Renderer 仍然不得得到 absolutePath。
 
 # 12. R009 Definition of Done
 
-R009 完成需要全部满足：
+R009 完成需要全部满足。
+
+验收记录（2026-08-30）：远端 main CI 六 job 全绿（`083e390`）；未闭合项仅剩「Windows installer 可构建」（配置就绪待 CI/Windows 首跑实测）与「首次真实 tag 发布」两项，其余全部核验通过。
 
 ## CI
 
-- [ ] latest remote main 全绿；
-- [ ] 无 Vitest unhandled errors；
-- [ ] Desktop E2E 无 platform shell timeout；
-- [ ] Packaged App Smoke 通过。
+- [x] latest remote main 全绿（083e390：quality/build-web/build-desktop/desktop-runtime-deps/e2e-web/e2e-desktop 全 success）；
+- [x] 无 Vitest unhandled errors（jsdomEnvironment teardown 前排空宏任务队列，根治 window is not defined）；
+- [x] Desktop E2E 无 platform shell timeout（E1_REVEAL_STUB 分层）；
+- [x] Packaged App Smoke 通过（P01–P08 本机 8/8，并接入 release.yml macOS 门禁）。
 
 ## Identity
 
-- [ ] productName 冻结；
-- [ ] appId 冻结；
-- [ ] package name 冻结；
-- [ ] userData 路径策略明确；
-- [ ] legacy migration 测试通过。
+- [x] productName 冻结（E1）；
+- [x] appId 冻结（com.e1.notes）；
+- [x] package name 冻结（e1；Web 端存量数据键 notion-like-web 刻意不动）；
+- [x] userData 路径策略明确（appData/E1，E1_USER_DATA_DIR 可覆盖）；
+- [x] legacy migration 测试通过（7 例：幂等/不覆盖/部分失败续跑/env 跳过等）。
 
 ## Packaging
 
-- [ ] macOS DMG 可构建；
-- [ ] Windows installer 可构建；
-- [ ] production dependencies 完整；
-- [ ] packaged app 可以启动；
-- [ ] Vault 打开正常；
-- [ ] Markdown 保存正常；
-- [ ] 附件正常；
-- [ ] 搜索正常；
-- [ ] watcher 正常。
+- [x] macOS DMG 可构建（E1-0.1.0-arm64.dmg 121MB 本机实测）；
+- [ ] Windows installer 可构建（nsis 配置就绪，macOS 主机无法实测，待 CI/Windows 首跑验证）；
+- [x] production dependencies 完整（asar 含 chokidar；node:sqlite 为内置）；
+- [x] packaged app 可以启动（隔离 userData 真启动存活零报错）；
+- [x] Vault 打开正常（P02）；
+- [x] Markdown 保存正常（P03）；
+- [x] 附件正常（P04，e1-asset://）；
+- [x] 搜索正常（P05，asar 内 node:sqlite FTS5 中文正文命中）；
+- [x] watcher 正常（P06）。
 
 ## Security
 
-- [ ] safeStorage 正常；
-- [ ] signing secret 不入库；
-- [ ] npm vulnerability review 完成；
-- [ ] Renderer 不泄露绝对路径。
+- [x] safeStorage 正常（P07 分流验证）；
+- [x] signing secret 不入库（无证书；未来只经 GitHub Secrets 条件注入）；
+- [x] npm vulnerability review 完成（2026-08-30：4 个传递性 dev 依赖漏洞已 npm audit fix 清零，不进安装包）；
+- [x] Renderer 不泄露绝对路径（既有授权边界，全量测试覆盖）。
 
 ## Release
 
-- [ ] tag 可以触发 Release；
-- [ ] Release 包含安装包；
-- [ ] Release 包含 checksum；
-- [ ] macOS signing / notarization 可复现；
-- [ ] Windows signing 可复现或有明确延期记录。
+- [ ] tag 可以触发 Release（workflow 就绪，待首次真实 tag 验证）；
+- [ ] Release 包含安装包（同上）；
+- [ ] Release 包含 checksum（SHA256SUMS.txt 已在流水线中）；
+- [ ] macOS signing / notarization 可复现（延期：无证书，条件步骤已预留）；
+- [x] Windows signing 可复现或有明确延期记录（Stage 4 延期记录）。
 
 ## Documentation
 
-- [ ] `docs/requirements/README.md` 更新；
-- [ ] R009 文档阶段状态同步；
-- [ ] `AGENTS.md` 更新；
-- [ ] `README.md` 安装说明更新；
-- [ ] Architecture / Decisions 同步发布架构。
+- [x] `docs/requirements/README.md` 更新（R009 行）；
+- [x] R009 文档阶段状态同步（Stage 0–6 状态与偏差全量回写）；
+- [x] `AGENTS.md` 更新；
+- [x] `README.md` 安装说明更新（含未签名提示与 SHA256 校验）；
+- [x] Architecture / Decisions 同步发布架构（decisions.md 补 R009 四条决策）。
 
 ---
 

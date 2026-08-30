@@ -1,8 +1,8 @@
-# Notion-like Web
+# E1
 
-一个独立的 Web 笔记应用：以 Tiptap 的 Notion-like 模板为交互和视觉参考，提供本地优先（离线可用）的知识库、页面树和块编辑能力。面向简体中文个人用户。
+一个独立的本地优先笔记应用：Web 端开箱即用，桌面端（Electron）以本地 Markdown 目录为真实数据源，提供知识库、页面树和块编辑能力。面向简体中文个人用户。
 
-**当前状态：R003 与 R004 架构整改全部完成——保存协调器（串行 + 代次 + 恢复缓冲 + 乐观锁）、统一文档写入边界（原子创建 + 提交单点）、四状态域 Provider、IndexedDB v5（secrets store）、图片附件化与存储配额治理、多标签页同步与冲突处理、ESLint/Prettier/dependency-cruiser 与 GitHub Actions 工程门禁。R005（Web 优先与 Electron 双端准备）阶段 0–8 已完成——命令/查询服务下沉与 AppServices 收紧、不透明 `ContentVersionToken` 乐观锁、持久化级 MarkdownCodec、Asset 服务抽象（AssetStore + `Uint8Array`）、`SearchIndexPort` 与会话去正文、Portable Vault（.e1.zip）导入导出、RecoveryStore / ChangeChannel / SecretStore / StorageHealthService。R006 Electron Desktop 技术验证版阶段 0–C5 已完成（Shell、IPC 契约、Vault 扫描、安全阅读、Markdown 创建与安全保存、写入链路加固、本地附件闭环）。R007 Desktop 产品化阶段 0–5 已完成（待验收）——元数据写入、设备级收藏/最近、外部文件监听、文件操作闭环（回收站/分组/移动）、系统安全存储 API Key 与「在文件管理器中显示」。**
+**当前状态：R001–R008 全部完成并验收关闭（2026-08-29）；R009 发布就绪与分发 Stage 0–5 完成（2026-08-30）——远端 CI 全绿、产品身份冻结（E1 / com.e1.notes）、userData 迁移、electron-builder 打包、安装包级 E2E（P01–P08）、tag 触发 Release 流水线。首版发布为未签名包（无证书，签名通道已预留）。**
 
 ## 功能
 
@@ -13,6 +13,20 @@
 - 写作保障：保存状态（未保存/保存中/已保存/失败重试）、字数统计、本地版本历史（自动间隔版本、恢复前自动存档）
 - AI 助手（可选）：`/` 命令提问，选区润色/改写/总结；结果先预览，确认后才写入文档
 - 浅色/深色主题，偏好与路由本地持久化
+
+## 下载与安装（桌面端）
+
+从 [GitHub Releases](https://github.com/ArthurFree/e1/releases) 下载最新版本：
+
+- macOS（Apple Silicon）：`E1-x.y.z-arm64.dmg`（或 zip）
+- Windows：`E1-Setup-x.y.z-x64.exe`
+
+**当前版本未做代码签名**（R009 Stage 4 延期，无证书）：
+
+- macOS 首次打开会提示「无法验证开发者」——在「系统设置 → 隐私与安全性」中允许，或右键应用选择「打开」；
+- Windows 可能出现 SmartScreen 拦截——选择「更多信息 → 仍要运行」。
+
+校验完整性：对照 Release 中的 `SHA256SUMS.txt`。
 
 ## 运行
 
@@ -46,6 +60,10 @@ npm run build:desktop    # Web 构建 + Electron 主进程/预加载（dist-elec
 npm run test:desktop     # 桌面侧单元测试（IPC 契约/preload/平台适配）
 npm run test:e2e:desktop # Electron 全套冒烟（需先 build:desktop）
 npm run test:e2e:desktop:golden # 黄金路径子集（打开 Vault / 保存重启 / 附件重启；进 CI）
+npm run package:desktop  # 打包快速校验（electron-builder --dir）
+npm run dist:mac         # 产出 DMG/ZIP 安装包（release/，未签名）
+npm run dist:win         # 产出 Windows NSIS 安装包（供 CI/Windows 机器）
+npm run test:e2e:package # 安装包级 E2E（直起打包产物，需先 dist:mac）
 ```
 
 Playwright 浏览器二进制安装在项目内（`PLAYWRIGHT_BROWSERS_PATH=0`），首次运行 `test:e2e` 前如缺浏览器，执行 `PLAYWRIGHT_BROWSERS_PATH=0 npx playwright install chromium`。
