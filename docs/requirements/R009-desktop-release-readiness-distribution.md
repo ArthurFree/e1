@@ -1,7 +1,7 @@
 # R009：Desktop 发布就绪与跨平台分发
 
 > 版本：0.1  
-> 状态：实现中（Stage 0 进行中；产品身份已冻结为 e1 / E1 / com.e1.notes / 0.1.0；无签名证书，Stage 4 出未签名包并记录延期）  
+> 状态：实现中（Stage 0–1 已完成；产品身份冻结为 e1 / E1 / com.e1.notes / 0.1.0；无签名证书，Stage 4 出未签名包并记录延期）  
 > 更新时间：2026-08-30  
 > 前置需求：R006、R007、R008  
 > 基线提交：`5fd2f7359878162f12e4ef7a1cb003d6f32a4948`
@@ -829,6 +829,15 @@ Stage 0 未完成，不进入 Packaging。
 ---
 
 # Stage 1：Product Identity & UserData Migration
+
+**状态：已完成（2026-08-30）**
+
+实际实现与偏差记录：
+
+- 身份落地：package.json `name` → `e1`（lockfile 同步）；`electron/main/main.ts` 顶层 `app.setName("E1")` 锁定 userData 目录；productName/appId 留给 Stage 2 的 electron-builder 配置。注意：Web 端 IndexedDB `DB_NAME` 与 BroadcastChannel 频道名保留 `notion-like-web` 字面量——那是存量 Web 数据键，改名会破坏用户数据，刻意不动。
+- 迁移：`electron/main/migration/LegacyUserDataMigration.ts`（不 import electron，路径全注入可测）。legacy 目录按 Electron 默认规则 `appData/<旧 name>` 推导（旧包无 productName，即 `notion-like-web`）；whenReady 后、IPC 注册前执行，失败只告警不阻断启动。
+- 语义：迁移 `recent-vaults.json` / `secrets.json` / `vault-state/`；不迁 `search-index/`（derived，缺失自动重建，R008 已落地）。幂等（marker `e1-userdata-migration.json` {version:1, migratedAt}）；逐条目「目标已存在跳过」；临时位置 + rename 可中断重试，部分失败不写 marker 下次自动续；legacy 全程只读；secret 内容不入日志；`E1_USER_DATA_DIR` 设置时跳过。
+- 测试：迁移模块 7 例（成功/幂等/不覆盖/部分失败续跑/EACCES 恢复/env 跳过/marker）；electron 单测 373 例全绿；桌面 smoke + state E2E 4/4 回归通过。
 
 ## 1.1 Product Identity
 

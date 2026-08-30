@@ -12,6 +12,14 @@ import {
   registerE1AssetProtocol,
   registerE1AssetScheme,
 } from "./protocol/e1AssetProtocol.js";
+import { runLegacyUserDataMigration } from "./migration/LegacyUserDataMigration.js";
+
+// R009 Stage 1（G2 产品身份冻结）：name=e1 / productName=E1 /
+// appId=com.e1.notes / version=0.1.0。productName/appId 属 electron-builder
+// 打包配置（Stage 2 接入）；本阶段显式 setName("E1") 锁定默认 userData
+// 目录名（macOS ~/Library/Application Support/E1），避免 Stage 2 前后
+// 行为漂移。必须在任何 app.getPath("userData") 之前调用。
+app.setName("E1");
 
 // e1-asset:// 必须在 app.ready 之前声明为特权协议（R006-C5 FR-21）。
 registerE1AssetScheme();
@@ -39,7 +47,18 @@ function revealStubDeps(): RegisterIpcHandlersDeps {
 // R007 阶段 3：watcher 句柄提升为模块级，before-quit 时关闭全部监听。
 let vaultWatchers: VaultWatcherService | null = null;
 
-void app.whenReady().then(() => {
+void app.whenReady().then(async () => {
+  // R009 Stage 1（§1.2 / G3）：legacy userData 一次性迁移必须在任何
+  // VaultRegistry / vault-state / secrets 首次读取 userData 之前完成；
+  // E1_USER_DATA_DIR 显式设置（桌面 E2E 测试隔离）时内部跳过。
+  // 迁移失败不阻断启动——不写 marker，下次启动自动重试。
+  await runLegacyUserDataMigration({
+    userDataDir: app.getPath("userData"),
+    appDataDir: app.getPath("appData"),
+    log: (message) => console.warn(message),
+  }).catch((error: unknown) => {
+    console.warn("[LegacyUserDataMigration] 迁移流程异常（不阻断启动）", error);
+  });
   const vaultRoots = registerIpcHandlers(revealStubDeps());
   vaultWatchers = vaultRoots.watchers;
   registerE1AssetProtocol(vaultRoots);
