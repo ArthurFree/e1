@@ -19,7 +19,9 @@ export default defineConfig({
     },
   },
   test: {
-    environment: "jsdom",
+    // 自定义 jsdom 环境（R009 Stage 0.1）：teardown 前先行排空挂起的宏任务，
+    // 根治 React dev 调度回调在 jsdom 销毁后访问 window 的 unhandled error。
+    environment: "./src/test/jsdomEnvironment.ts",
     setupFiles: ["./src/test/setup.ts"],
     // 测试临时目录收口到项目内 test-results/tmp（每次运行前清空），
     // 语义见 src/test/projectTmp.ts。
