@@ -24,6 +24,7 @@ import {
   type StorageEstimateInfo,
 } from "../application/services/StorageHealthService";
 import { VaultExportService } from "../application/vault/VaultExportService";
+import type { UpdateStatus } from "../application/services/UpdateService";
 import { formatBytes } from "../editor/attachment";
 import { Dialog } from "./ui/Dialog";
 
@@ -72,6 +73,23 @@ export function SettingsPanel() {
   const [indexRebuildResult, setIndexRebuildResult] = useState<string | null>(
     null,
   );
+  // 应用更新（R009 Stage 6）：null = 未装配（Web）或读取中。
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
+
+  // 应用更新状态：打开面板时拉一次快照 + 订阅 Main 推送。
+  useEffect(() => {
+    const update = services.update;
+    if (!update) return;
+    let cancelled = false;
+    void update.getState().then((status) => {
+      if (!cancelled) setUpdateStatus(status);
+    });
+    const unsubscribe = update.subscribe(setUpdateStatus);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [services]);
 
   // 本地存储估算（R004 §6.3；R005 阶段 8 §8.4 起经 storageHealth port）：
   // 仅在面板打开时读取一次。
@@ -430,6 +448,100 @@ export function SettingsPanel() {
           <p className="settings-panel__storage">{importResult}</p>
         )}
       </div>
+
+      {/* R009 Stage 6（Auto Update）：版本与更新——仅 Desktop 装配
+          services.update；macOS 未签名期间 canAutoInstall=false，
+          降级为「前往下载」手动链路（平台分流在 Main 侧完成）。 */}
+      {services.update && updateStatus && (
+        <div className="settings-panel__section">
+          <span className="settings-panel__label">版本与更新</span>
+          <p className="settings-panel__storage">
+            当前版本：v{updateStatus.currentVersion}
+          </p>
+          {updateStatus.state === "unsupported" && (
+            <p className="settings-panel__storage">
+              当前环境不支持自动更新（仅安装包内可用）。
+            </p>
+          )}
+          {updateStatus.state === "available" && (
+            <p className="settings-panel__storage">
+              发现新版本：v{updateStatus.latestVersion}
+            </p>
+          )}
+          {updateStatus.state === "downloading" && (
+            <p className="settings-panel__storage">
+              正在下载更新…
+              {updateStatus.progressPercent !== undefined &&
+                ` ${updateStatus.progressPercent}%`}
+            </p>
+          )}
+          {updateStatus.state === "downloaded" && (
+            <p className="settings-panel__storage">
+              新版本 v{updateStatus.latestVersion} 已下载，重启后生效。
+            </p>
+          )}
+          {updateStatus.state === "not-available" && (
+            <p className="settings-panel__storage">已是最新版本。</p>
+          )}
+          {updateStatus.state === "error" && (
+            <p className="settings-panel__storage-warning" role="alert">
+              更新失败：{updateStatus.errorMessage ?? "未知错误"}
+              （不影响当前版本使用）
+            </p>
+          )}
+          <div className="settings-panel__actions">
+            {(updateStatus.state === "idle" ||
+              updateStatus.state === "not-available" ||
+              updateStatus.state === "error") && (
+              <button
+                type="button"
+                className="settings-panel__secondary"
+                onClick={() => void services.update?.check()}
+              >
+                检查更新
+              </button>
+            )}
+            {updateStatus.state === "checking" && (
+              <button
+                type="button"
+                className="settings-panel__secondary"
+                disabled
+              >
+                正在检查…
+              </button>
+            )}
+            {updateStatus.state === "available" &&
+              updateStatus.canAutoInstall && (
+                <button
+                  type="button"
+                  className="settings-panel__primary"
+                  onClick={() => void services.update?.download()}
+                >
+                  下载更新
+                </button>
+              )}
+            {updateStatus.state === "available" &&
+              !updateStatus.canAutoInstall && (
+                <button
+                  type="button"
+                  className="settings-panel__primary"
+                  onClick={() => void services.update?.openReleasePage()}
+                >
+                  前往下载
+                </button>
+              )}
+            {updateStatus.state === "downloaded" && (
+              <button
+                type="button"
+                className="settings-panel__primary"
+                onClick={() => void services.update?.install()}
+              >
+                重启安装
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </Dialog>
   );
 }

@@ -21,6 +21,7 @@ import {
   type E1DesktopAPI,
   type SearchIndexStatus,
   type SecretStorageStatus,
+  type UpdateStatus,
 } from "../../shared/ipc/contracts";
 
 /** 按组部分覆盖：键为 E1DesktopAPI 的服务组，值为该组方法的部分实现。 */
@@ -32,6 +33,7 @@ export type MockDesktopApiOverrides = {
   search?: Partial<E1DesktopAPI["search"]>;
   asset?: Partial<E1DesktopAPI["asset"]>;
   events?: Partial<E1DesktopAPI["events"]>;
+  update?: Partial<E1DesktopAPI["update"]>;
   versions?: E1DesktopAPI["versions"];
 };
 
@@ -183,6 +185,22 @@ export function createMockDesktopApi(
 
   const events: E1DesktopAPI["events"] = {
     subscribeVaultChanges: vi.fn(() => () => {}),
+    subscribeUpdateStatus: vi.fn(() => () => {}),
+  };
+
+  /** R009 Stage 6：默认未打包语义（state=unsupported，不触网）。 */
+  const defaultUpdateStatus: UpdateStatus = {
+    state: "unsupported",
+    currentVersion: "0.1.0",
+    canAutoInstall: false,
+    releasePageUrl: "https://github.com/ArthurFree/e1/releases",
+  };
+  const update: E1DesktopAPI["update"] = {
+    getState: vi.fn(async () => ({ ...defaultUpdateStatus })),
+    check: vi.fn(async () => ({ ...defaultUpdateStatus })),
+    download: vi.fn(async () => ({ ...defaultUpdateStatus })),
+    install: vi.fn(async () => {}),
+    openReleasePage: vi.fn(async () => {}),
   };
 
   return {
@@ -195,5 +213,6 @@ export function createMockDesktopApi(
     search: mergeGroup(search, overrides.search),
     asset: mergeGroup(asset, overrides.asset),
     events: mergeGroup(events, overrides.events),
+    update: mergeGroup(update, overrides.update),
   };
 }

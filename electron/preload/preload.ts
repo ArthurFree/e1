@@ -7,6 +7,8 @@
 // purgeTrash（回收站闭环），note 组新增 move/renameFile（文件操作）。
 // R007 阶段 5：新增 secret 组（status/get/set/delete，safeStorage 加密
 // 持久化）与 note.reveal / asset.reveal（文件管理器显示）。
+// R009 Stage 6：新增 update 组（getState/check/download/install/
+// openReleasePage）与 events.subscribeUpdateStatus（更新状态推送）。
 // sandbox 预加载只支持 CJS（构建产物 dist-electron/preload.cjs）。
 //
 // 错误传递策略（与 src/platform/desktop/desktopApi.ts 注释共同锁定）：
@@ -70,6 +72,7 @@ import {
   type TrashInput,
   type TrashListResult,
   type TrashResult,
+  type UpdateStatus,
   type VaultScanResult,
   type VaultFsEvent,
   type VaultState,
@@ -78,7 +81,7 @@ import {
   encodeIpcBridgeError,
   isIpcErrorPayload,
 } from "../../shared/errors.js";
-import { parseVaultFsEvents } from "../../shared/ipc/schemas.js";
+import { parseUpdateStatus, parseVaultFsEvents } from "../../shared/ipc/schemas.js";
 
 async function invoke<T>(channel: string, payload?: unknown): Promise<T> {
   const result = (await ipcRenderer.invoke(channel, payload)) as IpcResult<T>;
@@ -190,6 +193,26 @@ const api: E1DesktopAPI = {
         ipcRenderer.removeListener(IPC_CHANNELS.eventsVaultChanges, wrapped);
       };
     },
+    subscribeUpdateStatus: (listener: (status: UpdateStatus) => void) => {
+      const wrapped = (_event: unknown, payload: unknown) => {
+        try {
+          listener(parseUpdateStatus(payload));
+        } catch {
+          // 同上：非法推送直接丢弃。
+        }
+      };
+      ipcRenderer.on(IPC_CHANNELS.eventsUpdateStatus, wrapped);
+      return () => {
+        ipcRenderer.removeListener(IPC_CHANNELS.eventsUpdateStatus, wrapped);
+      };
+    },
+  },
+  update: {
+    getState: () => invoke<UpdateStatus>(IPC_CHANNELS.updateGetState),
+    check: () => invoke<UpdateStatus>(IPC_CHANNELS.updateCheck),
+    download: () => invoke<UpdateStatus>(IPC_CHANNELS.updateDownload),
+    install: () => invoke<void>(IPC_CHANNELS.updateInstall),
+    openReleasePage: () => invoke<void>(IPC_CHANNELS.updateOpenReleasePage),
   },
 };
 

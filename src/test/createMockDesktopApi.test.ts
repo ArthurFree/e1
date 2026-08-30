@@ -22,6 +22,7 @@ const EXPECTED_GROUPS = [
   "platform",
   "search",
   "secret",
+  "update",
   "vault",
   "vaultState",
   "versions",
@@ -53,7 +54,8 @@ const EXPECTED_SHAPE: Record<string, string[]> = {
   secret: ["get", "remove", "set", "status"],
   search: ["query", "rebuild", "relocate", "remove", "status", "upsert"],
   asset: ["import", "pick", "read", "resolveUrl", "reveal"],
-  events: ["subscribeVaultChanges"],
+  events: ["subscribeUpdateStatus", "subscribeVaultChanges"],
+  update: ["check", "download", "getState", "install", "openReleasePage"],
 };
 
 describe("createMockDesktopApi（R009 Stage 0.3）", () => {

@@ -36,6 +36,7 @@ import type {
   SearchUpsertInput,
   SecretSetInput,
   TrashInput,
+  UpdateStatus,
   VaultFsEvent,
   VaultPageStatePatch,
 } from "./contracts.js";
@@ -646,3 +647,54 @@ export function parseVaultFsEvents(payload: unknown): VaultFsEvent[] {
     return { type, vaultId, relativePath } as VaultFsEvent;
   });
 }
+
+/**
+ * R009 Stage 6：events:updateStatus 推送 payload 校验（Preload 侧）。
+ * 与 parseVaultFsEvents 同向——校验 Main 推送的状态，非法即抛 IpcFailure
+ * 由订阅方丢弃。
+ */
+const UPDATE_STATES = new Set([
+  "idle",
+  "checking",
+  "available",
+  "not-available",
+  "downloading",
+  "downloaded",
+  "error",
+  "unsupported",
+]);
+
+export function parseUpdateStatus(payload: unknown): UpdateStatus {
+  if (!isRecord(payload)) invalid("events:updateStatus payload 必须为对象");
+  const state = payload.state;
+  if (typeof state !== "string" || !UPDATE_STATES.has(state)) {
+    invalid("字段 state 非法");
+  }
+  const status: UpdateStatus = {
+    state: state as UpdateStatus["state"],
+    currentVersion: requireString(payload, "currentVersion", {
+      nonEmpty: true,
+    }),
+    canAutoInstall: payload.canAutoInstall === true,
+    releasePageUrl: requireString(payload, "releasePageUrl", {
+      nonEmpty: true,
+    }),
+  };
+  if (payload.latestVersion !== undefined) {
+    status.latestVersion = requireString(payload, "latestVersion", {
+      nonEmpty: true,
+    });
+  }
+  if (payload.progressPercent !== undefined) {
+    const progress = payload.progressPercent;
+    if (typeof progress !== "number" || progress < 0 || progress > 100) {
+      invalid("字段 progressPercent 必须为 0-100 的数字");
+    }
+    status.progressPercent = progress;
+  }
+  if (payload.errorMessage !== undefined) {
+    status.errorMessage = requireString(payload, "errorMessage");
+  }
+  return status;
+}
+

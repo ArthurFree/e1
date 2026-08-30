@@ -1,6 +1,10 @@
 // R006 阶段 0：Electron 主进程入口。
 import { app, BrowserWindow } from "electron";
 import { join } from "node:path";
+// R009 Stage 6：electron-updater 为 CJS 且 autoUpdater 是懒加载 getter——
+// 用 default import 解构（named import 经 Node ESM CJS 互操作可能取不到）；
+// 本模块是 esbuild external，运行时从 node_modules 解析。
+import electronUpdater from "electron-updater";
 import { createMainWindow } from "./window.js";
 import {
   registerIpcHandlers,
@@ -59,10 +63,23 @@ void app.whenReady().then(async () => {
   }).catch((error: unknown) => {
     console.warn("[LegacyUserDataMigration] 迁移流程异常（不阻断启动）", error);
   });
-  const vaultRoots = registerIpcHandlers(revealStubDeps());
+  const vaultRoots = registerIpcHandlers({
+    ...revealStubDeps(),
+    // R009 Stage 6：真实 autoUpdater 只在此装配；E1_UPDATE_FEED_URL 供
+    // 手动 QA 用本地静态服务器演练完整更新链路（生产/开发不设）。
+    updateAutoUpdater: electronUpdater.autoUpdater,
+    updateFeedUrlOverride: process.env.E1_UPDATE_FEED_URL,
+  });
   vaultWatchers = vaultRoots.watchers;
   registerE1AssetProtocol(vaultRoots);
   createMainWindow();
+
+  // R009 Stage 6：启动后延迟自动检查一次更新（仅打包环境触网；
+  // dev/未注入 updater 时 service 内部报 unsupported 直接返回）。
+  // 结果只沉淀状态推送到设置页，不弹窗打扰。
+  setTimeout(() => {
+    void vaultRoots.update.check();
+  }, 5000);
 
   // macOS 惯例：点击 Dock 图标且已无窗口时重建窗口。
   app.on("activate", () => {

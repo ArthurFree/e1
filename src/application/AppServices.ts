@@ -37,6 +37,7 @@ import type { ExternalVaultChangeService } from "./services/ExternalVaultChangeS
 import type { RevealService } from "./services/RevealService";
 import type { SecretStorageStatus } from "./services/SecretStorageStatus";
 import type { FullTextSearchIndex } from "./search/FullTextSearchIndex";
+import type { UpdateService } from "./services/UpdateService";
 import type { RuntimeCapabilities } from "../runtime/RuntimeCapabilities";
 import type { RuntimeOperations } from "../runtime/RuntimeOperations";
 
@@ -192,6 +193,14 @@ export interface AppServices {
    * SearchQueryService 优先消费（ready 时），未装配/未 ready 回退既有路径。
    */
   fullTextSearch?: FullTextSearchIndex;
+  /**
+   * 应用更新服务（可选，R009 Stage 6 Auto Update）：由具备自更新能力的
+   * 运行时装配（Desktop，electron-updater + GitHub Releases feed）；
+   * Web/内存容器不装配本字段，UI 以 `services.update` 存在性门控
+   * 「检查更新」入口（DUAL-01）；macOS 未签名降级等平台分流由 Main 侧
+   * 完成，Renderer 只消费 UpdateStatus.canAutoInstall。
+   */
+  update?: UpdateService;
   /**
    * 命令服务（R005 批次 1）：业务写编排入口，状态层经此触发仓储写、
    * 搜索索引同步与跨标签页广播。

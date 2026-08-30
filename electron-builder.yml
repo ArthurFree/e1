@@ -27,6 +27,14 @@ asar: true
 # 无 native 依赖（chokidar 4 纯 JS），跳过 node-gyp rebuild，避免本机/CI 工具链差异。
 npmRebuild: false
 
+# R009 Stage 6（Auto Update）：electron-updater 更新源——GitHub Releases
+#（public repo 无需 token，仅 stable/latest 通道）。仅用于生成 latest*.yml
+# 与 updater feed 配置；发布仍由 release.yml 统一做（--publish never 不变）。
+publish:
+  provider: github
+  owner: ArthurFree
+  repo: e1
+
 mac:
   target:
     - dmg

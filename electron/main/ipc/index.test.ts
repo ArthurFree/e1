@@ -18,7 +18,12 @@ import type { IpcMainLike } from "./handler.js";
 import type { OpenDialogLike } from "./vault.js";
 
 vi.mock("electron", () => ({
-  app: { getPath: () => tmpdir() },
+  app: {
+    getPath: () => tmpdir(),
+    // R009 Stage 6：update 组缺省未打包（unsupported，不触网）。
+    isPackaged: false,
+    getVersion: () => "0.1.0-test",
+  },
   ipcMain: { handle: vi.fn() },
   dialog: { showOpenDialog: vi.fn() },
   // R007 阶段 5：secret 组（safeStorage 加密持久化）与 reveal 组（shell）的
@@ -29,7 +34,9 @@ vi.mock("electron", () => ({
     decryptString: (encrypted: Buffer) =>
       encrypted.toString("utf8").slice("enc:".length),
   },
-  shell: { showItemInFolder: vi.fn() },
+  shell: { showItemInFolder: vi.fn(), openExternal: vi.fn(async () => {}) },
+  // R007 阶段 3 / R009 Stage 6：事件广播遍历窗口；本文件不触发推送，占位即可。
+  BrowserWindow: { getAllWindows: () => [] },
 }));
 
 type Handler = (
@@ -56,12 +63,16 @@ beforeEach(() => {
 });
 
 describe("registerIpcHandlers 注册", () => {
-  it("全部 request/response channel 注册（vault 5 + note 4 + asset 4 + vaultState 2）", () => {
+  it("全部 request/response channel 注册（事件通道除外）", () => {
     registerIpcHandlers({ ipc: bus });
-    // events:vaultChanges 是 Main→Renderer 单向推送通道（R007 阶段 3），
-    // 不注册 ipcMain.handle，从断言集中排除。
+    // events:vaultChanges（R007 阶段 3）与 events:updateStatus（R009 Stage 6）
+    // 是 Main→Renderer 单向推送通道，不注册 ipcMain.handle，从断言集中排除。
+    const eventChannels = new Set<string>([
+      IPC_CHANNELS.eventsVaultChanges,
+      IPC_CHANNELS.eventsUpdateStatus,
+    ]);
     const requestChannels = Object.values(IPC_CHANNELS).filter(
-      (channel) => channel !== IPC_CHANNELS.eventsVaultChanges,
+      (channel) => !eventChannels.has(channel),
     );
     expect([...handlers.keys()].sort()).toEqual(requestChannels.sort());
   });

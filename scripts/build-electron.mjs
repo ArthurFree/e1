@@ -2,6 +2,7 @@
 // package.json 为 ESM，Electron ≥ 28 支持 ESM 主进程 → main 输出 dist-electron/main.mjs；
 // sandbox 预加载脚本必须是 CJS → preload 输出 dist-electron/preload.cjs。
 // R007 阶段 3：chokidar 仅主进程使用，保持 external（运行时从 node_modules 解析）。
+// R009 Stage 6：electron-updater 同为 Main 运行时依赖，保持 external。
 import { build } from "esbuild";
 
 await build({
@@ -10,7 +11,7 @@ await build({
   format: "esm",
   platform: "node",
   bundle: true,
-  external: ["electron", "chokidar"],
+  external: ["electron", "chokidar", "electron-updater"],
 });
 
 await build({

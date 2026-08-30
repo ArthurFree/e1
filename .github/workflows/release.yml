@@ -172,8 +172,9 @@ jobs:
             playwright-report/
           if-no-files-found: ignore
 
-      # 只上传安装包本体；blockmap / latest*.yml 是 electron-updater 增量更新元数据，
-      # Auto Update 延期（R009 §Stage 6），首版不随 Release 分发，避免误导。
+      # 安装包 + electron-updater 更新元数据（R009 Stage 6：Auto Update 已落地，
+      # latest*.yml 是 updater 的 feed 索引，必须随 Release 分发；
+      # blockmap 供差量下载，体积可忽略，一并上传）。
       - name: 上传安装包产物
         uses: actions/upload-artifact@v4
         with:
@@ -182,6 +183,8 @@ jobs:
             release/*.dmg
             release/*.zip
             release/*.exe
+            release/latest*.yml
+            release/*.blockmap
           if-no-files-found: error
 
   # ── 汇总产物 + SHA256SUMS.txt + GitHub Release ───────────────────────────

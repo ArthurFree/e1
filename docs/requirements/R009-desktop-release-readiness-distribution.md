@@ -1,7 +1,7 @@
 # R009：Desktop 发布就绪与跨平台分发
 
 > 版本：0.1  
-> 状态：实现中（Stage 0–5 完成、远端 CI 全绿；Stage 4 签名与 Stage 6 Auto Update 延期；DoD 仅剩 Windows 构建实测与首次真实 tag 发布）  
+> 状态：实现中（Stage 0–6 完成、远端 CI 全绿；Stage 4 签名延期；DoD 仅剩 Windows 构建实测与首次真实 tag 发布）  
 > 更新时间：2026-08-30  
 > 前置需求：R006、R007、R008  
 > 基线提交：`5fd2f7359878162f12e4ef7a1cb003d6f32a4948`
@@ -1281,51 +1281,42 @@ SHA256SUMS.txt
 
 ---
 
-# Stage 6：Auto Update（可延期）
+# Stage 6：Auto Update
 
-**状态：已延期（2026-08-30 决策）——不阻塞 v0.1.0，后续独立批次（可编号 R010）实施。**
+**状态：已完成（2026-08-30）。**
 
-Auto Update 不作为 R009 第一版 release 阻塞条件。
+实现要点（决策见 docs/decisions.md「Auto Update」行）：
 
-第一目标：
+- **electron-updater 6.8.9 + GitHub Releases feed**（public repo 免 token，
+  仅 stable/latest 通道；beta 通道有真实需求再加）；electron-builder.yml 新增
+  `publish: { provider: github, owner: ArthurFree, repo: e1 }`（只用于生成
+  latest*.yml 与 feed 配置，发布仍 `--publish never` 由 release.yml 统一做）；
+  release.yml 恢复上传 latest*.yml + blockmap（差量下载）。
+- **Main 侧状态机**：`electron/main/update/DesktopUpdateService`（全部
+  electron/OS 依赖构造注入，error 事件只沉淀状态不 throw——DIST-07 更新
+  失败不影响现有安装）+ `update.*` IPC 五通道（getState/check/download/
+  install/openReleasePage）+ `events:updateStatus` 推送（第二个
+  Main→Renderer 单向事件通道，照 events:vaultChanges 模式）。
+- **macOS 提示降级**：Squirrel.Mac 拒绝替换未签名应用（Stage 4 签名延期），
+  canAutoInstall=win32 单点开关——Windows NSIS 完整「检查→下载→确认安装」；
+  macOS 只检查+提示+「前往下载」打开 Release 页手动下载；Stage 4 签名落地后
+  把 darwin 分支翻 true 即升级全量。
+- **Renderer**：可选 `AppServices.update` port（Web 不装配即无入口，
+  DUAL-01 不判平台）+ 设置页「版本与更新」区（当前版本/检查更新/下载/
+  重启安装/前往下载按 UpdateStatus 分流）；启动后 5s 自动检查一次（仅
+  打包环境触网，结果只沉淀设置页不弹窗）。
+- **手动 QA 通道**：`E1_UPDATE_FEED_URL` 环境变量覆盖 feed，可用本地静态
+  服务器演练完整更新链路。
+- **跨版本 userData migration**：由既有 marker 幂等迁移框架承载
+  （LegacyUserDataMigration 模式——迁移失败不写 marker、下次启动重试），
+  更新不触碰 Vault 文件（DIST-01/02）。
+- 测试：DesktopUpdateService 状态机 10 例 + update IPC 2 例 + preload/
+  mock 形状快照 + SettingsPanel 组件 6 例 + 安装包冒烟 P09（入口与
+  getState 接线，不触网）。
 
-```text
-v0.1.0
-可以下载
-可以安装
-可以正常运行
-```
-
-之后再实现：
-
-```text
-v0.1.0
-→
-v0.1.1
-```
-
-推荐使用：
-
-```text
-electron-updater
-```
-
-更新必须支持：
-
-- 检查更新；
-- 下载；
-- 用户确认安装；
-- 更新失败不影响现有安装；
-- 跨版本 userData migration；
-- release channel。
-
-如果工作量过大，可独立为：
-
-```text
-R010 Auto Update
-```
-
-并将 Knowledge Graph 顺延。
+原始需求备忘（检查/下载/确认安装/失败不影响现有安装/跨版本 userData
+migration/release channel）全部落地；第一目标（v0.1.0 可下载可安装）不受
+本阶段影响。
 
 ---
 
@@ -1455,7 +1446,16 @@ Recent Vault
 
 Crash / Restart
   ✅ no Markdown corruption
+
+Auto Update
+  ✅ electron-updater + GitHub Releases（P09 接线验证）
+  ✅ macOS 未签名降级手动下载（canAutoInstall=false）
 ```
+
+真实触网更新链路（检查→下载→安装）不进 CI，手动验收口径：打包产物 +
+`E1_UPDATE_FEED_URL=http://127.0.0.1:<port>` 指向本地静态服务器
+（放 latest*.yml 与安装包），Windows 演练完整自动更新、macOS 演练
+「前往下载」降级链路。
 
 ---
 
@@ -1546,6 +1546,15 @@ R009 完成需要全部满足。
 - [ ] Release 包含 checksum（SHA256SUMS.txt 已在流水线中）；
 - [ ] macOS signing / notarization 可复现（延期：无证书，条件步骤已预留）；
 - [x] Windows signing 可复现或有明确延期记录（Stage 4 延期记录）。
+
+## Auto Update（Stage 6）
+
+- [x] 更新源与通道确定（electron-updater + GitHub Releases，仅 stable）；
+- [x] 检查/下载/确认安装链路（Windows NSIS 完整链路；macOS 未签名期间降级手动下载，canAutoInstall 单点开关）；
+- [x] 更新失败不影响现有安装（error 事件只沉淀状态，DIST-07）；
+- [x] 跨版本 userData migration 机制在位（marker 幂等迁移框架）；
+- [x] Release 产物含 latest*.yml/blockmap（release.yml 恢复上传）；
+- [ ] 真实触网更新链路手动验收（E1_UPDATE_FEED_URL + 本地静态服务器，见 §10）。
 
 ## Documentation
 
@@ -1731,4 +1740,13 @@ Distribution        2 / 10
 - 新增 Packaged App Smoke；
 - 增加 signing / notarization / release workflow；
 - Auto Update 默认允许延期；
+
+## 0.2 — 2026-08-30（Stage 6 Auto Update 落地）
+
+- Stage 6 从「延期」转为完成：electron-updater + GitHub Releases（仅 stable），
+  Windows 完整自动更新、macOS 未签名降级手动下载（canAutoInstall 开关）；
+- release.yml 恢复上传 latest*.yml/blockmap；electron-builder.yml 新增 publish 配置；
+- 新增 update.* IPC 组与 events:updateStatus 推送通道、AppServices.update
+  可选 port、设置页「版本与更新」区、安装包冒烟 P09；
+- §10 检查清单追加 Auto Update 条目与手动验收口径；§12 DoD 追加 Auto Update 组。
 - 后续路线调整为 R010 Knowledge Links、R011 File Operations v2、R012 Revision History。

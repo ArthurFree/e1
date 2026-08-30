@@ -15,10 +15,12 @@ import { decodeIpcBridgeError } from "../../shared/errors.js";
 
 const exposeInMainWorld = vi.fn();
 const invoke = vi.fn();
+const on = vi.fn();
+const removeListener = vi.fn();
 
 vi.mock("electron", () => ({
   contextBridge: { exposeInMainWorld },
-  ipcRenderer: { invoke },
+  ipcRenderer: { invoke, on, removeListener },
 }));
 
 // preload 只做一次模块级暴露（resetModules 会让共享错误类身份
@@ -85,6 +87,68 @@ describe("preload 暴露形状", () => {
       "status",
       "upsert",
     ]);
+    // R009 Stage 6：应用更新组 + 更新状态订阅（Auto Update）。
+    expect(Object.keys(api.update).sort()).toEqual([
+      "check",
+      "download",
+      "getState",
+      "install",
+      "openReleasePage",
+    ]);
+    expect(Object.keys(api.events).sort()).toEqual([
+      "subscribeUpdateStatus",
+      "subscribeVaultChanges",
+    ]);
+  });
+});
+
+describe("R009 Stage 6：update 组与更新状态订阅", () => {
+  it("update 组方法只传 channel（无入参）", async () => {
+    invoke.mockResolvedValue({ ok: true, value: {} });
+    await api.update.check();
+    expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.updateCheck, undefined);
+    await api.update.download();
+    expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.updateDownload, undefined);
+    await api.update.install();
+    expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.updateInstall, undefined);
+    await api.update.openReleasePage();
+    expect(invoke).toHaveBeenCalledWith(
+      IPC_CHANNELS.updateOpenReleasePage,
+      undefined,
+    );
+  });
+
+  it("subscribeUpdateStatus：合法推送投递、非法推送丢弃、返回取消订阅", () => {
+    const listener = vi.fn();
+    const unsubscribe = api.events.subscribeUpdateStatus(listener);
+    expect(on).toHaveBeenCalledWith(
+      IPC_CHANNELS.eventsUpdateStatus,
+      expect.any(Function),
+    );
+    const wrapped = on.mock.calls.find(
+      ([channel]) => channel === IPC_CHANNELS.eventsUpdateStatus,
+    )?.[1] as (event: unknown, payload: unknown) => void;
+
+    const valid = {
+      state: "available",
+      currentVersion: "0.1.0",
+      latestVersion: "0.2.0",
+      canAutoInstall: true,
+      releasePageUrl: "https://github.com/ArthurFree/e1/releases",
+    };
+    wrapped({}, valid);
+    expect(listener).toHaveBeenCalledWith(valid);
+
+    listener.mockClear();
+    wrapped({}, { state: "bogus" });
+    wrapped({}, null);
+    expect(listener).not.toHaveBeenCalled();
+
+    unsubscribe();
+    expect(removeListener).toHaveBeenCalledWith(
+      IPC_CHANNELS.eventsUpdateStatus,
+      wrapped,
+    );
   });
 });
 

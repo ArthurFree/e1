@@ -153,3 +153,59 @@ test.describe("安装包冒烟：Secrets 与 Reveal（P07/P08）", () => {
     }
   });
 });
+
+// R009 Stage 6（Auto Update）：P09 只验证「设置页入口 + Main 侧 update 组
+// 接线」（getState 返回 idle + 当前版本），不点击检查更新——真实触网链路与
+// 下载/安装由手动验收覆盖（E1_UPDATE_FEED_URL + 本地静态服务器，见 R009 §10）。
+test.describe("安装包冒烟：Auto Update（P09）", () => {
+  test.beforeAll(() => {
+    requirePackagedArtifact();
+  });
+
+  test("P09：设置页显示「版本与更新」区，update.getState 经 IPC 返回当前版本", async () => {
+    const fixture = await createPackageVaultFixture(
+      [["笔记.md", note("01JE2EPKG0000000000403", "笔记", "正文。")]],
+      "v-e2e-pkg-update",
+    );
+    const app = await launchPackaged(fixture.userDataDir);
+    try {
+      const window = await app.firstWindow();
+      // Main 侧 update 组接线（electron-updater 在 asar 内可解析）。
+      const state = await window.evaluate(async () => {
+        const e1 = (
+          window as unknown as {
+            e1?: {
+              update?: {
+                getState(): Promise<{
+                  state: string;
+                  currentVersion: string;
+                }>;
+              };
+            };
+          }
+        ).e1;
+        return (await e1?.update?.getState()) ?? null;
+      });
+      expect(state).not.toBeNull();
+      // 启动后 5s 有一次自动检查（R009 Stage 6），断言不锁定具体状态，
+      // 只验证状态机在线且版本号回传正确。
+      expect(state?.currentVersion).toMatch(/^\d+\.\d+\.\d+$/);
+
+      await window.getByLabel("设置").click();
+      const dialog = window.getByRole("dialog", { name: "设置" });
+      await expect(dialog.getByText("版本与更新")).toBeVisible();
+      await expect(
+        dialog.getByText(`当前版本：v${state?.currentVersion}`),
+      ).toBeVisible();
+      // 自动检查可能进行中（正在检查…）或已落定（检查更新/前往下载等）。
+      await expect(
+        dialog
+          .getByRole("button", { name: /检查更新|正在检查|下载更新|前往下载/ })
+          .first(),
+      ).toBeVisible();
+    } finally {
+      await app.close();
+      await fixture.cleanup();
+    }
+  });
+});

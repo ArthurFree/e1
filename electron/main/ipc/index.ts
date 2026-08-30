@@ -21,12 +21,17 @@
  * 后端只 session-only）。
  * R009 Stage 0.2（§3.3）：reveal 组支持注入 shell（E1_REVEAL_STUB=1 的
  * 桌面 E2E 用记录型 stub，见 main.ts）。
+ * R009 Stage 6（Auto Update）：update 组——DesktopUpdateService 封装
+ * electron-updater（GitHub Releases feed），autoUpdater 实例由 main.ts
+ * 注入（electron-updater 为 CJS 懒加载 getter，main.ts 是唯一入口），
+ * 状态变化经 broadcastUpdateStatus 推送 events:updateStatus。
  */
-import { app, BrowserWindow, dialog, ipcMain, safeStorage } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from "electron";
 import { join } from "node:path";
 import {
   IPC_CHANNELS,
   type SecretStorageStatus,
+  type UpdateStatus,
   type VaultFsEvent,
 } from "../../../shared/ipc/contracts.js";
 import { registerVaultHandlers } from "./vault.js";
@@ -50,6 +55,11 @@ import {
 } from "../CapabilityTokenStore.js";
 import { SelfWriteRegistry } from "../watcher/SelfWriteRegistry.js";
 import { VaultWatcherService } from "../watcher/VaultWatcher.js";
+import {
+  DesktopUpdateService,
+  type AutoUpdaterLike,
+} from "../update/DesktopUpdateService.js";
+import { registerUpdateHandlers } from "./update.js";
 import type { IpcMainLike } from "./handler.js";
 import type { OpenDialogLike } from "./vault.js";
 import type { FileDialogLike } from "./asset.js";
@@ -81,17 +91,35 @@ export interface RegisterIpcHandlersDeps {
   /** R009 Stage 0.2：reveal 组的 shell（缺省真实 electron shell；
    *  桌面 E2E 经 E1_REVEAL_STUB=1 注入记录型 stub，见 main.ts）。 */
   shell?: ShellLike;
+  /** R009 Stage 6：electron-updater 实例（仅 main.ts 注入真实实现；
+   *  缺省/未打包时 update 组报 unsupported，不触网）。 */
+  updateAutoUpdater?: AutoUpdaterLike;
+  /** R009 Stage 6：更新状态推送出口（缺省遍历全部窗口广播）。 */
+  broadcastUpdateStatus?: (status: UpdateStatus) => void;
+  /** R009 Stage 6：打开外部链接（缺省 shell.openExternal）。 */
+  openExternal?: (url: string) => Promise<void>;
+  /** R009 Stage 6：E1_UPDATE_FEED_URL 手动 QA 覆盖（main.ts 注入）。 */
+  updateFeedUrlOverride?: string;
 }
 
-/** registerIpcHandlers 返回值：vault 根解析依赖 + R007 阶段 3 watcher 句柄。 */
+/** registerIpcHandlers 返回值：vault 根解析依赖 + watcher / update 句柄。 */
 export interface RegisteredIpcHandlers extends VaultRootDeps {
   watchers: VaultWatcherService;
+  /** R009 Stage 6：更新服务句柄（main.ts 用于启动后自动检查）。 */
+  update: DesktopUpdateService;
 }
 
 /** 缺省广播：向全部窗口推送 VaultFsEvent 批次。 */
 function broadcastToAllWindows(events: VaultFsEvent[]): void {
   for (const win of BrowserWindow.getAllWindows()) {
     win.webContents.send(IPC_CHANNELS.eventsVaultChanges, events);
+  }
+}
+
+/** R009 Stage 6：缺省广播——向全部窗口推送更新状态。 */
+function broadcastUpdateStatusToAllWindows(status: UpdateStatus): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send(IPC_CHANNELS.eventsUpdateStatus, status);
   }
 }
 
@@ -152,5 +180,16 @@ export function registerIpcHandlers(
     fileTokens: deps.fileTokens ?? new CapabilityTokenStore(),
     selfWrites,
   });
-  return { registry, transients, watchers };
+  const update = new DesktopUpdateService({
+    autoUpdater: deps.updateAutoUpdater,
+    platform: process.platform,
+    // 未注入 autoUpdater（测试/异常装配）视同未打包：update 组报 unsupported。
+    isPackaged: app.isPackaged && deps.updateAutoUpdater !== undefined,
+    currentVersion: app.getVersion(),
+    emit: deps.broadcastUpdateStatus ?? broadcastUpdateStatusToAllWindows,
+    openExternal: deps.openExternal ?? ((url) => shell.openExternal(url)),
+    feedUrlOverride: deps.updateFeedUrlOverride,
+  });
+  registerUpdateHandlers(bus, { service: update });
+  return { registry, transients, watchers, update };
 }

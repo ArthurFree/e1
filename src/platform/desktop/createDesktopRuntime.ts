@@ -55,6 +55,7 @@ import { DesktopNoteMetadataService } from "./DesktopNoteMetadataService";
 import { DesktopVaultStateClient } from "./DesktopVaultStateClient";
 import { DesktopSecretStore } from "./DesktopSecretStore";
 import { DesktopRevealService } from "./DesktopRevealService";
+import { DesktopUpdateService } from "./DesktopUpdateService";
 import { DesktopSearchIndex } from "./DesktopSearchIndex";
 import { DesktopSearchIndexReconciler } from "./DesktopSearchIndexReconciler";
 import { DesktopExternalVaultChangeService } from "./DesktopExternalVaultChangeService";
@@ -294,6 +295,9 @@ export function createDesktopRuntime(
   });
   // R007 阶段 5：文件管理器定位（note.reveal/asset.reveal）。
   const reveal = new DesktopRevealService(api, scans);
+  // R009 Stage 6（Auto Update）：应用更新——状态机在 Main 侧，
+  // Renderer 只透传桥接（UI 以 services.update 存在性门控入口）。
+  const update = new DesktopUpdateService(api);
   const services: AppServices = {
     assets: assetsServices,
     capabilities,
@@ -308,6 +312,8 @@ export function createDesktopRuntime(
     externalVaultChanges,
     // 文件管理器定位（R007 阶段 5；消费侧以 capabilities.revealInFileManager 门控）。
     reveal,
+    // 应用更新（R009 Stage 6；消费侧以 services.update 存在性门控）。
+    update,
     // 全文搜索索引（R008 Stage 4；SearchQueryService 在 ready 时优先消费）。
     fullTextSearch,
     // 机密存储运行状态（R008 Stage 1，R8-02）：secure-persistent 才持久，

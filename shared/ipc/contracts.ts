@@ -22,6 +22,9 @@
  * R008 Stage 1：secret.status 改 SecretStorageStatus 三模式（R8-02）。
  * R008 Stage 4：search.* 组——SQLite（node:sqlite，Main）全文索引的
  * 查询/重建/增量维护通道（索引是 derived data，R8-03）。
+ * R009 Stage 6（Auto Update）：update.* 组与 events:updateStatus——
+ * electron-updater（GitHub Releases feed）的检查/下载/安装与状态推送；
+ * macOS 未签名期间 canAutoInstall=false 降级为手动下载（Stage 4 签名后翻 true）。
  *
  * shared/ 为 Renderer（src/platform/desktop）与 Electron Main/Preload 共用
  * 的唯一契约来源：channel 常量、请求/响应类型、E1DesktopAPI 形状。
@@ -74,7 +77,13 @@ export const IPC_CHANNELS = {
   searchRemove: "search:remove",
   searchRelocate: "search:relocate",
   searchStatus: "search:status",
+  updateGetState: "update:getState",
+  updateCheck: "update:check",
+  updateDownload: "update:download",
+  updateInstall: "update:install",
+  updateOpenReleasePage: "update:openReleasePage",
   eventsVaultChanges: "events:vaultChanges",
+  eventsUpdateStatus: "events:updateStatus",
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
@@ -662,6 +671,47 @@ export interface AssetReadResult {
   data: Uint8Array;
 }
 
+/* ---------------------------------- update ---------------------------------- */
+
+/**
+ * R009 Stage 6（Auto Update）：更新状态机。
+ *
+ * - idle：尚未检查；checking：检查中；
+ * - available：有新版本（latestVersion 必填）；not-available：已是最新；
+ * - downloading：下载中（progressPercent 0–100）；downloaded：已下载待安装；
+ * - error：检查/下载失败（errorMessage 必填；更新失败不影响现有安装，
+ *   DIST-07）；unsupported：非打包环境（dev / E2E 直起源码）不支持更新。
+ */
+export type UpdateState =
+  | "idle"
+  | "checking"
+  | "available"
+  | "not-available"
+  | "downloading"
+  | "downloaded"
+  | "error"
+  | "unsupported";
+
+export interface UpdateStatus {
+  state: UpdateState;
+  /** 当前运行版本（package.json version）。 */
+  currentVersion: string;
+  /** available/downloading/downloaded 时携带的目标版本。 */
+  latestVersion?: string;
+  /** downloading 时的进度（0–100）。 */
+  progressPercent?: number;
+  /**
+   * 是否支持自动下载安装：Windows NSIS（未签名亦可）为 true；
+   * macOS 未签名期间为 false（Squirrel.Mac 拒绝替换未签名应用），
+   * UI 降级为「前往下载」手动链路；Stage 4 签名落地后 darwin 翻 true。
+   */
+  canAutoInstall: boolean;
+  /** 手动下载入口（GitHub Releases 页）。 */
+  releasePageUrl: string;
+  /** state=error 时的可读错误（不含敏感信息）。 */
+  errorMessage?: string;
+}
+
 /* ---------------------------------- events ---------------------------------- */
 
 /**
@@ -828,6 +878,26 @@ export interface E1DesktopAPI {
     reveal(input: RevealAssetInput): Promise<void>;
   };
   /**
+   * R009 Stage 6（Auto Update）：应用更新。electron-updater +
+   * GitHub Releases feed（仅 stable 通道）。dev/未打包环境 state=unsupported。
+   * 状态变化同时经 events.subscribeUpdateStatus 推送。
+   */
+  update: {
+    /** 当前更新状态快照（不触发网络请求）。 */
+    getState(): Promise<UpdateStatus>;
+    /** 检查更新（触网）；结果即最新状态。 */
+    check(): Promise<UpdateStatus>;
+    /**
+     * 下载已发现的更新；canAutoInstall=false（macOS 未签名降级）时为
+     * no-op（返回当前状态），UI 应改走 openReleasePage。
+     */
+    download(): Promise<UpdateStatus>;
+    /** 退出并安装已下载的更新（仅 state=downloaded 有意义）。 */
+    install(): Promise<void>;
+    /** 打开 GitHub Releases 页（手动下载入口，shell.openExternal）。 */
+    openReleasePage(): Promise<void>;
+  };
+  /**
    * R007 阶段 3：Main→Renderer 单向事件订阅（唯一推送通道）。
    * 订阅 Vault 文件系统变化（Watcher 事实批次）；返回取消订阅函数。
    * Renderer 不得经其它途径拿 ipcRenderer 本体。
@@ -836,6 +906,8 @@ export interface E1DesktopAPI {
     subscribeVaultChanges(
       listener: (events: VaultFsEvent[]) => void,
     ): () => void;
+    /** R009 Stage 6：订阅更新状态推送；返回取消订阅函数。 */
+    subscribeUpdateStatus(listener: (status: UpdateStatus) => void): () => void;
   };
 }
 

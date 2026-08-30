@@ -13,6 +13,10 @@ import { secretStore } from "../platform/web/persistence/secretStore";
 import { AI_API_KEY_SECRET } from "../application/services/SecretStore";
 import type { SecretStorageStatus } from "../application/services/SecretStorageStatus";
 import type { FullTextSearchIndex } from "../application/search/FullTextSearchIndex";
+import type {
+  UpdateService,
+  UpdateStatus,
+} from "../application/services/UpdateService";
 import { WebAssetPicker } from "../platform/web/webAssetPicker";
 import { SettingsPanel } from "./SettingsPanel";
 
@@ -490,5 +494,131 @@ describe("SettingsPanel 重建搜索索引（R008 Stage 6 §13.4）", () => {
     );
     await screen.findByText(/AI 未配置|AI 已配置/);
     expect(screen.queryByRole("button", { name: "重建搜索索引" })).toBeNull();
+  });
+});
+
+describe("SettingsPanel 版本与更新（R009 Stage 6）", () => {
+  beforeEach(async () => {
+    cleanup();
+    await resetDB();
+  });
+
+  function createUpdateService(initial: UpdateStatus) {
+    let listener: ((status: UpdateStatus) => void) | null = null;
+    const service: UpdateService = {
+      getState: vi.fn(async () => initial),
+      check: vi.fn(async () => initial),
+      download: vi.fn(async () => initial),
+      install: vi.fn(async () => {}),
+      openReleasePage: vi.fn(async () => {}),
+      subscribe: vi.fn((fn) => {
+        listener = fn;
+        return () => {
+          listener = null;
+        };
+      }),
+    };
+    return {
+      service,
+      push: (status: UpdateStatus) => listener?.(status),
+    };
+  }
+
+  function renderWithUpdate(initial: UpdateStatus) {
+    const update = createUpdateService(initial);
+    const services = {
+      ...createBrowserAppServices(),
+      update: update.service,
+    };
+    render(
+      <AppServicesProvider services={services}>
+        <AppProvider>
+          <ReadySettingsPanel />
+        </AppProvider>
+      </AppServicesProvider>,
+    );
+    return update;
+  }
+
+  const AVAILABLE_AUTO: UpdateStatus = {
+    state: "available",
+    currentVersion: "0.1.0",
+    latestVersion: "0.2.0",
+    canAutoInstall: true,
+    releasePageUrl: "https://github.com/ArthurFree/e1/releases",
+  };
+
+  it("未装配 update（Web）：无「版本与更新」区", async () => {
+    render(
+      <TestApp>
+        <ReadySettingsPanel />
+      </TestApp>,
+    );
+    await screen.findByText(/AI 未配置|AI 已配置/);
+    expect(screen.queryByText("版本与更新")).toBeNull();
+  });
+
+  it("available + canAutoInstall：显示「下载更新」，点击调 download", async () => {
+    const update = renderWithUpdate(AVAILABLE_AUTO);
+    expect(await screen.findByText("发现新版本：v0.2.0")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "下载更新" }));
+    await vi.waitFor(() => {
+      expect(update.service.download).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("available + 不可自动安装（macOS 未签名降级）：显示「前往下载」", async () => {
+    const update = renderWithUpdate({
+      ...AVAILABLE_AUTO,
+      canAutoInstall: false,
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "前往下载" }),
+    );
+    await vi.waitFor(() => {
+      expect(update.service.openReleasePage).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.queryByRole("button", { name: "下载更新" })).toBeNull();
+  });
+
+  it("downloaded：显示「重启安装」，点击调 install", async () => {
+    const update = renderWithUpdate({
+      ...AVAILABLE_AUTO,
+      state: "downloaded",
+      progressPercent: 100,
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "重启安装" }),
+    );
+    await vi.waitFor(() => {
+      expect(update.service.install).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("unsupported（未打包）：显示降级文案且无动作按钮", async () => {
+    renderWithUpdate({
+      state: "unsupported",
+      currentVersion: "0.1.0",
+      canAutoInstall: false,
+      releasePageUrl: "https://github.com/ArthurFree/e1/releases",
+    });
+    expect(
+      await screen.findByText("当前环境不支持自动更新（仅安装包内可用）。"),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "检查更新" })).toBeNull();
+  });
+
+  it("订阅推送驱动 UI 更新（检查 → 发现新版本）", async () => {
+    const update = renderWithUpdate({
+      state: "idle",
+      currentVersion: "0.1.0",
+      canAutoInstall: true,
+      releasePageUrl: "https://github.com/ArthurFree/e1/releases",
+    });
+    expect(
+      await screen.findByRole("button", { name: "检查更新" }),
+    ).toBeInTheDocument();
+    update.push(AVAILABLE_AUTO);
+    expect(await screen.findByText("发现新版本：v0.2.0")).toBeInTheDocument();
   });
 });
