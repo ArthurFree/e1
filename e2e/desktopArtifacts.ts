@@ -25,3 +25,33 @@ export function requireDesktopArtifacts(): void {
   }
   test.skip(true, message);
 }
+
+/**
+ * R009 Stage 3：解析当前平台的安装包可执行文件路径。
+ * 目前只有 macOS arm64 产物约定（npm run dist:mac → release/mac-arm64/）；
+ * 其它平台返回 null（Windows nsis 产物接入后在此扩展）。
+ */
+export function resolvePackagedExecutable(): string | null {
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  if (process.platform === "darwin" && process.arch === "arm64") {
+    return path.join(root, "release/mac-arm64/E1.app/Contents/MacOS/E1");
+  }
+  return null;
+}
+
+/**
+ * 在 packaged spec 的 beforeAll 中调用：校验安装包产物。
+ * 与 requireDesktopArtifacts 同一口径——本地缺产物 skip，CI 缺产物失败。
+ */
+export function requirePackagedArtifact(): void {
+  const executable = resolvePackagedExecutable();
+  if (executable && existsSync(executable)) return;
+
+  const message = executable
+    ? `缺少安装包产物（${executable}），请先运行 npm run dist:mac`
+    : `当前平台 ${process.platform}/${process.arch} 暂无安装包产物约定（仅支持 macOS arm64）`;
+  if (process.env.CI) {
+    throw new Error(message);
+  }
+  test.skip(true, message);
+}

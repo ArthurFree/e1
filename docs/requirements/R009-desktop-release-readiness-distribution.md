@@ -1,7 +1,7 @@
 # R009：Desktop 发布就绪与跨平台分发
 
 > 版本：0.1  
-> 状态：实现中（Stage 0–2 已完成；产品身份冻结为 e1 / E1 / com.e1.notes / 0.1.0；无签名证书，Stage 4 出未签名包并记录延期）  
+> 状态：实现中（Stage 0–5 已完成，Stage 6 Auto Update 延期；产品身份冻结为 e1 / E1 / com.e1.notes / 0.1.0；无签名证书，Stage 4 以延期记录闭合）  
 > 更新时间：2026-08-30  
 > 前置需求：R006、R007、R008  
 > 基线提交：`5fd2f7359878162f12e4ef7a1cb003d6f32a4948`
@@ -1026,6 +1026,17 @@ asarUnpack
 
 # Stage 3：Packaged App E2E
 
+**状态：已完成（2026-08-30，8/8 本机全绿）**
+
+实际实现与偏差记录：
+
+- `e2e/package/` 四 spec（launch/editing/search/platform）+ `packageFixture.ts` 共享夹具；`desktopArtifacts.ts` 新增 `requirePackagedArtifact()`（本地缺产物 skip、CI 抛错）与 `resolvePackagedExecutable()`（当前仅 darwin/arm64，Windows 留扩展点）。
+- 启动方式为 `_electron.launch({ executablePath: release/mac-arm64/E1.app/... })`——全程不碰仓库 node_modules，真实覆盖 G5「repo node_modules 掩盖缺依赖」风险点。
+- P01–P08 全覆盖：启动/preload（asar 内）、Vault 打开、编辑保存重启保持、附件（e1-asset:// 协议）、中文全文搜索（asar 内 node:sqlite FTS5 从零 rebuild）、watcher（asar 内 chokidar）、secrets（safeStorage 实测分流：安全后端验重启保持+磁盘无明文，不安全后端验降级文案不失败）、reveal（macOS 真实 showItemInFolder，Linux/Windows 手动验收口径注释留痕）。
+- 分组：describe 前缀「安装包冒烟」+ `test:e2e:package` script；`test:e2e`/`test:e2e:update` 的 grep-invert 已扩为「桌面冒烟|安装包冒烟」，三套互斥经 --list 验证。
+- 已接入 release.yml：macOS 打包后同 job 跑冒烟（产物在磁盘直接命中），失败阻断上传与 Release；失败日志 artifact 上传。
+- 偏差：Windows 腿的 packaged E2E 待 nsis 产物路径约定落地后接入；套件不进 PR CI（macOS runner 成本），只在 release 流水线跑。
+
 ## 3.1 当前 E2E 问题
 
 目前：
@@ -1133,6 +1144,16 @@ showItemInFolder
 
 # Stage 4：Signing & Platform Security
 
+**状态：延期（2026-08-30 决策：无签名证书，首版出未签名包）**
+
+记录：
+
+- 当前无任何代码签名证书（Apple Developer ID / Windows Authenticode 均无），Stage 4 不做签名实现，首版发布未签名安装包。
+- 已知代价：macOS 未签名包触发 Gatekeeper「未知开发者」提示（用户需右键打开）；Windows 未签名触发 SmartScreen 拦截概率高。README 安装说明须如实写明。
+- 签名通道已在 Stage 5 的 release.yml 预留为条件步骤（secrets 配齐即自动启用 codesign + notarize / Authenticode，无需再改 workflow）；启用签名后移除 `electron-builder.yml` 的 `identity: null`。
+- DoD 对应项按「Windows signing 可复现或有明确延期记录」口径以本记录闭合；macOS signing/notarization 同为延期。
+- 证书到位后的恢复动作：申请 Apple Developer Program → 证书/密钥入 GitHub Secrets（MAC_CERT_P12_BASE64 / CSC_KEY_PASSWORD / APPLE_API_KEY*）→ tag 发布即自动签名公证。
+
 ## macOS
 
 需要：
@@ -1195,6 +1216,17 @@ test fixtures
 
 # Stage 5：Release Workflow
 
+**状态：已完成（2026-08-30，未触发真实发布）**
+
+实际实现与偏差记录：
+
+- `.github/workflows/release.yml`：tag `v*` 触发 → version-check（tag 与 package.json version 必须一致）→ quality（同 ci 口径）→ build-verify（build:desktop + npm prune --omit=dev + verifyElectronRuntimeDeps）→ matrix package（macos-latest arm64 dmg/zip + windows-latest nsis x64，fail-fast: false 单腿失败可独立重试）→ release（SHA256SUMS.txt + action-gh-release 创建 Release）。
+- electron-builder 一律 `--publish never`，Release 统一由 release job 创建；上传仅 dmg/zip/exe（blockmap/latest.yml 排除——Auto Update 延期，避免误导）。
+- 条件签名（Stage 4 延期配套）：secrets 经 env 映射后判空——macOS 单步骤（移除 identity:null + AuthKey.p8 + CSC_LINK/CSC_KEY_PASSWORD + APPLE_API_KEY 注入，electron-builder 自动 codesign+notarize）；Windows 靠 WIN_CSC_LINK/WIN_CSC_KEY_PASSWORD env 自动签名；未配置即未签名照常发布，不造假绿。
+- Windows 首跑预案：`ELECTRON_BUILDER_CACHE` 收口 workspace + actions/cache（key 含平台+lockfile hash）。
+- 首版矩阵仅 mac arm64 + win x64（universal 暂不产出，注释留痕）。
+- 验证：prettier 通过；js-yaml 结构解析核对；未打 tag 未触发发布。mac 公证端到端效果待 secrets 配齐后首次 tag 验证。
+
 新增：
 
 ```text
@@ -1250,6 +1282,8 @@ SHA256SUMS.txt
 ---
 
 # Stage 6：Auto Update（可延期）
+
+**状态：已延期（2026-08-30 决策）——不阻塞 v0.1.0，后续独立批次（可编号 R010）实施。**
 
 Auto Update 不作为 R009 第一版 release 阻塞条件。
 
