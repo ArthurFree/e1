@@ -3,7 +3,7 @@ import type {
   AssetPicker,
   PickedAsset,
 } from "../../application/assets/assetServices";
-import type { E1DesktopAPI } from "./desktopApi";
+import { createMockDesktopApi } from "../../test/createMockDesktopApi";
 import { DesktopAssetPicker, needsBytesSource } from "./DesktopAssetPicker";
 
 function zipPicked(): PickedAsset {
@@ -23,7 +23,7 @@ describe("DesktopAssetPicker", () => {
   });
 
   it("图片 accept 走原生 pickToken，不读字节", async () => {
-    const api = {
+    const api = createMockDesktopApi({
       asset: {
         pick: vi.fn(async () => ({
           pickToken: "tok-1",
@@ -32,7 +32,7 @@ describe("DesktopAssetPicker", () => {
           mimeType: "image/png",
         })),
       },
-    } as unknown as E1DesktopAPI;
+    });
     const bytes: AssetPicker = { pick: vi.fn(async () => zipPicked()) };
     const picker = new DesktopAssetPicker(api, bytes);
     const picked = await picker.pick({
@@ -45,9 +45,9 @@ describe("DesktopAssetPicker", () => {
   });
 
   it("zip accept 走 bytesPicker，不签发 pickToken", async () => {
-    const api = {
-      asset: { pick: vi.fn() },
-    } as unknown as E1DesktopAPI;
+    const api = createMockDesktopApi({
+      asset: { pick: vi.fn(async () => null) },
+    });
     const bytes: AssetPicker = { pick: vi.fn(async () => zipPicked()) };
     const picker = new DesktopAssetPicker(api, bytes);
     const picked = await picker.pick({ accept: ".zip,application/zip" });

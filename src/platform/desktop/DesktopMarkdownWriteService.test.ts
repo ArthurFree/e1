@@ -3,6 +3,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import type { E1DesktopAPI } from "./desktopApi";
+import { createMockDesktopApi } from "../../test/createMockDesktopApi";
 import { DesktopDocumentSourceCache } from "./DesktopDocumentSourceCache";
 import type { DesktopDocumentSourceContext } from "./DesktopDocumentSourceCache";
 import { DesktopMarkdownWriteService } from "./DesktopMarkdownWriteService";
@@ -36,32 +37,22 @@ function sample(
   };
 }
 
-function mockApi(save = vi.fn(async () => ({
-  versionToken: `sha256:${"b".repeat(64)}`,
-  source: { modifiedAt: 1, sizeBytes: 10 },
-}))): E1DesktopAPI {
-  return {
-    platform: "desktop",
-    versions: {},
-    vault: {
-      scan: vi.fn(async () => ({
-        vault: { vaultId: "v1", name: "n" },
-        entries: [],
-      })),
-      listRecent: vi.fn(async () => []),
-      selectDirectory: vi.fn(),
-      openRecent: vi.fn(),
-      openSelection: vi.fn(),
-    },
-    note: { read: vi.fn(), create: vi.fn(), save },
-    asset: { pick: vi.fn(), import: vi.fn(), read: vi.fn(), resolveUrl: vi.fn() },
-  } as unknown as E1DesktopAPI;
+function mockApi(
+  save = vi.fn(async () => ({
+    versionToken: `sha256:${"b".repeat(64)}`,
+    source: { modifiedAt: 1, sizeBytes: 10 },
+  })),
+): E1DesktopAPI {
+  // R009 Stage 0.3：统一工厂——写入路径只关心 note.save，其余走默认。
+  return createMockDesktopApi({ note: { save } });
 }
 
-function makeWriter(save = vi.fn(async () => ({
-  versionToken: `sha256:${"b".repeat(64)}`,
-  source: { modifiedAt: 1, sizeBytes: 10 },
-}))) {
+function makeWriter(
+  save = vi.fn(async () => ({
+    versionToken: `sha256:${"b".repeat(64)}`,
+    source: { modifiedAt: 1, sizeBytes: 10 },
+  })),
+) {
   const api = mockApi(save);
   const sources = new DesktopDocumentSourceCache();
   const scans = new DesktopVaultScanCache(api);

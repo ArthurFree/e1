@@ -37,15 +37,17 @@ export function TitleEditor({
     500,
   );
 
-  // 切换到其他文档时：先落盘当前编辑，再载入新标题。
+  // 切换到其他文档时先落盘挂起的编辑；flush 引用稳定（useCallback 无依赖），
+  // 仅在 pageId 变化时执行。
   useEffect(() => {
     flush();
-    setValue(title);
-  }, [pageId]); // 仅在切换文档时落盘并载入新标题
+  }, [pageId, flush]);
 
+  // 外部标题变化时同步进本地编辑态；pageId 一并作为依赖，覆盖两篇文档
+  // 标题恰好相同、仅 pageId 变化的切换场景（此时 title 不变也须重置本地态）。
   useEffect(() => {
     setValue(title);
-  }, [title]);
+  }, [pageId, title]);
 
   return (
     <input

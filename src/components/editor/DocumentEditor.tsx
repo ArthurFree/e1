@@ -355,10 +355,13 @@ export function DocumentEditor({
 
   // 卸载：提交挂起防抖并销毁全部协调器（dispose 会先排空各自队列）。
   useEffect(() => {
+    // 创建阶段快照 Map 实例（useRef 初始化后不再替换），cleanup 不再访问
+    // ref.current，消除 exhaustive-deps 对可变 ref 的告警。
+    const coordinators = coordinatorsRef.current;
     return () => {
       flush();
-      const all = [...coordinatorsRef.current.values()];
-      coordinatorsRef.current.clear();
+      const all = [...coordinators.values()];
+      coordinators.clear();
       for (const coordinator of all) void coordinator.dispose();
     };
   }, [flush]);

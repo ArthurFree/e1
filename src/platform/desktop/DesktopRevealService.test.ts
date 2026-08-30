@@ -5,7 +5,8 @@
  * 附件 assetId 原样透传 Main。
  */
 import { describe, expect, it, vi } from "vitest";
-import type { E1DesktopAPI, VaultScanResult } from "./desktopApi";
+import type { VaultScanResult } from "./desktopApi";
+import { createMockDesktopApi } from "../../test/createMockDesktopApi";
 import { DesktopRevealService } from "./DesktopRevealService";
 import { DesktopVaultScanCache } from "./DesktopVaultScanCache";
 
@@ -34,11 +35,12 @@ const SCAN: VaultScanResult = {
 function mockApi() {
   const note = { reveal: vi.fn(async () => {}) };
   const asset = { reveal: vi.fn(async () => {}) };
-  const api = {
+  // R009 Stage 0.3：统一工厂，覆盖 scan 与两个 reveal。
+  const api = createMockDesktopApi({
     vault: { scan: vi.fn(async () => SCAN) },
     note,
     asset,
-  } as unknown as E1DesktopAPI;
+  });
   return { api, note, asset };
 }
 

@@ -59,13 +59,28 @@ export function AIAssistantPanel({ editor }: AIAssistantPanelProps) {
   const lastRun = useRef<{ request: AIAssistantOpen; prompt: string } | null>(
     null,
   );
+  // 请求代次令牌（R009 §3.2）：每次 run 换新令牌，卸载或关闭后清空；
+  // 异步回调落地前校验令牌仍有效，失效则直接丢弃结果、不再 setState——
+  // 否则组件卸载后 setState 会让 React Scheduler 在 jsdom 销毁后继续调度，
+  // 抛出 unhandled "window is not defined"。
+  const requestToken = useRef<object | null>(null);
+
+  useEffect(
+    () => () => {
+      // 卸载：作废进行中的请求，阻断其后续的 setState。
+      requestToken.current = null;
+    },
+    [],
+  );
 
   const run = useCallback(
     async (req: AIAssistantOpen, userPrompt: string) => {
+      const token = {};
+      requestToken.current = token;
       // 请求组装（R005 阶段 8 §8.2）：endpoint/model 取偏好、apiKey 取
       // SecretStore；任一缺失按未配置处理，不发起任何外部请求。
       const config = await services.aiConfigService.get();
-      if (!config) return;
+      if (!config || requestToken.current !== token) return;
       lastRun.current = { request: req, prompt: userPrompt };
       setStatus("loading");
       setError("");
@@ -79,9 +94,12 @@ export function AIAssistantPanel({ editor }: AIAssistantPanelProps) {
           documentContext:
             req.mode === "ask" ? editor.getText().slice(0, 2000) : undefined,
         });
+        // 请求返回时组件可能已卸载/关闭，令牌失效则静默丢弃结果。
+        if (requestToken.current !== token) return;
         setResult(text);
         setStatus("done");
       } catch (err) {
+        if (requestToken.current !== token) return;
         setError(
           err instanceof Error ? err.message : "AI 请求失败，请稍后再试",
         );
@@ -92,6 +110,8 @@ export function AIAssistantPanel({ editor }: AIAssistantPanelProps) {
   );
 
   const close = useCallback(() => {
+    // 关闭即作废进行中的请求，迟到的响应不再回写已重置的状态。
+    requestToken.current = null;
     setRequest(null);
     setStatus("input");
     setPrompt("");

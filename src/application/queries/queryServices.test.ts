@@ -26,7 +26,7 @@ import {
   DesktopVaultScanCache,
 } from "../../platform/desktop/repositories";
 import { DesktopRevisionRepository } from "../../platform/desktop/stubRepositories";
-import type { E1DesktopAPI } from "../../platform/desktop/desktopApi";
+import { createMockDesktopApi } from "../../test/createMockDesktopApi";
 import { WorkspaceSessionService } from "../services/WorkspaceSessionService";
 import { WorkspaceQueryService } from "./WorkspaceQueryService";
 import { DocumentQueryService } from "./DocumentQueryService";
@@ -233,7 +233,8 @@ describe("DocumentQueryService.openDocument（§41.6 三形态）", () => {
     const vaultId = options?.vaultId ?? "v1";
     const stableNoteId =
       options?.stableNoteId !== undefined ? options.stableNoteId : "01JABC";
-    const api = {
+    // R009 Stage 0.3：统一工厂，覆盖 scan 与 note.read。
+    const api = createMockDesktopApi({
       vault: {
         scan: async () => ({
           vault: { vaultId, name: "我的笔记" },
@@ -258,7 +259,7 @@ describe("DocumentQueryService.openDocument（§41.6 三形态）", () => {
           source: { modifiedAt: 1722580000000, sizeBytes: 64 },
         }),
       },
-    } as unknown as E1DesktopAPI;
+    });
     const cache = new DesktopVaultScanCache(api);
     const service = new DocumentQueryService({
       content: new DesktopContentRepository(api, cache),

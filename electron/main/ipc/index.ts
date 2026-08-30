@@ -19,6 +19,8 @@
  * R008 Stage 1：secret 持久化迁移 electron/main/secrets/（SecretFilePersistence
  * + SecretBackendStatus——secure-persistent 才落盘，basic_text 等不安全
  * 后端只 session-only）。
+ * R009 Stage 0.2（§3.3）：reveal 组支持注入 shell（E1_REVEAL_STUB=1 的
+ * 桌面 E2E 用记录型 stub，见 main.ts）。
  */
 import { app, BrowserWindow, dialog, ipcMain, safeStorage } from "electron";
 import { join } from "node:path";
@@ -33,7 +35,7 @@ import { registerFileHandlers } from "./files.js";
 import { registerAssetHandlers } from "./asset.js";
 import { registerVaultStateHandlers } from "./vaultState.js";
 import { registerSecretHandlers } from "./secrets.js";
-import { registerRevealHandlers } from "./reveal.js";
+import { registerRevealHandlers, type ShellLike } from "./reveal.js";
 import { registerSearchHandlers } from "./search.js";
 import { VaultRegistry } from "../vaultRegistry.js";
 import { DesktopVaultStateStore } from "../state/DesktopVaultStateStore.js";
@@ -76,6 +78,9 @@ export interface RegisterIpcHandlersDeps {
   watchers?: VaultWatcherService;
   /** R007 阶段 3：事件广播出口（缺省遍历全部窗口推送 events:vaultChanges）。 */
   broadcastVaultEvents?: (events: VaultFsEvent[]) => void;
+  /** R009 Stage 0.2：reveal 组的 shell（缺省真实 electron shell；
+   *  桌面 E2E 经 E1_REVEAL_STUB=1 注入记录型 stub，见 main.ts）。 */
+  shell?: ShellLike;
 }
 
 /** registerIpcHandlers 返回值：vault 根解析依赖 + R007 阶段 3 watcher 句柄。 */
@@ -138,7 +143,7 @@ export function registerIpcHandlers(
     transients,
   });
   registerSecretHandlers(bus, { store: secretStore, status: secretStatus });
-  registerRevealHandlers(bus, { registry, transients });
+  registerRevealHandlers(bus, { registry, transients, shell: deps.shell });
   registerSearchHandlers(bus, { registry, transients, indexes: searchIndexes });
   registerAssetHandlers(bus, {
     openDialog: openDialog as FileDialogLike,

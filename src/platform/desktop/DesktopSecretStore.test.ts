@@ -3,17 +3,18 @@
  * IPC 透传测试（get/set/remove 一一对应 api.secret.*）。
  */
 import { describe, expect, it, vi } from "vitest";
-import type { E1DesktopAPI } from "./desktopApi";
+import { createMockDesktopApi } from "../../test/createMockDesktopApi";
 import { DesktopSecretStore } from "./DesktopSecretStore";
 
 function mockApi() {
   const secret = {
-    status: vi.fn(async () => ({ available: true })),
+    status: vi.fn(async () => ({ mode: "secure-persistent" as const })),
     get: vi.fn(async (_name: string) => null as string | null),
     set: vi.fn(async (_input: { name: string; value: string }) => {}),
     remove: vi.fn(async (_name: string) => {}),
   };
-  const api = { secret } as unknown as E1DesktopAPI;
+  // R009 Stage 0.3：统一工厂，仅覆盖 secret 组。
+  const api = createMockDesktopApi({ secret });
   return { api, secret };
 }
 

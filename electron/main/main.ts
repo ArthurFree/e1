@@ -1,7 +1,12 @@
 // R006 阶段 0：Electron 主进程入口。
 import { app, BrowserWindow } from "electron";
+import { join } from "node:path";
 import { createMainWindow } from "./window.js";
-import { registerIpcHandlers } from "./ipc/index.js";
+import {
+  registerIpcHandlers,
+  type RegisterIpcHandlersDeps,
+} from "./ipc/index.js";
+import { createRecordingShell } from "./ipc/reveal.js";
 import type { VaultWatcherService } from "./watcher/VaultWatcher.js";
 import {
   registerE1AssetProtocol,
@@ -18,11 +23,24 @@ if (process.env.E1_USER_DATA_DIR) {
   app.setPath("userData", process.env.E1_USER_DATA_DIR);
 }
 
+// R009 Stage 0.2（§3.3）：桌面 E2E 置 E1_REVEAL_STUB=1 时，reveal 组改用
+// 记录型 stub（不调真实 shell.showItemInFolder）——Linux CI（xvfb headless）
+// 没有文件管理器，真实调用会挂起超时。stub 把解析后的绝对路径逐行写入
+// userData/e2e-reveal-stub.log，E2E 据此断言 IPC 全链路。生产与开发不设该变量。
+function revealStubDeps(): RegisterIpcHandlersDeps {
+  if (process.env.E1_REVEAL_STUB !== "1") return {};
+  return {
+    shell: createRecordingShell(
+      join(app.getPath("userData"), "e2e-reveal-stub.log"),
+    ),
+  };
+}
+
 // R007 阶段 3：watcher 句柄提升为模块级，before-quit 时关闭全部监听。
 let vaultWatchers: VaultWatcherService | null = null;
 
 void app.whenReady().then(() => {
-  const vaultRoots = registerIpcHandlers();
+  const vaultRoots = registerIpcHandlers(revealStubDeps());
   vaultWatchers = vaultRoots.watchers;
   registerE1AssetProtocol(vaultRoots);
   createMainWindow();

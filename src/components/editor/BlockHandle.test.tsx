@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { act } from "react";
+// act 必须从 @testing-library/react 引入：其包装会在调用期间把
+// IS_REACT_ACT_ENVIRONMENT 置 true；直接用 react 的 act 会触发
+// “testing environment is not configured to support act(...)” 警告。
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { Editor } from "@tiptap/core";
 import { buildDocumentExtensions } from "../../editor/extensions";
 import { BlockHandle } from "./BlockHandle";

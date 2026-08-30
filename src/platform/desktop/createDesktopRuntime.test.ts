@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createDesktopRuntime } from "./createDesktopRuntime";
 import { desktopCapabilities } from "./desktopCapabilities";
 import type { E1DesktopAPI } from "./desktopApi";
-import { createEmptyVaultState } from "../../../shared/ipc/contracts";
+import { createMockDesktopApi } from "../../test/createMockDesktopApi";
 
 const SCAN = {
   vault: { vaultId: "v1", name: "我的笔记" },
@@ -37,14 +37,10 @@ function mockApi(
     selectDirectory: E1DesktopAPI["vault"]["selectDirectory"];
   }> = {},
 ): E1DesktopAPI {
-  return {
-    platform: "desktop",
-    versions: {},
+  // R009 Stage 0.3：统一工厂——vaultState/secret/search 等组用默认实现。
+  return createMockDesktopApi({
     vault: {
-      selectDirectory: overrides.selectDirectory ?? vi.fn(async () => null),
-      open: vi.fn(async () => {
-        throw new Error("unexpected open");
-      }),
+      selectDirectory: overrides.selectDirectory,
       listRecent: vi.fn(async () => [
         {
           vaultId: "v1",
@@ -55,41 +51,8 @@ function mockApi(
         },
       ]),
       scan: vi.fn(async () => SCAN),
-      // R007 阶段 4：回收站读取（缺省空表）。
-      listTrash: vi.fn(async () => ({ entries: [] })),
     },
-    vaultState: {
-      get: vi.fn(async () => createEmptyVaultState()),
-      patch: vi.fn(async () => createEmptyVaultState()),
-    },
-    note: { read: vi.fn(), create: vi.fn(), save: vi.fn() },
-    asset: {
-      pick: vi.fn(),
-      import: vi.fn(),
-      read: vi.fn(),
-      resolveUrl: vi.fn(),
-    },
-    // R007 阶段 5：机密存储组（DesktopSecretStore 透传）。
-    secret: {
-      status: vi.fn(async () => ({ mode: "secure-persistent" })),
-      get: vi.fn(async () => null),
-      set: vi.fn(async () => {}),
-      remove: vi.fn(async () => {}),
-    },
-    // R008 Stage 4：全文搜索组（DesktopSearchIndex 透传）。
-    search: {
-      query: vi.fn(async () => []),
-      rebuild: vi.fn(async () => ({ indexedDocuments: 0 })),
-      upsert: vi.fn(async () => ({ indexed: true })),
-      remove: vi.fn(async () => {}),
-      relocate: vi.fn(async () => {}),
-      status: vi.fn(async () => ({ state: "missing" })),
-    },
-    // R007 阶段 3：事件组（createDesktopRuntime 装配即 start 订阅）。
-    events: {
-      subscribeVaultChanges: vi.fn(() => () => {}),
-    },
-  } as unknown as E1DesktopAPI;
+  });
 }
 
 describe("createDesktopRuntime（IPC-backed）", () => {

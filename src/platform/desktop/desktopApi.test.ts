@@ -7,7 +7,8 @@
  */
 import { describe, expect, it } from "vitest";
 import { encodeIpcBridgeError } from "../../../shared/errors";
-import { DesktopIpcError, getDesktopApi, type E1DesktopAPI } from "./desktopApi";
+import { DesktopIpcError, getDesktopApi } from "./desktopApi";
+import { createMockDesktopApi } from "../../test/createMockDesktopApi";
 
 const bridgeScan = () =>
   Promise.reject(
@@ -18,15 +19,12 @@ const bridgeScan = () =>
     }),
   );
 
-const stubApi = {
-  platform: "desktop",
+// R009 Stage 0.3：统一工厂，覆盖待验证的两个方法。
+const stubApi = createMockDesktopApi({
   versions: { electron: "43.0.0" },
   vault: { scan: bridgeScan },
-  vaultState: {},
-  note: {},
   asset: { pick: () => Promise.reject(new Error("用户取消")) },
-  events: { subscribeVaultChanges: () => () => undefined },
-} as unknown as E1DesktopAPI;
+});
 
 describe("getDesktopApi", () => {
   it("window.e1 缺失时抛带指引的错误", () => {

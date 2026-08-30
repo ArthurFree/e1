@@ -27,6 +27,7 @@ import type {
 } from "../platform/desktop/desktopApi";
 import { DesktopIpcError } from "../platform/desktop/desktopApi";
 import { createDesktopRuntime } from "../platform/desktop/createDesktopRuntime";
+import { createMockDesktopApi } from "../test/createMockDesktopApi";
 import { MainArea } from "./MainArea";
 
 const COMPATIBLE_MARKDOWN = "# React 笔记\n\n这是正文内容";
@@ -60,17 +61,14 @@ function noteResult(markdown: string): ReadNoteResult {
   };
 }
 
-/** 构造 mock 桌面桥：一个可访问的最近 Vault + 一条文档扫描条目。 */
+/** 构造 mock 桌面桥（R009 Stage 0.3：统一工厂）：一个可访问的最近 Vault + 一条文档扫描条目。 */
 function makeApi(overrides: {
   markdown?: string;
   noteRead?: E1DesktopAPI["note"]["read"];
   noteReveal?: E1DesktopAPI["note"]["reveal"];
 }): E1DesktopAPI {
-  return {
-    platform: "desktop",
-    versions: {},
+  return createMockDesktopApi({
     vault: {
-      selectDirectory: vi.fn(async () => null),
       openRecent: vi.fn(async () => ({
         vaultId: "v1",
         absolutePath: "/tmp/notes",
@@ -92,8 +90,6 @@ function makeApi(overrides: {
         },
       ]),
       scan: vi.fn(async () => SCAN),
-      // R007 阶段 4：回收站读取（缺省空表）。
-      listTrash: vi.fn(async () => ({ entries: [] })),
     },
     note: {
       read:
@@ -101,35 +97,9 @@ function makeApi(overrides: {
         vi.fn(async () =>
           noteResult(overrides.markdown ?? COMPATIBLE_MARKDOWN),
         ),
-      create: vi.fn(),
-      save: vi.fn(),
-      reveal: overrides.noteReveal ?? vi.fn(async () => {}),
+      reveal: overrides.noteReveal,
     },
-    asset: {
-      pick: vi.fn(),
-      import: vi.fn(),
-      read: vi.fn(),
-      resolveUrl: vi.fn(),
-    },
-    // R007 阶段 5：机密存储组（DesktopSecretStore 透传，本文件不触及）。
-    secret: {
-      status: vi.fn(async () => ({ mode: "secure-persistent" })),
-      get: vi.fn(async () => null),
-      set: vi.fn(async () => {}),
-      remove: vi.fn(async () => {}),
-    },
-    // R008 Stage 4：全文搜索组（DesktopSearchIndex 透传，本文件不触及）。
-    search: {
-      query: vi.fn(async () => []),
-      rebuild: vi.fn(async () => ({ indexedDocuments: 0 })),
-      upsert: vi.fn(async () => ({ indexed: true })),
-      remove: vi.fn(async () => {}),
-      relocate: vi.fn(async () => {}),
-      status: vi.fn(async () => ({ state: "missing" })),
-    },
-    // R007 阶段 3：外部变更事件订阅（测试不推送事件，空订阅即可）。
-    events: { subscribeVaultChanges: vi.fn(() => () => {}) },
-  } as unknown as E1DesktopAPI;
+  });
 }
 
 /** 真实 Desktop 装配渲染；返回协调器工厂 spy（FR-22 断言不创建协调器）。 */

@@ -17,8 +17,8 @@ import type {
   VaultScanEntry,
   VaultScanResult,
 } from "../../../shared/ipc/contracts";
-import type { E1DesktopAPI } from "./desktopApi";
 import type { ExternalDocumentChange } from "../../application/services/ExternalVaultChangeService";
+import { createMockDesktopApi } from "../../test/createMockDesktopApi";
 import { DesktopExternalVaultChangeService } from "./DesktopExternalVaultChangeService";
 import { DesktopDocumentSourceCache } from "./DesktopDocumentSourceCache";
 import { DesktopIdentityAliasRegistry } from "./DesktopIdentityAliasRegistry";
@@ -70,7 +70,8 @@ interface Harness {
 function harness(before: VaultScanEntry[], after: VaultScanEntry[]): Harness {
   let emit: (events: VaultFsEvent[]) => void = () => {};
   const unsubscribe = vi.fn();
-  const api = {
+  // R009 Stage 0.3：统一工厂，仅覆盖事件组（捕获 listener 手动 emit）。
+  const api = createMockDesktopApi({
     events: {
       subscribeVaultChanges: vi.fn(
         (listener: (events: VaultFsEvent[]) => void) => {
@@ -79,7 +80,7 @@ function harness(before: VaultScanEntry[], after: VaultScanEntry[]): Harness {
         },
       ),
     },
-  } as unknown as E1DesktopAPI;
+  });
   const scans = fakeScans(before, after);
   const service = new DesktopExternalVaultChangeService({ api, scans });
   const received: ExternalDocumentChange[][] = [];
@@ -362,7 +363,7 @@ describe("DesktopExternalVaultChangeService", () => {
     // 重新构造带 sources/aliases 的服务（harness 默认不带）。
     h.service.stop();
     let emit: (events: VaultFsEvent[]) => void = () => {};
-    const api = {
+    const api = createMockDesktopApi({
       events: {
         subscribeVaultChanges: vi.fn(
           (listener: (events: VaultFsEvent[]) => void) => {
@@ -371,7 +372,7 @@ describe("DesktopExternalVaultChangeService", () => {
           },
         ),
       },
-    } as unknown as E1DesktopAPI;
+    });
     const service = new DesktopExternalVaultChangeService({
       api,
       scans: h.scans,

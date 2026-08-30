@@ -5,7 +5,7 @@
  * 文件/目录定位、目标不存在 → REVEAL_TARGET_NOT_FOUND、transient 允许、
  * 路径逃逸/非法 assetId 拦截、assetId 解码后同一管线。
  */
-import { mkdir, mkdtemp, realpath, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -14,7 +14,7 @@ import { encodeDesktopAssetId } from "../../../shared/assets/desktopAssetId.js";
 import { TransientVaultStore } from "../transientVaults.js";
 import { VaultRegistry } from "../vaultRegistry.js";
 import type { IpcMainLike } from "./handler.js";
-import { registerRevealHandlers } from "./reveal.js";
+import { createRecordingShell, registerRevealHandlers } from "./reveal.js";
 
 type Handler = (
   event: unknown,
@@ -163,5 +163,18 @@ describe("asset.reveal", () => {
     expect(
       await call(IPC_CHANNELS.assetReveal, { assetId: evil }),
     ).toMatchObject({ ok: false, error: { code: "INVALID_INPUT" } });
+  });
+});
+
+describe("createRecordingShell（R009 Stage 0.2，E2E 记录型 stub）", () => {
+  it("showItemInFolder 逐行追加到日志文件，不调真实 shell", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "e1-reveal-stub-"));
+    const logPath = join(dir, "e2e-reveal-stub.log");
+    const stub = createRecordingShell(logPath);
+    stub.showItemInFolder("/vault/学习/React.md");
+    stub.showItemInFolder("/vault/assets/pic.png");
+    expect(await readFile(logPath, "utf8")).toBe(
+      "/vault/学习/React.md\n/vault/assets/pic.png\n",
+    );
   });
 });

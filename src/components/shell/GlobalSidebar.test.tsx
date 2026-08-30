@@ -16,6 +16,7 @@ import { createDesktopRuntime } from "../../platform/desktop/createDesktopRuntim
 import { discardPendingVaultSelection } from "../../platform/desktop/vaultOpenConfirmation";
 import type { E1DesktopAPI } from "../../platform/desktop/desktopApi";
 import type { AppServices } from "../../application/AppServices";
+import { createMockDesktopApi } from "../../test/createMockDesktopApi";
 import { GlobalSidebar } from "./GlobalSidebar";
 
 /** 等 AppProvider 就绪后再渲染侧栏。 */
@@ -44,7 +45,7 @@ function ServicesApp({
   );
 }
 
-/** mock 桌面桥：listRecent 为空（全新安装），可选 selectDirectory 行为。 */
+/** mock 桌面桥（R009 Stage 0.3：统一工厂）：listRecent 为空（全新安装），可选 selectDirectory 行为。 */
 function mockDesktopApi(overrides: {
   selectDirectory: E1DesktopAPI["vault"]["selectDirectory"];
   openRecent?: E1DesktopAPI["vault"]["openRecent"];
@@ -73,40 +74,26 @@ function mockDesktopApi(overrides: {
       transient: !input.initialize,
     }),
   );
-  const api = {
-    platform: "desktop",
-    versions: {},
+  const api = createMockDesktopApi({
     vault: {
       selectDirectory: overrides.selectDirectory,
       openRecent: overrides.openRecent ?? openRecent,
       openSelection: overrides.openSelection ?? openSelection,
-      listRecent: vi.fn(async () => []),
       scan: vi.fn(async () => ({
         vault: { vaultId: "v1", name: "测试库" },
         entries: [
           {
             noteId: null,
             relativePath: "笔记.md",
-            kind: "document",
+            kind: "document" as const,
             title: "笔记",
             parentPath: null,
             tags: [],
           },
         ],
       })),
-      // R007 阶段 4：回收站读取（缺省空表，避免 listByWorkspace 降级告警）。
-      listTrash: vi.fn(async () => ({ entries: [] })),
     },
-    note: { read: vi.fn(), create: vi.fn(), save: vi.fn() },
-    asset: {
-      pick: vi.fn(),
-      import: vi.fn(),
-      read: vi.fn(),
-      resolveUrl: vi.fn(),
-    },
-    // R007 阶段 3：外部变更事件订阅（测试不推送事件，空订阅即可）。
-    events: { subscribeVaultChanges: vi.fn(() => () => {}) },
-  } as unknown as E1DesktopAPI;
+  });
   return { api, openRecent, openSelection };
 }
 

@@ -4,11 +4,8 @@
  * deleted noteKey/relativePath）、自写提交、失败降级 + 延迟重建调度。
  */
 import { describe, expect, it, vi } from "vitest";
-import type {
-  E1DesktopAPI,
-  SearchIndexStatus,
-  VaultScanResult,
-} from "./desktopApi";
+import type { SearchIndexStatus, VaultScanResult } from "./desktopApi";
+import { createMockDesktopApi } from "../../test/createMockDesktopApi";
 import { DesktopIdentityAliasRegistry } from "./DesktopIdentityAliasRegistry";
 import { DesktopSearchIndex } from "./DesktopSearchIndex";
 import { DesktopSearchIndexReconciler } from "./DesktopSearchIndexReconciler";
@@ -40,10 +37,11 @@ function setup() {
       indexedDocuments: 1,
     })),
   };
-  const api = {
+  // R009 Stage 0.3：统一工厂，覆盖 scan 与 search 组。
+  const api = createMockDesktopApi({
     vault: { scan: vi.fn(async () => SCAN) },
     search,
-  } as unknown as E1DesktopAPI;
+  });
   const scans = new DesktopVaultScanCache(api);
   const aliases = new DesktopIdentityAliasRegistry();
   const fullText = new DesktopSearchIndex(api, scans);

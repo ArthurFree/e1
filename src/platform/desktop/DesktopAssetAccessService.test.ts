@@ -3,14 +3,15 @@
  * 成功 true；IPC 失败（缺失/拒绝）false（节点状态文案由调用方展示）。
  */
 import { describe, expect, it, vi } from "vitest";
-import type { E1DesktopAPI } from "./desktopApi";
+import { createMockDesktopApi } from "../../test/createMockDesktopApi";
 import { DesktopAssetAccessService } from "./DesktopAssetAccessService";
 import type { DesktopAssetRegistry } from "./DesktopAssetRegistry";
 import type { DesktopAssetStore } from "./DesktopAssetStore";
 
 function mockApi(revealImpl: () => Promise<void>) {
   const reveal = vi.fn(revealImpl);
-  const api = { asset: { reveal } } as unknown as E1DesktopAPI;
+  // R009 Stage 0.3：统一工厂，仅覆盖 asset.reveal。
+  const api = createMockDesktopApi({ asset: { reveal } });
   return { api, reveal };
 }
 

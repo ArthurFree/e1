@@ -61,7 +61,11 @@ describe("AIAssistantPanel", () => {
     await resetDB();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // 先 flush 挂起的 React 异步任务，再卸载组件、还原全局桩，
+    // 避免 jsdom 环境销毁后仍有调度任务引用 window（R009 §3.2）。
+    await act(async () => {});
+    cleanup();
     vi.unstubAllGlobals();
   });
 

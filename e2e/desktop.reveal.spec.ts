@@ -4,12 +4,26 @@
 //
 // @golden G12：当前文档 → 顶栏「在文件管理器中显示」→ 真实 IPC 成功（无错误条）。
 // @golden G13：附件节点「在文件夹中显示」→ 真实 IPC 成功（无「无法定位文件」）。
-// shell.showItemInFolder 的 GUI 效果不可断言（CI xvfb 无文件管理器），
-// 此处验证的是 §17.4 口径：capability/UI 入口 + IPC 全链路 + Main 真实路径解析；
+//
+// R009 Stage 0.2（§3.3）：Linux CI（xvfb headless）没有文件管理器，
+// 真实 shell.showItemInFolder 会挂起 30s 超时。因此 E2E 统一经
+// E1_REVEAL_STUB=1 让 Main 用记录型 stub 替换真实 shell（见 main.ts），
+// 断言「UI 点击 → preload → IPC → Main handler → PathGuard」全链路：
+// stub 日志（userData/e2e-reveal-stub.log）必须记录解析后的绝对路径，
+// 且 UI 无错误。真实 OS shell 集成不进 Linux headless golden test，
+// macOS/Windows 手动验收口径：桌面端打开 Vault → 顶栏/附件节点点击
+// 「在文件管理器中显示」→ Finder/资源管理器弹出并选中目标文件。
 // 路径拒绝/逃逸/缺失（REVEAL_TARGET_NOT_FOUND）由 Main 单元测试覆盖。
 import { test, expect, _electron as electron } from "@playwright/test";
 import type { ElectronApplication, Page } from "@playwright/test";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { requireDesktopArtifacts } from "./desktopArtifacts";
@@ -73,8 +87,31 @@ async function createVaultFixture(
 function launch(userDataDir: string) {
   return electron.launch({
     args: ["."],
-    env: { ...process.env, E1_USER_DATA_DIR: userDataDir },
+    env: {
+      ...process.env,
+      E1_USER_DATA_DIR: userDataDir,
+      // R009 Stage 0.2：Main 用记录型 stub 替换真实 shell.showItemInFolder，
+      // 避免 Linux headless 下真实调用挂起；stub 日志见 expectRevealLogged。
+      E1_REVEAL_STUB: "1",
+    },
   });
+}
+
+/**
+ * 断言 E1_REVEAL_STUB 记录日志最终包含目标绝对路径——
+ * 证明 UI 点击 → preload → IPC → Main handler → PathGuard 全链路走通。
+ */
+async function expectRevealLogged(userDataDir: string, targetPath: string) {
+  const logPath = path.join(userDataDir, "e2e-reveal-stub.log");
+  await expect
+    .poll(async () => {
+      try {
+        return await readFile(logPath, "utf8");
+      } catch {
+        return "";
+      }
+    })
+    .toContain(targetPath);
 }
 
 async function stubFileDialog(
@@ -128,8 +165,12 @@ test.describe("桌面冒烟：Reveal in File Manager（R008 Stage 2）", () => {
       });
       await expect(reveal).toBeVisible();
       await reveal.click();
-      // 真实 IPC（schema → 注册表 → PathGuard → shell）成功：无错误条。
-      await window.waitForTimeout(500);
+      // IPC（schema → 注册表 → PathGuard → stub shell）成功：
+      // stub 记录解析后的绝对路径（macOS /tmp 符号链接需 realpath 对齐），无错误条。
+      await expectRevealLogged(
+        fixture.userDataDir,
+        path.join(await realpath(fixture.vaultDir), "笔记.md"),
+      );
       await expect(window.locator(".recovery-banner")).toHaveCount(0);
     } finally {
       await app.close();
@@ -168,8 +209,13 @@ test.describe("桌面冒烟：Reveal in File Manager（R008 Stage 2）", () => {
       });
       await expect(reveal).toBeVisible();
       await reveal.click();
-      // asset.reveal 成功：节点不出现「无法定位文件」。
-      await window.waitForTimeout(500);
+      // asset.reveal 成功：stub 记录导入后的 Vault 内资源路径
+      //（sanitize 保留中文名与扩展名，首个导入无冲突 → assets/说明书.pdf），
+      // 节点不出现「无法定位文件」。
+      await expectRevealLogged(
+        fixture.userDataDir,
+        path.join(await realpath(fixture.vaultDir), "assets", "说明书.pdf"),
+      );
       await expect(
         window.locator(".attachment-block__status"),
       ).not.toContainText("无法定位文件");
