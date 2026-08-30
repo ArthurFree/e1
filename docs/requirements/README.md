@@ -24,7 +24,8 @@
 | R006 | [Electron Desktop 本地 Vault 技术验证版](./r006.md)                            | —        | 已完成 | 2026-08-29 |
 | R007 | [Desktop Local Vault 产品化基础闭环](./R007-desktop-local-vault-productization.md) | 0.1  | 已完成 | 2026-08-29 |
 | R008 | [Desktop 产品化收尾与搜索规模化](./R008-desktop-productization-search-scale.md) | 0.2  | 已完成 | 2026-08-29 |
-| R009 | [Desktop 发布就绪与跨平台分发](./R009-desktop-release-readiness-distribution.md) | 0.2  | 实现中 | 2026-08-30 |
+| R009 | [Desktop 发布就绪与跨平台分发](./R009-desktop-release-readiness-distribution.md) | 0.3  | 已完成 | 2026-08-30 |
+| R009 收口 / R010 | [R009 收口与 R010 规划：macOS 单平台路线](./R009-closeout-R010-macos-only-plan.md) | 0.1  | 已采纳 | 2026-08-30 |
 
 ## 单份需求的完成定义
 

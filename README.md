@@ -2,7 +2,7 @@
 
 一个独立的本地优先笔记应用：Web 端开箱即用，桌面端（Electron）以本地 Markdown 目录为真实数据源，提供知识库、页面树和块编辑能力。面向简体中文个人用户。
 
-**当前状态：R001–R008 全部完成并验收关闭（2026-08-29）；R009 发布就绪与分发 Stage 0–6 完成（2026-08-30）——远端 CI 全绿、产品身份冻结（E1 / com.e1.notes）、userData 迁移、electron-builder 打包、安装包级 E2E（P01–P09）、tag 触发 Release 流水线、Auto Update（electron-updater + GitHub Releases）。首版发布为未签名包（无证书，签名通道已预留）。**
+**当前状态：R001–R009 全部完成（R009 于 2026-08-30 收口关闭，Stage 4 签名迁移 R013）——远端 CI 全绿、产品身份冻结（E1 / com.e1.notes）、userData 迁移、electron-builder 打包（macOS 单平台，MAC-01）、安装包级 E2E（P01–P09）、tag 触发 Release 流水线、Auto Update（electron-updater + GitHub Releases）。首版发布为未签名包（无证书，签名通道已预留）。**
 
 ## 功能
 
@@ -16,22 +16,19 @@
 
 ## 下载与安装（桌面端）
 
-从 [GitHub Releases](https://github.com/ArthurFree/e1/releases) 下载最新版本：
+桌面端当前仅支持 **macOS（Apple Silicon）**（R009 收口：macOS 单平台策略，Windows/Linux 恢复走独立需求）。
 
-- macOS（Apple Silicon）：`E1-x.y.z-arm64.dmg`（或 zip）
-- Windows：`E1-Setup-x.y.z-x64.exe`
+从 [GitHub Releases](https://github.com/ArthurFree/e1/releases) 下载最新版本：`E1-x.y.z-arm64.dmg`（或 zip）。
 
-**当前版本未做代码签名**（R009 Stage 4 延期，无证书）：
+**当前版本未做代码签名**（签名与公证迁移至 R013，无证书）：
 
-- macOS 首次打开会提示「无法验证开发者」——在「系统设置 → 隐私与安全性」中允许，或右键应用选择「打开」；
-- Windows 可能出现 SmartScreen 拦截——选择「更多信息 → 仍要运行」。
+- macOS 首次打开会提示「无法验证开发者」——在「系统设置 → 隐私与安全性」中允许，或右键应用选择「打开」。
 
 校验完整性：对照 Release 中的 `SHA256SUMS.txt`。
 
 ### 自动更新
 
-- **Windows**：应用内自动更新（设置 → 版本与更新 → 检查更新 → 下载 → 重启安装）；
-- **macOS**：未签名期间暂不支持应用内安装——检查更新会提示新版本并引导回本页手动下载（签名接入后自动升级为应用内更新）。
+macOS 未签名期间为「检查更新 + 提示新版本 + 引导回 Release 页手动下载」（设置 → 版本与更新）；签名接入后自动升级为应用内「下载 → 确认 → 重启安装」。
 
 ## 运行
 
@@ -67,7 +64,7 @@ npm run test:e2e:desktop # Electron 全套冒烟（需先 build:desktop）
 npm run test:e2e:desktop:golden # 黄金路径子集（打开 Vault / 保存重启 / 附件重启；进 CI）
 npm run package:desktop  # 打包快速校验（electron-builder --dir）
 npm run dist:mac         # 产出 DMG/ZIP 安装包（release/，未签名）
-npm run dist:win         # 产出 Windows NSIS 安装包（供 CI/Windows 机器）
+npm run dist:win         # （保留为未来能力，当前不验证）产出 Windows NSIS 安装包
 npm run test:e2e:package # 安装包级 E2E（直起打包产物，需先 dist:mac）
 ```
 

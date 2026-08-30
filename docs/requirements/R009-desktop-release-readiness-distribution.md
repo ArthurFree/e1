@@ -1,7 +1,7 @@
 # R009：Desktop 发布就绪与跨平台分发
 
-> 版本：0.1  
-> 状态：实现中（Stage 0–6 完成、远端 CI 全绿；Stage 4 签名延期；DoD 仅剩 Windows 构建实测与首次真实 tag 发布）  
+> 版本：0.3  
+> 状态：已完成（Stage 0–6 完成、远端 CI 全绿；2026-08-30 收口关闭——平台范围收敛为 macOS 单平台（MAC-01），Stage 4 签名迁移 R013；仅剩首次真实 tag 发布核验）  
 > 更新时间：2026-08-30  
 > 前置需求：R006、R007、R008  
 > 基线提交：`5fd2f7359878162f12e4ef7a1cb003d6f32a4948`
@@ -1144,15 +1144,17 @@ showItemInFolder
 
 # Stage 4：Signing & Platform Security
 
-**状态：延期（2026-08-30 决策：无签名证书，首版出未签名包）**
+**状态：迁移至 R013（2026-08-30 R009 收口决策）——macOS 单平台后本阶段
+范围收敛为 Developer ID 签名 / Hardened Runtime / Notarization / Stapling，
+独立为 R013 macOS Signing & Trust，不再阻塞 R009 关闭。**
 
 记录：
 
-- 当前无任何代码签名证书（Apple Developer ID / Windows Authenticode 均无），Stage 4 不做签名实现，首版发布未签名安装包。
-- 已知代价：macOS 未签名包触发 Gatekeeper「未知开发者」提示（用户需右键打开）；Windows 未签名触发 SmartScreen 拦截概率高。README 安装说明须如实写明。
-- 签名通道已在 Stage 5 的 release.yml 预留为条件步骤（secrets 配齐即自动启用 codesign + notarize / Authenticode，无需再改 workflow）；启用签名后移除 `electron-builder.yml` 的 `identity: null`。
-- DoD 对应项按「Windows signing 可复现或有明确延期记录」口径以本记录闭合；macOS signing/notarization 同为延期。
-- 证书到位后的恢复动作：申请 Apple Developer Program → 证书/密钥入 GitHub Secrets（MAC_CERT_P12_BASE64 / CSC_KEY_PASSWORD / APPLE_API_KEY*）→ tag 发布即自动签名公证。
+- 当前无任何代码签名证书（Apple Developer ID 无），Stage 4 不做签名实现，首版发布未签名安装包。
+- 已知代价：macOS 未签名包触发 Gatekeeper「未知开发者」提示（用户需右键打开）。README 安装说明须如实写明。
+- 签名通道已在 Stage 5 的 release.yml 预留为条件步骤（secrets 配齐即自动启用 codesign + notarize，无需再改 workflow）；启用签名后移除 `electron-builder.yml` 的 `identity: null`。
+- 证书到位后的恢复动作（R013）：申请 Apple Developer Program → 证书/密钥入 GitHub Secrets（MAC_CERT_P12_BASE64 / CSC_KEY_PASSWORD / APPLE_API_KEY*）→ tag 发布即自动签名公证 → Auto Update `canAutoInstall` 翻 true（macOS 应用内更新解锁）。
+- 历史记录（收口前）：Windows Authenticode 曾同列延期，随 macOS 单平台策略（MAC-01）移出范围。
 
 ## macOS
 
@@ -1503,14 +1505,14 @@ Renderer 仍然不得得到 absolutePath。
 
 R009 完成需要全部满足。
 
-验收记录（2026-08-30）：远端 main CI 六 job 全绿（`083e390`）；未闭合项仅剩「Windows installer 可构建」（配置就绪待 CI/Windows 首跑实测）与「首次真实 tag 发布」两项，其余全部核验通过。
+验收记录（2026-08-30 收口）：远端 main CI 六 job 全绿（`083e390`）；收口决策（R009-closeout-R010-macos-only-plan.md §7）——平台范围收敛为 macOS 单平台，「Windows installer 可构建」移出 DoD，签名迁移 R013；未闭合项仅剩「首次真实 tag 发布」核验。
 
 ## CI
 
 - [x] latest remote main 全绿（083e390：quality/build-web/build-desktop/desktop-runtime-deps/e2e-web/e2e-desktop 全 success）；
 - [x] 无 Vitest unhandled errors（jsdomEnvironment teardown 前排空宏任务队列，根治 window is not defined）；
 - [x] Desktop E2E 无 platform shell timeout（E1_REVEAL_STUB 分层）；
-- [x] Packaged App Smoke 通过（P01–P08 本机 8/8，并接入 release.yml macOS 门禁）。
+- [x] Packaged App Smoke 通过（P01–P09 本机 9/9，并接入 release.yml macOS 门禁）。
 
 ## Identity
 
@@ -1520,11 +1522,11 @@ R009 完成需要全部满足。
 - [x] userData 路径策略明确（appData/E1，E1_USER_DATA_DIR 可覆盖）；
 - [x] legacy migration 测试通过（7 例：幂等/不覆盖/部分失败续跑/env 跳过等）。
 
-## Packaging
+## Packaging（macOS 单平台，MAC-01）
 
 - [x] macOS DMG 可构建（E1-0.1.0-arm64.dmg 121MB 本机实测）；
-- [ ] Windows installer 可构建（nsis 配置就绪，macOS 主机无法实测，待 CI/Windows 首跑验证）；
-- [x] production dependencies 完整（asar 含 chokidar；node:sqlite 为内置）；
+- [x] macOS ZIP 可构建（updater feed 需要）；
+- [x] production dependencies 完整（asar 含 chokidar、electron-updater；node:sqlite 为内置）；
 - [x] packaged app 可以启动（隔离 userData 真启动存活零报错）；
 - [x] Vault 打开正常（P02）；
 - [x] Markdown 保存正常（P03）；
@@ -1536,21 +1538,25 @@ R009 完成需要全部满足。
 
 - [x] safeStorage 正常（P07 分流验证）；
 - [x] signing secret 不入库（无证书；未来只经 GitHub Secrets 条件注入）；
-- [x] npm vulnerability review 完成（2026-08-30：4 个传递性 dev 依赖漏洞已 npm audit fix 清零，不进安装包）；
+- [x] npm vulnerability review 完成（2026-08-30：4 个传递性 dev 依赖漏洞已 npm audit fix 清零，不进安装包；Stage 6 引入 electron-updater 后复审 0 漏洞）；
 - [x] Renderer 不泄露绝对路径（既有授权边界，全量测试覆盖）。
 
 ## Release
 
-- [ ] tag 可以触发 Release（workflow 就绪，待首次真实 tag 验证）；
-- [ ] Release 包含安装包（同上）；
-- [ ] Release 包含 checksum（SHA256SUMS.txt 已在流水线中）；
-- [ ] macOS signing / notarization 可复现（延期：无证书，条件步骤已预留）；
-- [x] Windows signing 可复现或有明确延期记录（Stage 4 延期记录）。
+- [ ] 实际创建一次 macOS `v0.1.0` tag 并验证 Release Workflow 成功（待执行）；
+- [ ] GitHub Release 中存在 DMG / ZIP / updater metadata（latest-mac.yml + blockmap）（同上）；
+- [ ] SHA256SUMS 正确（同上）。
+
+## Deferred（迁移 R013 macOS Signing & Trust）
+
+- [ ] Developer ID 签名；
+- [ ] Notarization；
+- [ ] Stapling。
 
 ## Auto Update（Stage 6）
 
 - [x] 更新源与通道确定（electron-updater + GitHub Releases，仅 stable）；
-- [x] 检查/下载/确认安装链路（Windows NSIS 完整链路；macOS 未签名期间降级手动下载，canAutoInstall 单点开关）；
+- [x] 检查/下载/确认安装链路（macOS 未签名期间为「检查+提示+手动下载」，canAutoInstall 单点开关；Windows 完整链路随收口转为未来能力）；
 - [x] 更新失败不影响现有安装（error 事件只沉淀状态，DIST-07）；
 - [x] 跨版本 userData migration 机制在位（marker 幂等迁移框架）；
 - [x] Release 产物含 latest*.yml/blockmap（release.yml 恢复上传）；
@@ -1606,7 +1612,7 @@ Revision History
 
 # 14. 下一阶段路线图
 
-R009 完成后建议：
+R009 完成后建议（2026-08-30 收口更新：补 R013，与 R009-closeout-R010-macos-only-plan.md §29 对齐）：
 
 ```text
 R009
@@ -1620,6 +1626,10 @@ Desktop File Operations v2
         ↓
 R012
 Desktop Revision History
+        ↓
+R013
+macOS Signing & Trust（Developer ID + Notarization + Stapling；
+证书提前就绪可随时插入，不必等 R012）
 ```
 
 ---
@@ -1740,6 +1750,7 @@ Distribution        2 / 10
 - 新增 Packaged App Smoke；
 - 增加 signing / notarization / release workflow；
 - Auto Update 默认允许延期；
+- 后续路线调整为 R010 Knowledge Links、R011 File Operations v2、R012 Revision History。
 
 ## 0.2 — 2026-08-30（Stage 6 Auto Update 落地）
 
@@ -1749,4 +1760,13 @@ Distribution        2 / 10
 - 新增 update.* IPC 组与 events:updateStatus 推送通道、AppServices.update
   可选 port、设置页「版本与更新」区、安装包冒烟 P09；
 - §10 检查清单追加 Auto Update 条目与手动验收口径；§12 DoD 追加 Auto Update 组。
-- 后续路线调整为 R010 Knowledge Links、R011 File Operations v2、R012 Revision History。
+
+## 0.3 — 2026-08-30（收口关闭：macOS 单平台）
+
+- 依据 R009-closeout-R010-macos-only-plan.md：Desktop 目标平台收敛为 macOS
+  arm64 唯一（MAC-01）——release.yml 去 Windows matrix、electron-builder.yml
+  删 win/nsis 配置（方案 B）、`dist:win` 脚本保留但不进 README/DoD/CI；
+- Stage 4 签名/公证/Stapling 迁移至 R013 macOS Signing & Trust，不再阻塞关闭；
+- AIDraftModal 补代次令牌守卫（§8 顺手修复，与 AIAssistantPanel 同型）；
+- §12 DoD 按收口口径改写（去 Windows 项、Release 组保留首次 tag 核验）；
+- §14 路线图补 R013。

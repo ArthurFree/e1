@@ -6,7 +6,7 @@
  * AI 返回的 Markdown 经编辑器白名单解析后落盘，不直接注入 DOM。
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PickerTarget } from "../domain/picker";
 import { jsonToText, markdownToJson } from "../editor/markdown";
 import { useAppServices } from "../state/AppServicesProvider";
@@ -45,6 +45,25 @@ export function AIDraftModal({ onClose }: AIDraftModalProps) {
   const [step, setStep] = useState<Step>("input");
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
+  // 请求代次令牌（R009 收口 §8，与 AIAssistantPanel 同型）：每次 generate
+  // 换新令牌，卸载或关闭后清空；异步回调落地前校验令牌仍有效，失效则
+  // 静默丢弃结果——组件卸载后 setState 会让 React Scheduler 在 jsdom
+  // 销毁后继续调度，抛出 unhandled "window is not defined"。
+  const requestToken = useRef<object | null>(null);
+
+  useEffect(
+    () => () => {
+      // 卸载：作废进行中的请求，阻断其后续的 setState。
+      requestToken.current = null;
+    },
+    [],
+  );
+
+  /** 关闭（取消/Esc/确认后）即作废进行中的生成请求。 */
+  const handleClose = () => {
+    requestToken.current = null;
+    onClose();
+  };
 
   // 未配置门槛只看非机密设置（R005 阶段 8 §8.2）；apiKey 在生成时经
   // aiConfigService.get() 组装，缺失则按未配置处理（不发起请求）。
@@ -52,18 +71,18 @@ export function AIDraftModal({ onClose }: AIDraftModalProps) {
   if (!settings) {
     // 防御：未配置时不应到达此流程（开始页已拦截），回退到设置。
     return (
-      <Dialog label="AI 帮你写" className="modal" onClose={onClose}>
+      <Dialog label="AI 帮你写" className="modal" onClose={handleClose}>
         <h2 className="modal__title">AI 帮你写</h2>
         <p className="modal__hint">需要先在设置中配置兼容的 AI 服务。</p>
         <div className="modal__actions">
-          <button type="button" className="button" onClick={onClose}>
+          <button type="button" className="button" onClick={handleClose}>
             取消
           </button>
           <button
             type="button"
             className="button button--primary"
             onClick={() => {
-              onClose();
+              handleClose();
               openSettings();
             }}
           >
@@ -75,12 +94,15 @@ export function AIDraftModal({ onClose }: AIDraftModalProps) {
   }
 
   const generate = async () => {
+    const token = {};
+    requestToken.current = token;
     setStep("generating");
     setError("");
     try {
       // 请求组装（R005 阶段 8 §8.2）：endpoint/model + SecretStore 的 apiKey；
       // 任一缺失按未配置处理，不发起任何外部请求。
       const config = await services.aiConfigService.get();
+      if (requestToken.current !== token) return;
       if (!config) {
         setError("AI 配置不完整，请前往设置检查。");
         setStep("error");
@@ -92,9 +114,12 @@ export function AIDraftModal({ onClose }: AIDraftModalProps) {
         mode: "draft",
         draftType,
       });
+      // 请求返回时组件可能已卸载/关闭，令牌失效则静默丢弃结果。
+      if (requestToken.current !== token) return;
       setDraft(result);
       setStep("preview");
     } catch (err) {
+      if (requestToken.current !== token) return;
       setError(err instanceof Error ? err.message : "AI 请求失败，请稍后再试");
       setStep("error");
     }
@@ -117,7 +142,11 @@ export function AIDraftModal({ onClose }: AIDraftModalProps) {
   };
 
   return (
-    <Dialog label="AI 帮你写" className="modal modal--wide" onClose={onClose}>
+    <Dialog
+      label="AI 帮你写"
+      className="modal modal--wide"
+      onClose={handleClose}
+    >
       <h2 className="modal__title">AI 帮你写</h2>
       <div className="modal__form">
         <label className="modal__field">
@@ -177,7 +206,7 @@ export function AIDraftModal({ onClose }: AIDraftModalProps) {
         )}
 
         <div className="modal__actions">
-          <button type="button" className="button" onClick={onClose}>
+          <button type="button" className="button" onClick={handleClose}>
             取消
           </button>
           {step === "preview" && (

@@ -7,9 +7,10 @@
  *
  * 平台分流（R009 §Stage 6 决策）：
  * - Windows NSIS 未签名亦可自动更新 → canAutoInstall=true；
- * - macOS Squirrel.Mac 拒绝替换未签名应用（Stage 4 签名延期）→
+ * - macOS Squirrel.Mac 拒绝替换未签名应用（签名迁移 R013）→
  *   canAutoInstall=false，download 为 no-op，UI 降级为「前往下载」手动链路。
- *   Stage 4 签名落地后把 supportsAutoInstall 的 darwin 分支翻 true。
+ *   R013 签名落地后把 darwin 分支翻 true（win32 分支为恢复 Windows 时的
+ *   未来能力，MAC-01 下不在验证范围）。
  *
  * 安全约束：所有 electron/OS 依赖经构造注入（单测不 mock 模块）；
  * error 事件只沉淀为 status.state="error"，事件回调永不 throw——
@@ -68,7 +69,7 @@ export class DesktopUpdateService {
     this.status = {
       state: deps.isPackaged ? "idle" : "unsupported",
       currentVersion: deps.currentVersion,
-      // macOS 未签名期间降级手动下载（Stage 4 签名后 darwin 翻 true）。
+      // macOS 未签名期间降级手动下载（R013 签名后 darwin 翻 true）。
       canAutoInstall: deps.platform === "win32",
       releasePageUrl: deps.releasePageUrl ?? DEFAULT_RELEASE_PAGE_URL,
     };

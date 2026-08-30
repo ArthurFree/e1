@@ -141,4 +141,49 @@ describe("AIDraftModal", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(/不可用|失败/);
     expect(await docTitles()).not.toContain("失败案例");
   });
+
+  // R009 收口 §8：代次令牌守卫——组件卸载后迟到的 provider 响应被静默
+  // 丢弃，不再 setState（否则 React Scheduler 在 jsdom 销毁后继续调度，
+  // 抛 unhandled "window is not defined"，与 AIAssistantPanel 同型）。
+  it("生成中卸载后迟到的响应被丢弃（不 setState、无 unhandled error）", async () => {
+    const deferred: { resolve: (value: unknown) => void } = {
+      resolve: () => {},
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise((resolve) => {
+            deferred.resolve = resolve;
+          }),
+      ),
+    );
+    render(
+      <TestApp>
+        <Harness />
+      </TestApp>,
+    );
+    fireEvent.change(await screen.findByLabelText("文档主题"), {
+      target: { value: "迟到响应" },
+    });
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: /我的知识库/ }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "生成预览" }));
+    await screen.findByText("正在生成草稿…");
+
+    // 关闭弹窗（卸载组件）：作废进行中的请求令牌。
+    cleanup();
+    // provider 迟到返回：令牌已失效，结果被丢弃，不触发任何 setState。
+    deferred.resolve({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: "# 迟到的草稿" } }],
+      }),
+    });
+    // 排空宏任务，让迟到的 promise 回调完整落地（进程级 unhandled
+    // error 会被测试底座捕获并使本用例失败）。
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(await docTitles()).not.toContain("迟到响应");
+  });
 });

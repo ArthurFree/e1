@@ -1,11 +1,13 @@
 # R009 Stage 5：Release Workflow（docs/requirements/R009-desktop-release-readiness-distribution.md §Stage 5 / §8）
 #
 # 触发：git tag vX.Y.Z（与 package.json version 强一致，不一致直接失败，防发错版）。
-# 流程：version-check → quality → build-verify → package(mac arm64 / win x64) → checksums → GitHub Release。
+# 流程：version-check → quality → build-verify → package(macOS arm64) → checksums → GitHub Release。
 # 与普通 PR CI（ci.yml，验证 Source Correctness）分离——本 workflow 验证 Distribution Correctness。
 #
-# 首版分发范围（§Release Artifact「mac universal 可决定」）：只做 macOS arm64 + Windows x64，
-# 不出 mac x64 / universal——当前开发机与目标用户均为 Apple Silicon，扩大矩阵等有真实需求再加。
+# 分发范围（R009 收口，R009-closeout-R010-macos-only-plan.md §1/§3，MAC-01）：
+# 只做 macOS arm64——Desktop 目标平台暂为 macOS 唯一；Windows 配置已随收口移除
+#（electron-builder.yml 方案 B），未来恢复走独立需求；mac x64 / universal 同理
+# 有真实需求再评。
 
 name: Release
 
@@ -67,24 +69,14 @@ jobs:
       - run: npm prune --omit=dev
       - run: node scripts/verifyElectronRuntimeDeps.mjs --resolve
 
-  # ── 矩阵打包：macOS arm64（dmg+zip）/ Windows x64（nsis exe）────────────────
+  # ── 打包：macOS arm64（dmg+zip）────────────────────────────────────────
+  # R009 收口（MAC-01）：Desktop 目标平台暂为 macOS 唯一，Windows matrix 腿
+  # 已移除（未来恢复走独立需求）。
   package:
     needs: [version-check, quality, build-verify]
-    # 单平台失败不取消另一平台，便于分别重试（Windows 首跑见下方注释）
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-latest # Apple Silicon runner → 产物为 arm64
-            target: mac
-            script: dist:mac
-          - os: windows-latest
-            target: win
-            script: dist:win
-    runs-on: ${{ matrix.os }}
+    runs-on: macos-latest # Apple Silicon runner → 产物为 arm64
     env:
-      # electron-builder 缓存收口到 workspace 内，供 actions/cache 统一缓存；
-      # Windows 首跑会下载 nsis / winCodeSign（Stage 2 偏差记录），缓存命中后秒级。
+      # electron-builder 缓存收口到 workspace 内，供 actions/cache 统一缓存。
       ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
       # ── 签名 secrets（当前未配置 → 全部为空 → 出未签名包，见下方签名步骤注释）──
       # macOS：Developer ID 证书（base64 p12）+ App Store Connect API Key（notarytool 公证）
@@ -93,34 +85,31 @@ jobs:
       APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
       APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
       APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-      # Windows：Authenticode 证书（electron-builder 检测到 WIN_CSC_LINK 即自动签名，
-      # 无需额外步骤；未配置则出未签名包，Stage 4 有明确延期记录）。
-      WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-      WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
-      - name: 缓存 electron-builder 下载（nsis / winCodeSign / electron 二进制）
+      - name: 缓存 electron-builder 下载（electron 二进制等）
         uses: actions/cache@v4
         with:
           path: .cache/electron-builder
-          key: electron-builder-${{ matrix.target }}-${{ hashFiles('package-lock.json') }}
-          restore-keys: electron-builder-${{ matrix.target }}-
+          key: electron-builder-mac-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-builder-mac-
       - run: npm ci
 
       # ── macOS 签名与公证（条件步骤：secrets 齐备才执行，默认整体跳过）──────────
       # 现状：无签名证书，electron-builder.yml 固定 `identity: null`（未签名不公证），
       # 本步跳过 → dist:mac 出未签名包，release 照常完成。
-      # Stage 4 接入证书后（在仓库 Secrets 配置上述 5 个 MAC_/APPLE_ secret），本步自动生效：
+      # R013（macOS Signing & Trust）接入证书后（在仓库 Secrets 配置上述 5 个
+      # MAC_/APPLE_ secret），本步自动生效：
       #   1) 移除 identity: null，恢复 electron-builder 默认 codesign 流程；
       #   2) APPLE_API_KEY 约定为 .p8 文件路径，故把 secret 内容落 $RUNNER_TEMP（不进入产物/日志）；
       #   3) electron-builder 检测到 CSC_LINK + APPLE_API_KEY* 后自动签名并经 notarytool 公证。
       # 注意：secrets 上下文不能直接出现在 if 中，故经 job env 中转后判空。
       - name: 启用 macOS 签名与公证（secrets 存在才执行）
-        if: ${{ matrix.target == 'mac' && env.MAC_CERT_P12_BASE64 != '' && env.APPLE_API_KEY != '' }}
+        if: ${{ env.MAC_CERT_P12_BASE64 != '' && env.APPLE_API_KEY != '' }}
         run: |
           sed -i '' '/^  identity: null$/d' electron-builder.yml
           printf '%s' "$APPLE_API_KEY" > "$RUNNER_TEMP/AuthKey.p8"
@@ -132,41 +121,25 @@ jobs:
 
       # --publish never：发布统一由 release job 的 action-gh-release 完成，
       # electron-builder 只出安装包，禁止它自行创建/上传 GitHub Release。
-      - name: 打包（${{ matrix.target }}）
-        run: npm run ${{ matrix.script }} -- --publish never
-
-      # 统一产物命名（§Release Artifact）：nsis 默认产物名带空格（"E1 Setup x.y.z.exe"），
-      # 规范化为 E1-Setup-x.y.z-x64.exe；mac 产物 E1-x.y.z-arm64.{dmg,zip} 已符合约定。
-      - name: 规范化 Windows 产物名
-        if: ${{ matrix.target == 'win' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          VERSION="$(node -p "require('./package.json').version")"
-          for f in release/E1\ Setup\ *.exe; do
-            [ -e "$f" ] || continue
-            mv "$f" "release/E1-Setup-${VERSION}-x64.exe"
-          done
+      - name: 打包（macOS）
+        run: npm run dist:mac -- --publish never
 
       # ── R009 Stage 3 / G5：安装包级 E2E（Packaged App Verification）──────────
-      # 直接对磁盘上的 release/mac-arm64/E1.app 跑安装包冒烟套件（8 例 P01–P08），
+      # 直接对磁盘上的 release/mac-arm64/E1.app 跑安装包冒烟套件（9 例 P01–P09），
       # 用 _electron.launch(executablePath) 起真实安装产物，全程不依赖仓库 node_modules——
       # 避免 repo 环境掩盖安装后缺失 runtime dependency 的问题。
       # 不需要 Playwright 浏览器二进制（驱动的是打包内 Electron）；macos runner 自带 GUI，
-      # 无需 xvfb。P08 Reveal 仅 macOS 跑、P07 secrets 按 safeStorage 实测分流，均可直接运行。
+      # 无需 xvfb。P08 Reveal 走 macOS 真实 shell、P07 secrets 按 safeStorage 实测分流。
       # 产物缺失时 requirePackagedArtifact() 在 CI（CI=true 由 runner 自动注入）抛错、
       # 本地 skip——此处位于打包步骤之后，产物必然存在。
-      # Windows 腿暂不跑：win 安装包产物路径约定（resolvePackagedExecutable）尚未落地，
-      # Stage 3 后续补齐后移除本 if 即可扩展。
       - name: 安装包冒烟 E2E（macOS）
-        if: ${{ matrix.target == 'mac' }}
         run: npm run test:e2e:package
       # 失败时上传测试日志便于排障（同 ci.yml e2e-desktop 手法）
       - name: 上传安装包 E2E 失败日志
-        if: ${{ matrix.target == 'mac' && failure() }}
+        if: ${{ failure() }}
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-package-results-${{ matrix.target }}
+          name: playwright-package-results-mac
           path: |
             test-results/
             playwright-report/
@@ -178,11 +151,10 @@ jobs:
       - name: 上传安装包产物
         uses: actions/upload-artifact@v4
         with:
-          name: release-${{ matrix.target }}
+          name: release-mac
           path: |
             release/*.dmg
             release/*.zip
-            release/*.exe
             release/latest*.yml
             release/*.blockmap
           if-no-files-found: error
@@ -201,7 +173,7 @@ jobs:
         run: |
           set -euo pipefail
           cd artifacts
-          for f in *.dmg *.zip *.exe; do
+          for f in *.dmg *.zip; do
             [ -e "$f" ] || continue
             shasum -a 256 "$f"
           done > SHA256SUMS.txt

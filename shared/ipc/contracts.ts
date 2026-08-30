@@ -24,7 +24,7 @@
  * 查询/重建/增量维护通道（索引是 derived data，R8-03）。
  * R009 Stage 6（Auto Update）：update.* 组与 events:updateStatus——
  * electron-updater（GitHub Releases feed）的检查/下载/安装与状态推送；
- * macOS 未签名期间 canAutoInstall=false 降级为手动下载（Stage 4 签名后翻 true）。
+ * macOS 未签名期间 canAutoInstall=false 降级为手动下载（R013 签名后翻 true）。
  *
  * shared/ 为 Renderer（src/platform/desktop）与 Electron Main/Preload 共用
  * 的唯一契约来源：channel 常量、请求/响应类型、E1DesktopAPI 形状。
@@ -701,9 +701,10 @@ export interface UpdateStatus {
   /** downloading 时的进度（0–100）。 */
   progressPercent?: number;
   /**
-   * 是否支持自动下载安装：Windows NSIS（未签名亦可）为 true；
-   * macOS 未签名期间为 false（Squirrel.Mac 拒绝替换未签名应用），
-   * UI 降级为「前往下载」手动链路；Stage 4 签名落地后 darwin 翻 true。
+   * 是否支持自动下载安装：macOS 未签名期间为 false（Squirrel.Mac 拒绝替换
+   * 未签名应用），UI 降级为「前往下载」手动链路；R013 签名落地后 darwin
+   * 翻 true。win32（NSIS 未签名亦可）为 true，属恢复 Windows 时的未来能力
+   *（MAC-01 下不在验证范围）。
    */
   canAutoInstall: boolean;
   /** 手动下载入口（GitHub Releases 页）。 */

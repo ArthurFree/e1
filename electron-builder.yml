@@ -13,7 +13,7 @@ directories:
 
 # §2.3 打包内容：vite 渲染产物（多页 index.html + desktop.html）+ esbuild 主进程/预加载产物。
 # package.json 由 electron-builder 默认必带；production node_modules（dependencies，
-# 含运行时依赖 chokidar）由 electron-builder 自动收集，无需显式列出。
+# 含运行时依赖 chokidar、electron-updater）由 electron-builder 自动收集，无需显式列出。
 files:
   - dist/**
   - dist-electron/**
@@ -40,18 +40,12 @@ mac:
     - dmg
     - zip
   category: public.app-category.productivity
-  # 无签名证书（R009 头部已记录签名/公证延期到 Stage 4）：identity: null 跳过
-  # codesign，不触发 notarize。Stage 4 接入证书后移除此行。
+  # 无签名证书（签名/公证迁移至 R013 macOS Signing & Trust）：identity: null 跳过
+  # codesign，不触发 notarize。R013 接入证书后移除此行。
   identity: null
   # 图标：暂无产品图标资源，使用 Electron 默认图标，不为此造资源；
-  # 设计资源就绪后在 mac.icon / win.icon / nsis.installerIcon 配置替换。
+  # 设计资源就绪后在 mac.icon 配置替换。
 
-win:
-  # NSIS 安装包，仅配置供 CI 构建（本机为 macOS，不出 Windows 包）。
-  target:
-    - nsis
-
-nsis:
-  # 允许用户选择安装目录（oneClick 关闭的安装向导）。
-  oneClick: false
-  allowToChangeInstallationDirectory: true
+# R009 收口（MAC-01，R009-closeout-R010-macos-only-plan.md §4.3 方案 B）：
+# win/nsis 配置已删除——Desktop 目标平台暂为 macOS 唯一，配置与产品事实
+# 保持一致；未来恢复 Windows 时经独立需求重新引入。
