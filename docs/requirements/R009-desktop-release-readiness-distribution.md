@@ -1,7 +1,7 @@
 # R009：Desktop 发布就绪与跨平台分发
 
 > 版本：0.1  
-> 状态：实现中（Stage 0–1 已完成；产品身份冻结为 e1 / E1 / com.e1.notes / 0.1.0；无签名证书，Stage 4 出未签名包并记录延期）  
+> 状态：实现中（Stage 0–2 已完成；产品身份冻结为 e1 / E1 / com.e1.notes / 0.1.0；无签名证书，Stage 4 出未签名包并记录延期）  
 > 更新时间：2026-08-30  
 > 前置需求：R006、R007、R008  
 > 基线提交：`5fd2f7359878162f12e4ef7a1cb003d6f32a4948`
@@ -921,6 +921,16 @@ rebuild
 ---
 
 # Stage 2：Packaging
+
+**状态：已完成（2026-08-30，macOS 本机实测）**
+
+实际实现与偏差记录：
+
+- 方案：electron-builder 26（不迁 Forge），配置落 `electron-builder.yml`（yml 而非 package.json build 字段——JSON 不支持注释，未签名/图标/asar 决策需随配置留痕）。
+- 配置：appId `com.e1.notes`、productName `E1`、files 仅 `dist/**`+`dist-electron/**`（production node_modules 自动收集，chokidar 已验证进 asar）、`asar: true` 全量不 unpack、`npmRebuild: false`（无 native 依赖——SQLite 走 node:sqlite 内置）、mac dmg+zip（`identity: null` 未签名不公证，Stage 4 接证书后移除）、win nsis（oneClick:false，仅配置供 CI）。图标用默认，注释留痕后续替换。
+- 脚本：`package:desktop`（build:desktop + `--dir` 快速校验）、`dist:mac`、`dist:win`；产物输出 `release/`（已 gitignore）。
+- 本机实测（macOS arm64）：`E1-0.1.0-arm64.dmg`（121MB）+ zip 一次通过；asar list 确认 main.mjs/preload.cjs/desktop.html/chokidar 在包内；隔离 userData 真启动 10s 存活零报错（main/窗口/renderer/chokidar 解析全正常）。
+- 偏差：`dist:win` 未本机实测（macOS 主机），CI 首跑可能需处理 nsis 下载缓存；package.json 缺 description/author 仅警告未补。
 
 ## 2.1 推荐方案
 
