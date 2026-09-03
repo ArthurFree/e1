@@ -55,9 +55,9 @@ export interface ParsedAssetReference {
 export interface UnsupportedMarkdownFeature {
   /**
    * 稳定类别标识，如 "raw-html" / "wiki-link" / "footnote" /
-   * "image-data-uri" / "mention" / "local-image" / "attachment" /
-   * "text-style" / "subscript" / "superscript" / "text-align" / "indent" /
-   * "table-cell-content" / "local-image-width"。
+   * "image-data-uri" / "mention" / "internal-link" / "local-image" /
+   * "attachment" / "text-style" / "subscript" / "superscript" / "text-align" /
+   * "indent" / "table-cell-content" / "local-image-width"。
    */
   kind: string;
   /** 原文片段或节点摘要（截断），供导入报告展示。 */
@@ -118,6 +118,13 @@ export interface MarkdownCodec {
     markdown: string;
     /** 笔记在 vault 内的相对路径（如 notes/工作/项目 A.md），用于解析相对链接。 */
     relativePath?: string;
+    /**
+     * 可选（R010 Stage 1）：vault 根相对路径 → 页面 id。提供且 relativePath
+     * 存在时，解析结果中「相对 .md 链接（无锚点、链接为唯一 mark）且目标
+     * 能解析到页面」的文本链接改写为 internalLink 节点（label 取链接文本）；
+     * 解析不到（broken/外部）保持普通 link mark，不丢信息。
+     */
+    resolveInternalLinkTarget?: (targetRelativePath: string) => string | null;
   }): Promise<ParsedNote>;
 
   serialize(input: {

@@ -4,13 +4,11 @@ export interface GeneratedNote {
   markdown: string;
 }
 
-export function generateNote(
-  i: number,
-  random: () => number,
-): GeneratedNote;
+export function generateNote(i: number, random: () => number): GeneratedNote;
 
 export function generateVault(
   targetDir: string,
   count: number,
   seed?: number,
+  options?: { links?: boolean },
 ): Promise<string[]>;

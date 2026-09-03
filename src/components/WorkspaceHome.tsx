@@ -26,6 +26,7 @@ import {
   IconStarFilled,
   PageIcon,
 } from "./ui/icons";
+import { BrokenLinksPanel } from "./BrokenLinksPanel";
 
 /** 知识库首页：头部信息、统计、主操作与完整目录概览（不拖拽）。 */
 export function WorkspaceHome() {
@@ -40,11 +41,15 @@ export function WorkspaceHome() {
   const [now] = useState(() => Date.now());
   // 「重新扫描知识库」进行中（R006-C3 FR-26，仅 Desktop 入口渲染）。
   const [rescanning, setRescanning] = useState(false);
+  // 「失效链接」面板开关（R010 Stage 6 §14，仅装配了 linkIndex 的运行时渲染）。
+  const [showBrokenLinks, setShowBrokenLinks] = useState(false);
   // FR-26/§36.4：具备本地目录能力且装配了知识库维护 port 的运行时才
   // 提供主动刷新；§34.1 明确不做文件监听，只支持用户主动刷新。
   const canRescan =
     services.capabilities.localDirectory &&
     services.vaultMaintenance !== undefined;
+  // R010 Stage 6（DUAL-01）：linkIndex 存在性即门控，Web 缺省 undefined。
+  const canShowBrokenLinks = services.linkIndex !== undefined;
 
   // 总字数统计需要正文快照，页面元数据里没有，只能额外取内容行
   useEffect(() => {
@@ -206,6 +211,15 @@ export function WorkspaceHome() {
               {rescanning ? "正在重新扫描…" : "重新扫描"}
             </button>
           )}
+          {canShowBrokenLinks && (
+            <button
+              type="button"
+              className="button"
+              onClick={() => setShowBrokenLinks(true)}
+            >
+              失效链接
+            </button>
+          )}
           <button
             type="button"
             className="button button--primary"
@@ -233,6 +247,12 @@ export function WorkspaceHome() {
           )}
         </section>
       </div>
+      {showBrokenLinks && (
+        <BrokenLinksPanel
+          vaultId={workspace.id}
+          onClose={() => setShowBrokenLinks(false)}
+        />
+      )}
     </div>
   );
 }

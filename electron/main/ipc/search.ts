@@ -22,7 +22,7 @@ import {
 } from "../../../shared/ipc/schemas.js";
 import { resolveVaultRoot, type VaultRootDeps } from "../vaultRoots.js";
 import { readNoteFile } from "../filesystem/NoteFileSystem.js";
-import type { DesktopSearchIndexManager } from "../search/DesktopSearchDatabase.js";
+import type { DesktopVaultIndexManager } from "../index/DesktopVaultIndexManager.js";
 import {
   iterateVaultSearchDocuments,
   searchDocumentFromMarkdown,
@@ -30,7 +30,7 @@ import {
 import { handleRequest, type IpcMainLike } from "./handler.js";
 
 export interface SearchHandlerDeps extends VaultRootDeps {
-  indexes: DesktopSearchIndexManager;
+  indexes: DesktopVaultIndexManager;
 }
 
 export function registerSearchHandlers(
@@ -50,7 +50,7 @@ export function registerSearchHandlers(
           return grouped;
         }
         await resolveVaultRoot(input.vaultId, deps);
-        return indexes.forVault(input.vaultId).search(input);
+        return indexes.searchFor(input.vaultId).search(input);
       },
     ),
   );
@@ -61,7 +61,7 @@ export function registerSearchHandlers(
       parseSearchVaultInput,
       async (input): Promise<SearchRebuildResult> => {
         const root = await resolveVaultRoot(input.vaultId, deps);
-        const db = indexes.forVault(input.vaultId);
+        const db = indexes.searchFor(input.vaultId);
         await db.rebuild(
           iterateVaultSearchDocuments({
             vaultId: input.vaultId,
@@ -88,7 +88,7 @@ export function registerSearchHandlers(
             vaultRoot: root.absolutePath,
             relativePath: input.relativePath,
           });
-          await indexes.forVault(input.vaultId).upsert(
+          await indexes.searchFor(input.vaultId).upsert(
             searchDocumentFromMarkdown({
               vaultId: input.vaultId,
               relativePath: input.relativePath,
@@ -110,7 +110,7 @@ export function registerSearchHandlers(
     IPC_CHANNELS.searchRemove,
     handleRequest(parseSearchRemoveInput, async (input): Promise<void> => {
       await resolveVaultRoot(input.vaultId, deps);
-      const db = indexes.forVault(input.vaultId);
+      const db = indexes.searchFor(input.vaultId);
       if (input.relativePath) {
         await db.removeByPath(input.vaultId, input.relativePath);
       } else if (input.noteKey) {
@@ -124,7 +124,7 @@ export function registerSearchHandlers(
     handleRequest(parseSearchRelocateInput, async (input): Promise<void> => {
       await resolveVaultRoot(input.vaultId, deps);
       await indexes
-        .forVault(input.vaultId)
+        .searchFor(input.vaultId)
         .relocateByPath(input.vaultId, input.from, input.to);
     }),
   );
@@ -135,7 +135,7 @@ export function registerSearchHandlers(
       parseSearchVaultInput,
       async (input): Promise<SearchIndexStatus> => {
         await resolveVaultRoot(input.vaultId, deps);
-        return indexes.forVault(input.vaultId).getStatus(input.vaultId);
+        return indexes.searchFor(input.vaultId).getStatus(input.vaultId);
       },
     ),
   );

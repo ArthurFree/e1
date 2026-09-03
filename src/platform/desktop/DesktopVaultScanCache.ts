@@ -30,6 +30,11 @@ export class DesktopVaultScanCache {
     string,
     Map<string, string>
   >();
+  /** Vault 隔离的 relativePath → 规范页面 id（R010 Stage 1 链接反解析）。 */
+  private readonly pageIdsByRelativePathByVault = new Map<
+    string,
+    Map<string, string>
+  >();
   private readonly assetsDirectoryByVault = new Map<string, string | null>();
   readonly aliases: DesktopIdentityAliasRegistry;
 
@@ -46,9 +51,13 @@ export class DesktopVaultScanCache {
     if (!pending) {
       pending = this.api.vault.scan(vaultId).then((result) => {
         const nextIndex = new Map<string, string>();
+        const nextPathIndex = new Map<string, string>();
         for (const entry of result.entries) {
           if (entry.kind !== "document") continue;
           nextIndex.set(pageIdOfEntry(entry), entry.relativePath);
+          // 反向索引（R010 Stage 1）：relativePath → 规范页面 id
+          //（Frontmatter noteId 优先），internalLink 解析用。
+          nextPathIndex.set(entry.relativePath, pageIdOfEntry(entry));
           const sessionId = resolveSessionPageId(vaultId, entry, this.aliases);
           nextIndex.set(sessionId, entry.relativePath);
           const alias =
@@ -62,6 +71,7 @@ export class DesktopVaultScanCache {
           }
         }
         this.pageRelativePathsByVault.set(vaultId, nextIndex);
+        this.pageIdsByRelativePathByVault.set(vaultId, nextPathIndex);
         this.assetsDirectoryByVault.set(
           vaultId,
           result.vault.assetsDirectory ?? null,
@@ -72,6 +82,7 @@ export class DesktopVaultScanCache {
       pending.catch(() => {
         this.snapshots.delete(vaultId);
         this.pageRelativePathsByVault.delete(vaultId);
+        this.pageIdsByRelativePathByVault.delete(vaultId);
         this.assetsDirectoryByVault.delete(vaultId);
       });
     }
@@ -82,6 +93,7 @@ export class DesktopVaultScanCache {
   invalidate(vaultId: string): void {
     this.snapshots.delete(vaultId);
     this.pageRelativePathsByVault.delete(vaultId);
+    this.pageIdsByRelativePathByVault.delete(vaultId);
     this.assetsDirectoryByVault.delete(vaultId);
   }
 
@@ -89,6 +101,7 @@ export class DesktopVaultScanCache {
   invalidateAll(): void {
     this.snapshots.clear();
     this.pageRelativePathsByVault.clear();
+    this.pageIdsByRelativePathByVault.clear();
     this.assetsDirectoryByVault.clear();
   }
 
@@ -158,6 +171,20 @@ export class DesktopVaultScanCache {
   /** 同步取页面相对路径（mention 解析；未扫描到返回 null）。Vault 隔离。 */
   getRelativePathSync(vaultId: string, pageId: string): string | null {
     return this.pageRelativePathsByVault.get(vaultId)?.get(pageId) ?? null;
+  }
+
+  /**
+   * 同步按 vault 根相对路径反查规范页面 id（R010 Stage 1：internalLink
+   * 解析——codec parse 的 resolveInternalLinkTarget 实现方）。
+   * 返回 Frontmatter noteId（缺失时 path: 派生 id）；未扫描到返回 null。
+   */
+  getPageIdByRelativePathSync(
+    vaultId: string,
+    relativePath: string,
+  ): string | null {
+    return (
+      this.pageIdsByRelativePathByVault.get(vaultId)?.get(relativePath) ?? null
+    );
   }
 
   getAssetsDirectorySync(vaultId: string): string | null {

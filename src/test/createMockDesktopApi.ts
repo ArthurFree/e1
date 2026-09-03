@@ -31,6 +31,7 @@ export type MockDesktopApiOverrides = {
   note?: Partial<E1DesktopAPI["note"]>;
   secret?: Partial<E1DesktopAPI["secret"]>;
   search?: Partial<E1DesktopAPI["search"]>;
+  links?: Partial<E1DesktopAPI["links"]>;
   asset?: Partial<E1DesktopAPI["asset"]>;
   events?: Partial<E1DesktopAPI["events"]>;
   update?: Partial<E1DesktopAPI["update"]>;
@@ -164,6 +165,20 @@ export function createMockDesktopApi(
     })),
   };
 
+  /** R010 Stage 3：派生链接索引组（默认空结果/missing 状态）。 */
+  const links: E1DesktopAPI["links"] = {
+    outgoing: vi.fn(async () => []),
+    backlinks: vi.fn(async () => []),
+    broken: vi.fn(async () => []),
+    rebuild: vi.fn(async () => ({ indexedDocuments: 0 })),
+    upsert: vi.fn(async () => ({ indexed: true })),
+    remove: vi.fn(async () => {}),
+    relocate: vi.fn(async () => {}),
+    status: vi.fn(async (): Promise<SearchIndexStatus> => ({
+      state: "missing",
+    })),
+  };
+
   const asset: E1DesktopAPI["asset"] = {
     pick: vi.fn(async () => null),
     import: vi.fn(async (input) => ({
@@ -211,6 +226,7 @@ export function createMockDesktopApi(
     note: mergeGroup(note, overrides.note),
     secret: mergeGroup(secret, overrides.secret),
     search: mergeGroup(search, overrides.search),
+    links: mergeGroup(links, overrides.links),
     asset: mergeGroup(asset, overrides.asset),
     events: mergeGroup(events, overrides.events),
     update: mergeGroup(update, overrides.update),

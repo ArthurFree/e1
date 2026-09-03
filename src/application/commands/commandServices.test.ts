@@ -33,6 +33,7 @@ import { PageCommandService } from "./PageCommandService";
 import { TagCommandService } from "./TagCommandService";
 import { DocumentCommandService } from "./DocumentCommandService";
 import { WorkspaceQueryService } from "../queries/WorkspaceQueryService";
+import { DocumentQueryService } from "../queries/DocumentQueryService";
 
 const VALID_DOC = {
   type: "doc",
@@ -104,7 +105,14 @@ async function makeBrowserContext(): Promise<CommandTestContext> {
         syncChannel,
       }),
       tag: new TagCommandService({ tag: idbTag }),
-      document: new DocumentCommandService({ documentCommit, syncChannel }),
+      document: new DocumentCommandService({
+        documentCommit,
+        documentQueries: new DocumentQueryService({
+          content: idbContent,
+          revisions: idbRevision,
+        }),
+        syncChannel,
+      }),
     },
     queries: {
       workspace: new WorkspaceQueryService({

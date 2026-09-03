@@ -5,7 +5,7 @@
 > 更新时间：2026-08-30  
 > 适用平台：macOS（当前唯一 Desktop 目标平台）  
 > 基线提交：`0b439a7192d7473aff3e775eb15a1e0ecb0beccc`  
-> 前置需求：R006、R007、R008、R009  
+> 前置需求：R006、R007、R008、R009
 
 ---
 
@@ -401,6 +401,8 @@ R009 = 已完成
 Internal Links, Backlinks & Link Integrity
 ```
 
+**2026-08-31 更新**：R010 已抽出为独立需求文档 [`R010-internal-links-backlinks-link-integrity.md`](./R010-internal-links-backlinks-link-integrity.md)，后续进度与偏差以该文档为准；本节（§11–§28）保留为规划原始记录，不再更新。
+
 ---
 
 # 11. 为什么现在优先做 R010
@@ -623,11 +625,7 @@ interface DocumentLink {
   href: string;
   label: string;
 
-  kind:
-    | "internal"
-    | "external"
-    | "asset"
-    | "anchor";
+  kind: "internal" | "external" | "asset" | "anchor";
 
   targetPageId: string | null;
   targetRelativePath: string | null;
@@ -659,30 +657,17 @@ interface Backlink {
 
 ```ts
 interface LinkIndexPort {
-  prepareWorkspace(
-    workspaceId: string,
-  ): Promise<void>;
+  prepareWorkspace(workspaceId: string): Promise<void>;
 
-  replaceOutgoing(
-    pageId: string,
-    links: DocumentLink[],
-  ): Promise<void>;
+  replaceOutgoing(pageId: string, links: DocumentLink[]): Promise<void>;
 
-  getOutgoing(
-    pageId: string,
-  ): Promise<DocumentLink[]>;
+  getOutgoing(pageId: string): Promise<DocumentLink[]>;
 
-  getBacklinks(
-    pageId: string,
-  ): Promise<Backlink[]>;
+  getBacklinks(pageId: string): Promise<Backlink[]>;
 
-  getBrokenLinks(
-    workspaceId: string,
-  ): Promise<DocumentLink[]>;
+  getBrokenLinks(workspaceId: string): Promise<DocumentLink[]>;
 
-  rebuild(
-    workspaceId: string,
-  ): Promise<void>;
+  rebuild(workspaceId: string): Promise<void>;
 }
 ```
 

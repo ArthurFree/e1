@@ -98,6 +98,12 @@ export function createBrowserAppServices(): AppServices {
     secrets: secretStore,
   });
   // 命令/查询服务（R005 批次 1）：业务编排入口，注入既有仓储与服务实例。
+  // R010 Stage 6：documentQueries 先行构造——commands.document 的
+  // relocateBrokenLink 复用同一实例读取源文档（openDocument 打开语义）。
+  const documentQueries = new DocumentQueryService({
+    content: contentRepository,
+    revisions: revisionRepository,
+  });
   const commands = {
     workspace: new WorkspaceCommandService({
       workspace: workspaceRepository,
@@ -109,7 +115,11 @@ export function createBrowserAppServices(): AppServices {
       syncChannel,
     }),
     tag: new TagCommandService({ tag: tagRepository }),
-    document: new DocumentCommandService({ documentCommit, syncChannel }),
+    document: new DocumentCommandService({
+      documentCommit,
+      documentQueries,
+      syncChannel,
+    }),
   };
   const queries = {
     workspace: new WorkspaceQueryService({
@@ -119,10 +129,7 @@ export function createBrowserAppServices(): AppServices {
       session,
       searchIndex,
     }),
-    document: new DocumentQueryService({
-      content: contentRepository,
-      revisions: revisionRepository,
-    }),
+    document: documentQueries,
     search: new SearchQueryService({
       searchIndex,
       content: contentRepository,

@@ -11,7 +11,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { IPC_CHANNELS, type IpcResult } from "../../../shared/ipc/contracts.js";
 import { VaultRegistry } from "../vaultRegistry.js";
 import { TransientVaultStore } from "../transientVaults.js";
-import { DesktopSearchIndexManager } from "../search/DesktopSearchDatabase.js";
+import { DesktopVaultIndexManager } from "../index/DesktopVaultIndexManager.js";
 import type { IpcMainLike } from "./handler.js";
 import { registerSearchHandlers } from "./search.js";
 
@@ -77,7 +77,7 @@ beforeEach(async () => {
   registerSearchHandlers(bus, {
     registry,
     transients,
-    indexes: new DesktopSearchIndexManager(join(root, "search-index")),
+    indexes: new DesktopVaultIndexManager(join(root, "search-index")),
   });
 });
 

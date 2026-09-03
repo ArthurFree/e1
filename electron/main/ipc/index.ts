@@ -19,6 +19,8 @@
  * R008 Stage 1：secret 持久化迁移 electron/main/secrets/（SecretFilePersistence
  * + SecretBackendStatus——secure-persistent 才落盘，basic_text 等不安全
  * 后端只 session-only）。
+ * R010 Stage 3：search/link 两组共用 DesktopVaultIndexManager（per-vault
+ * 单连接共库，§17 实施决策），新增 link 组 handler。
  * R009 Stage 0.2（§3.3）：reveal 组支持注入 shell（E1_REVEAL_STUB=1 的
  * 桌面 E2E 用记录型 stub，见 main.ts）。
  * R009 Stage 6（Auto Update）：update 组——DesktopUpdateService 封装
@@ -26,7 +28,14 @@
  * 注入（electron-updater 为 CJS 懒加载 getter，main.ts 是唯一入口），
  * 状态变化经 broadcastUpdateStatus 推送 events:updateStatus。
  */
-import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  safeStorage,
+  shell,
+} from "electron";
 import { join } from "node:path";
 import {
   IPC_CHANNELS,
@@ -42,11 +51,12 @@ import { registerVaultStateHandlers } from "./vaultState.js";
 import { registerSecretHandlers } from "./secrets.js";
 import { registerRevealHandlers, type ShellLike } from "./reveal.js";
 import { registerSearchHandlers } from "./search.js";
+import { registerLinkHandlers } from "./links.js";
 import { VaultRegistry } from "../vaultRegistry.js";
 import { DesktopVaultStateStore } from "../state/DesktopVaultStateStore.js";
 import { SecretFilePersistence } from "../secrets/SecretFilePersistence.js";
 import { evaluateSecretBackendStatus } from "../secrets/SecretBackendStatus.js";
-import { DesktopSearchIndexManager } from "../search/DesktopSearchDatabase.js";
+import { DesktopVaultIndexManager } from "../index/DesktopVaultIndexManager.js";
 import { SelectionTokenStore } from "../SelectionTokenStore.js";
 import { TransientVaultStore } from "../transientVaults.js";
 import {
@@ -76,8 +86,11 @@ export interface RegisterIpcHandlersDeps {
   secretStore?: SecretFilePersistence;
   /** R008 Stage 1：后端状态评估（缺省 evaluateSecretBackendStatus(safeStorage)）。 */
   secretStatus?: () => SecretStorageStatus;
-  /** R008 Stage 4：全文搜索索引库集合（缺省 userData/search-index/）。 */
-  searchIndexes?: DesktopSearchIndexManager;
+  /**
+   * R008 Stage 4 + R010 Stage 3：per-vault 索引库集合（Search + Link
+   * 共库单连接；缺省 userData/search-index/）。
+   */
+  indexes?: DesktopVaultIndexManager;
   /** R006-C2.1：可注入以控制时钟/隔离状态（测试用）。 */
   selectionTokens?: SelectionTokenStore;
   transients?: TransientVaultStore;
@@ -142,11 +155,9 @@ export function registerIpcHandlers(
       safeStorage,
       () => secretStatus().mode,
     );
-  const searchIndexes =
-    deps.searchIndexes ??
-    new DesktopSearchIndexManager(
-      join(app.getPath("userData"), "search-index"),
-    );
+  const indexes =
+    deps.indexes ??
+    new DesktopVaultIndexManager(join(app.getPath("userData"), "search-index"));
   const transients = deps.transients ?? new TransientVaultStore();
   const openDialog = deps.openDialog ?? dialog;
   const selfWrites = deps.selfWrites ?? new SelfWriteRegistry();
@@ -172,7 +183,8 @@ export function registerIpcHandlers(
   });
   registerSecretHandlers(bus, { store: secretStore, status: secretStatus });
   registerRevealHandlers(bus, { registry, transients, shell: deps.shell });
-  registerSearchHandlers(bus, { registry, transients, indexes: searchIndexes });
+  registerSearchHandlers(bus, { registry, transients, indexes });
+  registerLinkHandlers(bus, { registry, transients, indexes });
   registerAssetHandlers(bus, {
     openDialog: openDialog as FileDialogLike,
     registry,

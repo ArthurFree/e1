@@ -71,6 +71,12 @@ interface DocumentEditorProps {
    * 块把手、AI 面板），只允许选择/复制/滚动/目录跳转等阅读操作。
    */
   access?: DocumentAccess;
+  /**
+   * internalLink 点击导航回调（R010 Stage 1）：经 editor.storage 注入
+   * （assetServices 先例），节点点击插件命中时以目标 pageId 回调；
+   * 缺省时点击不拦截、保持默认选区行为。
+   */
+  onOpenPage?(pageId: string): void;
 }
 
 /**
@@ -88,6 +94,7 @@ export function DocumentEditor({
   restoreRequestId,
   onControllerReady,
   access = "editable",
+  onOpenPage,
 }: DocumentEditorProps) {
   const { pages } = useWorkspaceData();
   const services = useAppServices();
@@ -222,6 +229,13 @@ export function DocumentEditor({
     mentionPagesRef.current = pages.filter((p) => p.kind === "document");
   }, [pages]);
 
+  // internalLink 点击导航（R010 Stage 1）：回调经 ref 供节点点击插件读取
+  // 最新值，编辑器实例不随回调身份变化重建。
+  const onOpenPageRef = useRef(onOpenPage);
+  useEffect(() => {
+    onOpenPageRef.current = onOpenPage;
+  }, [onOpenPage]);
+
   const editor = useEditor(
     {
       extensions: buildEditorExtensions({
@@ -240,6 +254,11 @@ export function DocumentEditor({
         const storage = e.storage as unknown as Record<string, unknown>;
         storage.attachmentPageId = pageId;
         storage.assetServices = services.assets;
+        // R010 Stage 1：internalLink 点击导航回调（同样需在首屏节点装配前就绪）。
+        storage.internalLinkServices = {
+          onOpenPage: (targetPageId: string) =>
+            onOpenPageRef.current?.(targetPageId),
+        };
       },
       onUpdate: ({ editor: e }) => {
         // 只读或无持久化能力（FR-22）：不触发任何保存链路。

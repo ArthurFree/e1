@@ -8,7 +8,8 @@
 //
 // 1k / 10k / 50k 均按需生成（产物目录不提交，见 .gitignore）；
 // 供 perf 基准（src/**/*perf-wallclock.test.ts）与 Stage 4/6 批量索引
-// 验收共用。
+// 验收共用。可选第 4 参 { links: true } 追加确定性内部链接语料
+//（R010 Stage 7 链接索引基准；缺省不开启，既有语料逐字节不变）。
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -123,12 +124,70 @@ export function generateNote(i, random) {
   return { relativePath, markdown };
 }
 
+/** POSIX 相对路径：从 from 所在目录到 to（链接 href 的归一形态）。 */
+function relativeHref(fromPath, toPath) {
+  const fromParts = fromPath.split("/").slice(0, -1);
+  const toParts = toPath.split("/");
+  let common = 0;
+  while (
+    common < fromParts.length &&
+    common < toParts.length &&
+    fromParts[common] === toParts[common]
+  ) {
+    common += 1;
+  }
+  const ups = fromParts.length - common;
+  return [...new Array(ups).fill(".."), ...toParts.slice(common)].join("/");
+}
+
+/**
+ * R010 Stage 7（§15）：可选链接语料——为链接索引基准在笔记间追加
+ * 确定性内部链接（相对 href，含中文路径与目录嵌套；裸空格目的地不是
+ * 合法链接，含空格路径用尖括号形态）。约一半笔记各挂 1–3 条出站链接，
+ * 其中约 1/5 指向不存在的目标（broken 查询语料）。
+ */
+function addLinks(notes, random) {
+  for (let i = 0; i < notes.length; i += 1) {
+    if (i % 2 !== 0) continue;
+    const note = notes[i];
+    const linkCount = 1 + Math.floor(random() * 3);
+    for (let l = 0; l < linkCount; l += 1) {
+      const broken = random() < 0.2;
+      let href;
+      let label;
+      if (broken) {
+        label = `缺失笔记 ${i}-${l}`;
+        href = relativeHref(
+          note.relativePath,
+          `不存在/层/${label.replace(/\s/g, "-")}.md`,
+        );
+      } else {
+        let target = Math.floor(random() * notes.length);
+        if (target === i) target = (target + 1) % notes.length;
+        const targetPath = notes[target].relativePath;
+        label = targetPath.split("/").pop().replace(/\.md$/i, "");
+        href = relativeHref(note.relativePath, targetPath);
+      }
+      note.markdown += `\n关联：[${label}](<${href}>)\n`;
+    }
+  }
+}
+
 /** 生成 count 篇笔记到目标目录（返回相对路径列表）。 */
-export async function generateVault(targetDir, count, seed = 20260822) {
+export async function generateVault(
+  targetDir,
+  count,
+  seed = 20260822,
+  options,
+) {
   const random = rng(seed);
-  const paths = [];
+  const notes = [];
   for (let i = 0; i < count; i += 1) {
-    const { relativePath, markdown } = generateNote(i, random);
+    notes.push(generateNote(i, random));
+  }
+  if (options?.links) addLinks(notes, random);
+  const paths = [];
+  for (const { relativePath, markdown } of notes) {
     const abs = join(targetDir, ...relativePath.split("/"));
     await mkdir(join(abs, ".."), { recursive: true });
     await writeFile(abs, markdown, "utf8");

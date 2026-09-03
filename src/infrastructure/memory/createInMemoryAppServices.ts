@@ -125,6 +125,12 @@ export function createInMemoryAppServices(
     preferences: preferencesService,
     secrets: secretStore,
   });
+  // R010 Stage 6：documentQueries 先行构造——commands.document 的
+  // relocateBrokenLink 复用同一实例读取源文档（openDocument 打开语义）。
+  const documentQueries = new DocumentQueryService({
+    content: repos.content,
+    revisions: repos.revision,
+  });
   const services: InMemoryAppServices = {
     // 底层仓储与服务实例：仅作测试过渡通道（见 InMemoryAppServices 注释），
     // AppServices 公开面不再包含这些字段（R005 批次 2）。
@@ -165,7 +171,11 @@ export function createInMemoryAppServices(
         syncChannel,
       }),
       tag: new TagCommandService({ tag: repos.tag }),
-      document: new DocumentCommandService({ documentCommit, syncChannel }),
+      document: new DocumentCommandService({
+        documentCommit,
+        documentQueries,
+        syncChannel,
+      }),
     },
     queries: {
       workspace: new WorkspaceQueryService({
@@ -175,10 +185,7 @@ export function createInMemoryAppServices(
         session,
         searchIndex,
       }),
-      document: new DocumentQueryService({
-        content: repos.content,
-        revisions: repos.revision,
-      }),
+      document: documentQueries,
       search: new SearchQueryService({ searchIndex, content: repos.content }),
     },
     createAIProvider:

@@ -37,6 +37,7 @@ import type { ExternalVaultChangeService } from "./services/ExternalVaultChangeS
 import type { RevealService } from "./services/RevealService";
 import type { SecretStorageStatus } from "./services/SecretStorageStatus";
 import type { FullTextSearchIndex } from "./search/FullTextSearchIndex";
+import type { LinkIndex } from "./links/LinkIndex";
 import type { UpdateService } from "./services/UpdateService";
 import type { RuntimeCapabilities } from "../runtime/RuntimeCapabilities";
 import type { RuntimeOperations } from "../runtime/RuntimeOperations";
@@ -193,6 +194,13 @@ export interface AppServices {
    * SearchQueryService 优先消费（ready 时），未装配/未 ready 回退既有路径。
    */
   fullTextSearch?: FullTextSearchIndex;
+  /**
+   * 派生链接索引（可选，R010 Stage 3，LINK-03）：Desktop 装配——Main
+   * SQLite 链接索引（与搜索共库单连接）的 IPC-backed port；
+   * Web/内存容器不装配（缺省即门控：UI/服务以 services.linkIndex
+   * 存在性判断，DUAL-01）。Stage 4 起由 reconciler 做增量维护。
+   */
+  linkIndex?: LinkIndex;
   /**
    * 应用更新服务（可选，R009 Stage 6 Auto Update）：由具备自更新能力的
    * 运行时装配（Desktop，electron-updater + GitHub Releases feed）；

@@ -25,6 +25,8 @@
  * R009 Stage 6（Auto Update）：update.* 组与 events:updateStatus——
  * electron-updater（GitHub Releases feed）的检查/下载/安装与状态推送；
  * macOS 未签名期间 canAutoInstall=false 降级为手动下载（R013 签名后翻 true）。
+ * R010 Stage 3：link.* 组——派生链接索引（与搜索共库单连接，LINK-03）
+ * 的 outgoing/backlinks/broken/rebuild/upsert/remove/relocate/status。
  *
  * shared/ 为 Renderer（src/platform/desktop）与 Electron Main/Preload 共用
  * 的唯一契约来源：channel 常量、请求/响应类型、E1DesktopAPI 形状。
@@ -40,6 +42,7 @@
  * 做乐观锁，出参返回写入后的新令牌；不一致即 DOCUMENT_CONFLICT。
  */
 import type { IpcErrorPayload } from "../errors.js";
+import type { Backlink, DocumentLink } from "../links/types.js";
 
 /** IPC channel 常量：Main 注册与 Preload 调用共用，禁止散落字符串。 */
 export const IPC_CHANNELS = {
@@ -77,6 +80,14 @@ export const IPC_CHANNELS = {
   searchRemove: "search:remove",
   searchRelocate: "search:relocate",
   searchStatus: "search:status",
+  linkOutgoing: "link:outgoing",
+  linkBacklinks: "link:backlinks",
+  linkBroken: "link:broken",
+  linkRebuild: "link:rebuild",
+  linkUpsert: "link:upsert",
+  linkRemove: "link:remove",
+  linkRelocate: "link:relocate",
+  linkStatus: "link:status",
   updateGetState: "update:getState",
   updateCheck: "update:check",
   updateDownload: "update:download",
@@ -611,6 +622,57 @@ export interface SearchStatusInput {
   vaultId: string;
 }
 
+/* ---------------------------------- link ---------------------------------- */
+
+/**
+ * R010 Stage 3（§6/§11）：派生链接索引 wire 形态——DocumentLink/Backlink
+ * 直接复用 shared/links/types（环境中立）；noteKey 为 Main 侧稳定键
+ *（stableNoteId ?? path:<relativePath>，与搜索 note_key 同一规则）。
+ */
+export type { Backlink, DocumentLink } from "../links/types.js";
+
+/** link.outgoing / link.backlinks 请求：按稳定键查询单篇文档。 */
+export interface LinkQueryInput {
+  vaultId: string;
+  noteKey: string;
+}
+
+/** link.broken / link.rebuild / link.status 请求：payload 即 { vaultId }。 */
+export interface LinkVaultInput {
+  vaultId: string;
+}
+
+export interface LinkRebuildResult {
+  indexedDocuments: number;
+}
+
+/** link.upsert 请求：指定笔记已变化，Main 读盘提取后 upsert（DSK-02）。 */
+export interface LinkUpsertInput {
+  vaultId: string;
+  relativePath: string;
+}
+
+export interface LinkUpsertResult {
+  /** false：文件已不存在（调用方按 deleted 处理）。 */
+  indexed: boolean;
+}
+
+/** link.remove 请求：按路径或稳定键删除（二选一；幂等）。 */
+export interface LinkRemoveInput {
+  vaultId: string;
+  relativePath?: string;
+  noteKey?: string;
+}
+
+/** link.relocate 请求：移动/重命名——保持身份，只改路径并重锚定。 */
+export interface LinkRelocateInput {
+  vaultId: string;
+  /** 已知稳定键时直给（优先于 fromRelativePath 定位）。 */
+  noteKey?: string;
+  fromRelativePath: string;
+  toRelativePath: string;
+}
+
 /* ---------------------------------- asset ---------------------------------- */
 
 export interface AssetPickRequest {
@@ -864,6 +926,28 @@ export interface E1DesktopAPI {
     /** 移动/重命名：保持身份只改路径。 */
     relocate(input: SearchRelocateInput): Promise<void>;
     status(input: SearchStatusInput): Promise<SearchIndexStatus>;
+  };
+  /**
+   * R010 Stage 3（LINK-03）：派生链接索引——与搜索共库的 SQLite 链接
+   * 索引的查询/重建/增量维护。noteKey 为 Main 稳定键；只读派生能力，
+   * transient 仅预览会话同样允许。
+   */
+  links: {
+    /** 单篇文档的出站链接（文档顺序）。 */
+    outgoing(input: LinkQueryInput): Promise<DocumentLink[]>;
+    /** 谁引用了目标页面（稳定排序）。 */
+    backlinks(input: LinkQueryInput): Promise<Backlink[]>;
+    /** 当前快照中全部 broken 链接。 */
+    broken(input: LinkVaultInput): Promise<DocumentLink[]>;
+    /** 全量重扫 Vault 重建链接索引（幂等；期间 status=building）。 */
+    rebuild(input: LinkVaultInput): Promise<LinkRebuildResult>;
+    /** 指定笔记已变化：Main 读盘提取 upsert；文件已消失返回 indexed=false。 */
+    upsert(input: LinkUpsertInput): Promise<LinkUpsertResult>;
+    /** 按路径或稳定键删除（幂等）。 */
+    remove(input: LinkRemoveInput): Promise<void>;
+    /** 移动/重命名：保持身份只改路径并重锚定出站链接。 */
+    relocate(input: LinkRelocateInput): Promise<void>;
+    status(input: LinkVaultInput): Promise<SearchIndexStatus>;
   };
   asset: {
     /** 原生文件选择；取消返回 null。不得返回绝对路径。 */

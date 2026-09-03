@@ -28,6 +28,7 @@ import {
 import { Button } from "../ui/Button";
 import { DocumentEditor } from "../editor/DocumentEditor";
 import { ContentErrorBlock } from "./ContentErrorBlock";
+import { DocumentLinksPanel } from "./DocumentLinksPanel";
 import { EditorShell } from "./EditorShell";
 import { exportMarkdownFile } from "./exportMarkdown";
 import { useDocumentSession } from "./hooks/useDocumentSession";
@@ -39,7 +40,7 @@ export function DocumentScreen() {
   const { pages } = useWorkspaceData();
   const { markOpened, refreshCurrentWorkspace } = useWorkspaceCommands();
   const { selectedPageId } = useNavigationState();
-  const { showWorkspaceHome } = useNavigationCommands();
+  const { showWorkspaceHome, openDocument } = useNavigationCommands();
   const foundPage = pages.find((p) => p.id === selectedPageId) ?? null;
 
   // R007 阶段 3 §3.4：当前文档被外部删除后，Workspace 刷新会把该页从
@@ -203,20 +204,31 @@ export function DocumentScreen() {
       );
     } else if (content) {
       body = (
-        <DocumentEditor
-          // contentEpoch 变化（应用恢复）时强制重建编辑器以加载恢复内容。
-          key={`${page.id}:${contentEpoch}`}
-          pageId={page.id}
-          initialContent={content.contentJson}
-          initialVersion={content.version}
-          onEditorReady={onEditorReady}
-          onSaveStateChange={conflict.onSaveStateChange}
-          onRegisterRetry={conflict.onRegisterRetry}
-          onRegisterConflictActions={conflict.onRegisterConflictActions}
-          restoreRequestId={contentEpoch}
-          onControllerReady={setEditorController}
-          access={compatibility.access}
-        />
+        <>
+          <DocumentEditor
+            // contentEpoch 变化（应用恢复）时强制重建编辑器以加载恢复内容。
+            key={`${page.id}:${contentEpoch}`}
+            pageId={page.id}
+            initialContent={content.contentJson}
+            initialVersion={content.version}
+            onEditorReady={onEditorReady}
+            onSaveStateChange={conflict.onSaveStateChange}
+            onRegisterRetry={conflict.onRegisterRetry}
+            onRegisterConflictActions={conflict.onRegisterConflictActions}
+            restoreRequestId={contentEpoch}
+            onControllerReady={setEditorController}
+            access={compatibility.access}
+            // R010 Stage 1：internalLink 点击打开目标页（跨知识库自动切换）。
+            onOpenPage={(targetPageId) => void openDocument(targetPageId)}
+          />
+          {/* R010 Stage 5（§13）：正文下方的反向/出站链接面板——仅 Desktop
+              装配 linkIndex 时渲染；保存成功（savedAt 变化）触发刷新。 */}
+          <DocumentLinksPanel
+            pageId={page.id}
+            vaultId={page.workspaceId}
+            savedAt={conflict.saveState.savedAt}
+          />
+        </>
       );
     } else {
       body = <p className="doc-placeholder">正在加载文档…</p>;

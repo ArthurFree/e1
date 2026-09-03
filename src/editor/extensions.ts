@@ -24,6 +24,7 @@ import type { Page } from "../domain/types";
 import { Attachment } from "./attachment";
 import { CodeBlockWithLanguage } from "./codeBlock";
 import { Indent } from "./indent";
+import { InternalLink } from "./internalLink";
 import { LocalImage } from "./localImage";
 import { createMentionSuggestion } from "./mentionSuggestion";
 import { createSlashSuggestion } from "./slashSuggestion";
@@ -71,6 +72,9 @@ export function buildDocumentExtensions(): AnyExtension[] {
     Indent,
     Attachment,
     LocalImage,
+    // R010 Stage 1：内部页面链接。注册在文档 schema（markdown.ts 转换器
+    // 同样经 buildDocumentExtensions 获得），保证编辑/导入/导出 schema 一致。
+    InternalLink,
   ];
 }
 
@@ -85,6 +89,8 @@ export function buildEditorExtensions(
   return [
     ...buildDocumentExtensions(),
     Placeholder.configure({ placeholder: "输入正文，键入 / 打开命令菜单" }),
+    // Mention 扩展保留注册：渲染存量 mention 节点（历史文档）；其 @ 建议
+    // 弹层自 R010 Stage 1 起插入 internalLink 节点，不再产生新 mention。
     Mention.configure({
       HTMLAttributes: { class: "mention" },
       suggestion: createMentionSuggestion(

@@ -14,18 +14,19 @@
 
 ## 需求清单
 
-| 编号 | 需求                                                                           | 当前版本 | 状态   | 最后更新   |
-| ---- | ------------------------------------------------------------------------------ | -------- | ------ | ---------- |
-| R001 | [语雀式知识库结构与编辑区增强](./R001-yuque-knowledgebase-editor-alignment.md) | 1.1      | 待验收 | 2026-07-22 |
-| R002 | [语雀式 UI 设计系统与核心页面视觉重构](./R002-yuque-ui-design-system.md)       | 1.0      | 待验收 | 2026-07-22 |
-| R003 | [架构整改实施规划](./R003.md)                                                  | —        | 已完成 | 2026-07-28 |
-| R004 | [架构与数据一致性整改方案](./r004.md)                                          | —        | 已完成 | 2026-07-28 |
-| R005 | [Web 优先与 Electron 双端准备方案](./r005.md)（[执行版](./r005-web-first-dual-runtime.md)） | — | 已完成 | 2026-08-08 |
-| R006 | [Electron Desktop 本地 Vault 技术验证版](./r006.md)                            | —        | 已完成 | 2026-08-29 |
-| R007 | [Desktop Local Vault 产品化基础闭环](./R007-desktop-local-vault-productization.md) | 0.1  | 已完成 | 2026-08-29 |
-| R008 | [Desktop 产品化收尾与搜索规模化](./R008-desktop-productization-search-scale.md) | 0.2  | 已完成 | 2026-08-29 |
-| R009 | [Desktop 发布就绪与跨平台分发](./R009-desktop-release-readiness-distribution.md) | 0.3  | 已完成 | 2026-08-30 |
-| R009 收口 / R010 | [R009 收口与 R010 规划：macOS 单平台路线](./R009-closeout-R010-macos-only-plan.md) | 0.1  | 已采纳 | 2026-08-30 |
+| 编号             | 需求                                                                                        | 当前版本 | 状态   | 最后更新   |
+| ---------------- | ------------------------------------------------------------------------------------------- | -------- | ------ | ---------- |
+| R001             | [语雀式知识库结构与编辑区增强](./R001-yuque-knowledgebase-editor-alignment.md)              | 1.1      | 待验收 | 2026-07-22 |
+| R002             | [语雀式 UI 设计系统与核心页面视觉重构](./R002-yuque-ui-design-system.md)                    | 1.0      | 待验收 | 2026-07-22 |
+| R003             | [架构整改实施规划](./R003.md)                                                               | —        | 已完成 | 2026-07-28 |
+| R004             | [架构与数据一致性整改方案](./r004.md)                                                       | —        | 已完成 | 2026-07-28 |
+| R005             | [Web 优先与 Electron 双端准备方案](./r005.md)（[执行版](./r005-web-first-dual-runtime.md)） | —        | 已完成 | 2026-08-08 |
+| R006             | [Electron Desktop 本地 Vault 技术验证版](./r006.md)                                         | —        | 已完成 | 2026-08-29 |
+| R007             | [Desktop Local Vault 产品化基础闭环](./R007-desktop-local-vault-productization.md)          | 0.1      | 已完成 | 2026-08-29 |
+| R008             | [Desktop 产品化收尾与搜索规模化](./R008-desktop-productization-search-scale.md)             | 0.2      | 已完成 | 2026-08-29 |
+| R009             | [Desktop 发布就绪与跨平台分发](./R009-desktop-release-readiness-distribution.md)            | 0.3      | 已完成 | 2026-08-30 |
+| R009 收口 / R010 | [R009 收口与 R010 规划：macOS 单平台路线](./R009-closeout-R010-macos-only-plan.md)          | 0.1      | 已采纳 | 2026-08-30 |
+| R010             | [内部链接、反向链接与链接完整性](./R010-internal-links-backlinks-link-integrity.md)         | 1.0      | 已完成 | 2026-08-31 |
 
 ## 单份需求的完成定义
 

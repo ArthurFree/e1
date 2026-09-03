@@ -87,6 +87,17 @@ describe("preload 暴露形状", () => {
       "status",
       "upsert",
     ]);
+    // R010 Stage 3：派生链接索引组（与搜索共库单连接）。
+    expect(Object.keys(api.links).sort()).toEqual([
+      "backlinks",
+      "broken",
+      "outgoing",
+      "rebuild",
+      "relocate",
+      "remove",
+      "status",
+      "upsert",
+    ]);
     // R009 Stage 6：应用更新组 + 更新状态订阅（Auto Update）。
     expect(Object.keys(api.update).sort()).toEqual([
       "check",

@@ -33,6 +33,8 @@ export function ExternalVaultChangeBridge() {
     // R008 Stage 5（§11.5）：打开 Vault 自动确保全文索引（missing → 重建，
     // 期间搜索回退标题索引，页面树与编辑器先用不阻断）。
     void services.fullTextSearch?.prepare(vaultId);
+    // R010 Stage 4（§12）：链接索引同口径自动入口（Web 缺省不装配）。
+    void services.linkIndex?.prepare(vaultId);
     return service.subscribe((changes) => {
       // 任意命中当前库的变更都刷新树镜像：结构性变更（created/moved/
       // deleted）改变树形状，modified 可能携带外部改过的标题/标签。

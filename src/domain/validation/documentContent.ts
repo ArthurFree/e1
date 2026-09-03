@@ -33,7 +33,8 @@ export type ParseResult<T> =
 
 /**
  * 节点类型白名单：buildDocumentExtensions 注册的全部节点
- * （含 mention / inlineMath / blockMath / attachment / localImage）。
+ * （含 mention / internalLink / inlineMath / blockMath / attachment /
+ * localImage；mention 由 markdown.ts 转换器与 buildEditorExtensions 单独注册）。
  */
 export const ALLOWED_NODE_TYPES: ReadonlySet<string> = new Set([
   "doc",
@@ -56,6 +57,7 @@ export const ALLOWED_NODE_TYPES: ReadonlySet<string> = new Set([
   "tableCell",
   "tableHeader",
   "mention",
+  "internalLink",
   "inlineMath",
   "blockMath",
   "attachment",
@@ -87,6 +89,7 @@ const REQUIRED_ATTR_TYPES: Record<string, { attr: string; type: string }> = {
   attachment: { attr: "attachmentId", type: "string" },
   localImage: { attr: "attachmentId", type: "string" },
   mention: { attr: "id", type: "string" },
+  internalLink: { attr: "id", type: "string" },
   image: { attr: "src", type: "string" },
 };
 

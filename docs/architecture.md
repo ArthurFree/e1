@@ -16,6 +16,7 @@
 8. [architecture/runtime-boundaries.md](./architecture/runtime-boundaries.md)：四层运行时边界、DUAL-01~09 架构不变量与 `RuntimeCapabilities` 能力矩阵（当前 Web/Desktop 实现值）。
 9. [architecture/portable-vault.md](./architecture/portable-vault.md)：Portable Vault v1 格式定义——ZIP 布局、manifest/vault 字段、转换规则、导入流程与报告（R005，实现在阶段 7）。
 10. [architecture/markdown-compatibility.md](./architecture/markdown-compatibility.md)：编辑器节点/mark → Markdown 迁移策略矩阵与有损处理约定（R005，DUAL-07 对照表）。
+11. [architecture/link-index.md](./architecture/link-index.md)：链接索引（R010）——链接语义冻结、双提取器、SQLite 共库、增量 Reconciliation、Backlinks/失效链接 UI 门控。
 
 ## 决策记录
 

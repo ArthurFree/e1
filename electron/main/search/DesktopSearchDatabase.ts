@@ -2,6 +2,9 @@
  * R008 Stage 4（§11，R8-03/04）：Desktop 全文搜索 SQLite 库——
  * node:sqlite（Electron 内置 Node 24，FTS5 已验证可用）落
  * userData/search-index/<vaultId>.sqlite。
+ * R010 Stage 3（§17 实施决策）：连接持有泛化为 VaultIndexConnection
+ * （per-vault 单连接），Search 与 Link 表组可共用同一物理文件；
+ * 独立构造（传 filePath）行为不变。
  *
  * 语义与内存参照实现逐点一致（同一 shared/search/textMatch 评分器，
  * 契约套件 src/test/fullTextSearchContract.ts 双实现强制）：
@@ -17,8 +20,6 @@
  */
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, rm } from "node:fs/promises";
-import { dirname } from "node:path";
 import type {
   SearchIndexStatus,
   SearchMatchField,
@@ -30,6 +31,7 @@ import {
   splitQueryTerms,
   tokenizeForIndex,
 } from "../../../shared/search/textMatch.js";
+import { VaultIndexConnection } from "../index/VaultIndexConnection.js";
 
 /** schema / 索引格式版本（不兼容即整库重建，§13.2）。 */
 const SCHEMA_VERSION = "1";
@@ -91,7 +93,8 @@ export interface SearchQueryRowOut {
 
 /** 非词字符 unigram（emoji 等）的 FTS 安全编码（unicode61 不会为其建词）。 */
 function ftsEncodeToken(token: string): string {
-  if (/^[a-z0-9_+\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff-]+$/u.test(token)) return token;
+  if (/^[a-z0-9_+\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff-]+$/u.test(token))
+    return token;
   return `u${[...token].map((ch) => ch.codePointAt(0)!.toString(16)).join("_")}`;
 }
 
@@ -140,41 +143,53 @@ interface NoteRow {
 }
 
 export class DesktopSearchDatabase {
-  private db: DatabaseSync | null = null;
+  private readonly connection: VaultIndexConnection;
+  /** 本表组完成初始化的连接代数（与连接不一致时需重初始化）。 */
+  private initializedGeneration = -1;
   private status: SearchIndexStatus = { state: "missing" };
 
+  /**
+   * filePath 形式：独立连接（测试/单独使用）；VaultIndexConnection 形式：
+   * 与其它表组共用 per-vault 单连接（R010 Stage 3 共库方案）。
+   */
   constructor(
-    private readonly filePath: string,
-    private readonly now: () => number = () => Date.now(),
-  ) {}
+    file: string | VaultIndexConnection,
+    now: () => number = () => Date.now(),
+  ) {
+    this.connection =
+      typeof file === "string" ? new VaultIndexConnection(file, now) : file;
+  }
 
   /** 打开（必要时创建）数据库；损坏/版本不兼容 → 备份后重建（R8-03）。 */
   private async open(): Promise<DatabaseSync> {
-    if (this.db) return this.db;
-    await mkdir(dirname(this.filePath), { recursive: true });
     try {
-      this.db = new DatabaseSync(this.filePath);
-      this.db.exec(DDL);
-      this.assertFormatVersion();
+      const db = await this.connection.open();
+      if (this.initializedGeneration === this.connection.currentGeneration) {
+        return db;
+      }
+      db.exec(DDL);
+      this.assertFormatVersion(db);
       const count = (
-        this.db.prepare("SELECT COUNT(*) AS c FROM notes").get() as {
+        db.prepare("SELECT COUNT(*) AS c FROM notes").get() as {
           c: number;
         }
       ).c;
       this.status = { state: "ready", indexedDocuments: count };
+      this.initializedGeneration = this.connection.currentGeneration;
+      return db;
     } catch (error) {
-      // 损坏/版本不兼容：关闭 → 备份 .corrupt-<ts> → 重建空库（§13.3）。
-      await this.recoverCorrupt(error);
-      this.db = new DatabaseSync(this.filePath);
-      this.db.exec(DDL);
-      this.writeFormatVersion();
+      // 损坏/版本不兼容：文件级自愈（备份 .corrupt-<ts>）→ 重建空库（§13.3）。
+      await this.connection.recoverCorrupt(error);
+      const fresh = await this.connection.open();
+      fresh.exec(DDL);
+      this.writeFormatVersion(fresh);
       this.status = { state: "missing" };
+      this.initializedGeneration = this.connection.currentGeneration;
+      return fresh;
     }
-    return this.db;
   }
 
-  private assertFormatVersion(): void {
-    const meta = this.db!;
+  private assertFormatVersion(meta: DatabaseSync): void {
     const read = (key: string) =>
       (
         meta.prepare("SELECT value FROM index_meta WHERE key = ?").get(key) as
@@ -182,7 +197,7 @@ export class DesktopSearchDatabase {
       )?.value;
     if (read("schema_version") === undefined) {
       // 全新库：写入版本标记。
-      this.writeFormatVersion();
+      this.writeFormatVersion(meta);
       return;
     }
     if (
@@ -193,28 +208,12 @@ export class DesktopSearchDatabase {
     }
   }
 
-  private writeFormatVersion(): void {
-    const meta = this.db!;
+  private writeFormatVersion(meta: DatabaseSync): void {
     const upsert = meta.prepare(
       "INSERT OR REPLACE INTO index_meta(key, value) VALUES (?, ?)",
     );
     upsert.run("schema_version", SCHEMA_VERSION);
     upsert.run("index_format_version", INDEX_FORMAT_VERSION);
-  }
-
-  private async recoverCorrupt(reason: unknown): Promise<void> {
-    try {
-      this.db?.close();
-    } catch {
-      // 忽略关闭失败。
-    }
-    this.db = null;
-    const backup = `${this.filePath}.corrupt-${this.now()}`;
-    await copyFile(this.filePath, backup).catch(() => undefined);
-    await rm(this.filePath, { force: true }).catch(() => undefined);
-    console.warn(
-      `搜索索引库损坏或版本不兼容，已备份重建：${(reason as Error)?.message ?? reason}`,
-    );
   }
 
   getStatus(vaultId: string): SearchIndexStatus {
@@ -454,11 +453,9 @@ export class DesktopSearchDatabase {
   }
 
   close(): void {
-    try {
-      this.db?.close();
-    } finally {
-      this.db = null;
-    }
+    // 连接持有者优先：共库场景下由 Manager 统一 closeAll（重复 close 无害）。
+    this.connection.close();
+    this.initializedGeneration = -1;
   }
 }
 
@@ -473,7 +470,12 @@ export function searchIndexFilePath(baseDir: string, vaultId: string): string {
   return `${baseDir}/${stem}.sqlite`;
 }
 
-/** 按 Vault 管理的索引库集合（IPC handler 注入共享）。 */
+/**
+ * 按 Vault 管理的搜索索引库集合（每库独立连接）。
+ * 生产装配已改用 DesktopVaultIndexManager（R010 Stage 3：Search/Link
+ * 共库单连接，electron/main/index/DesktopVaultIndexManager.ts）；
+ * 本类保留给只需搜索表组的独立使用方与既有测试。
+ */
 export class DesktopSearchIndexManager {
   private readonly dbs = new Map<string, DesktopSearchDatabase>();
 

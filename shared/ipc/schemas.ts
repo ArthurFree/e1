@@ -15,6 +15,11 @@ import type {
   CreateNoteInput,
   ImportAssetInput,
   ImportAssetSource,
+  LinkQueryInput,
+  LinkRelocateInput,
+  LinkRemoveInput,
+  LinkUpsertInput,
+  LinkVaultInput,
   ListTrashInput,
   MoveNoteInput,
   OpenRecentRequest,
@@ -613,6 +618,78 @@ export function parseSearchRelocateInput(
   };
 }
 
+/* ----------------------------- R010 Stage 3：link ----------------------------- */
+
+/** link.outgoing / link.backlinks 入参校验（vaultId + noteKey）。 */
+export function parseLinkQueryInput(payload: unknown): LinkQueryInput {
+  if (!isRecord(payload)) invalid("link 查询入参必须为对象");
+  return {
+    vaultId: requireString(payload, "vaultId", { nonEmpty: true }),
+    noteKey: requireString(payload, "noteKey", { nonEmpty: true }),
+  };
+}
+
+/** link.broken / link.rebuild / link.status 入参校验（vaultId 必填）。 */
+export function parseLinkVaultInput(payload: unknown): LinkVaultInput {
+  if (!isRecord(payload)) invalid("link 入参必须为对象");
+  return { vaultId: requireString(payload, "vaultId", { nonEmpty: true }) };
+}
+
+/** link.upsert 入参校验（vaultId + relativePath）。 */
+export function parseLinkUpsertInput(payload: unknown): LinkUpsertInput {
+  if (!isRecord(payload)) invalid("link.upsert 入参必须为对象");
+  return {
+    vaultId: requireString(payload, "vaultId", { nonEmpty: true }),
+    relativePath: assertRelativePath(
+      requireString(payload, "relativePath", { nonEmpty: true }),
+    ),
+  };
+}
+
+/** link.remove 入参校验（relativePath / noteKey 二选一，至少其一）。 */
+export function parseLinkRemoveInput(payload: unknown): LinkRemoveInput {
+  if (!isRecord(payload)) invalid("link.remove 入参必须为对象");
+  const vaultId = requireString(payload, "vaultId", { nonEmpty: true });
+  const relativePath = payload.relativePath;
+  const noteKey = payload.noteKey;
+  if (relativePath === undefined && noteKey === undefined) {
+    invalid("link.remove 需要 relativePath 或 noteKey 之一");
+  }
+  return {
+    vaultId,
+    ...(relativePath !== undefined
+      ? {
+          relativePath: assertRelativePath(
+            requireString(payload, "relativePath", { nonEmpty: true }),
+          ),
+        }
+      : {}),
+    ...(noteKey !== undefined
+      ? { noteKey: requireString(payload, "noteKey", { nonEmpty: true }) }
+      : {}),
+  };
+}
+
+/** link.relocate 入参校验（from/to 双路径 + 可选 noteKey）。 */
+export function parseLinkRelocateInput(payload: unknown): LinkRelocateInput {
+  if (!isRecord(payload)) invalid("link.relocate 入参必须为对象");
+  const noteKey = payload.noteKey;
+  return {
+    vaultId: requireString(payload, "vaultId", { nonEmpty: true }),
+    ...(noteKey !== undefined
+      ? { noteKey: requireString(payload, "noteKey", { nonEmpty: true }) }
+      : {}),
+    fromRelativePath: assertRelativePath(
+      requireString(payload, "fromRelativePath", { nonEmpty: true }),
+      "fromRelativePath",
+    ),
+    toRelativePath: assertRelativePath(
+      requireString(payload, "toRelativePath", { nonEmpty: true }),
+      "toRelativePath",
+    ),
+  };
+}
+
 /**
  * R007 阶段 3：events:vaultChanges 推送 payload 校验（Preload 侧）。
  *
@@ -697,4 +774,3 @@ export function parseUpdateStatus(payload: unknown): UpdateStatus {
   }
   return status;
 }
-

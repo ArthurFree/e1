@@ -58,6 +58,8 @@ import { DesktopRevealService } from "./DesktopRevealService";
 import { DesktopUpdateService } from "./DesktopUpdateService";
 import { DesktopSearchIndex } from "./DesktopSearchIndex";
 import { DesktopSearchIndexReconciler } from "./DesktopSearchIndexReconciler";
+import { DesktopLinkIndex } from "./DesktopLinkIndex";
+import { DesktopLinkIndexReconciler } from "./DesktopLinkIndexReconciler";
 import { DesktopExternalVaultChangeService } from "./DesktopExternalVaultChangeService";
 import { createInMemoryDocumentVersionChannel } from "../../application/services/DocumentVersionChannel";
 import { DesktopAssetRegistry } from "./DesktopAssetRegistry";
@@ -157,12 +159,23 @@ export function createDesktopRuntime(
   });
   // R008 Stage 4：全文搜索索引（Main SQLite 派生索引的 IPC 适配）。
   const fullTextSearch = new DesktopSearchIndex(api, scans);
+  // R010 Stage 3：派生链接索引（与搜索共库；Stage 4 reconciler 驱动增量）。
+  // Stage 7：注入 scans——Adoption 别名翻译（会话页面 id ↔ Main 稳定键），
+  // 与 DesktopSearchIndex 同一口径。
+  const linkIndex = new DesktopLinkIndex(api, scans);
   // R008 Stage 5：搜索索引 reconciler（外部事件 → 索引动作；自写钩子）。
   const searchReconciler = new DesktopSearchIndexReconciler({
     api,
     scans,
     aliases,
     fullText: fullTextSearch,
+  });
+  // R010 Stage 4：链接索引 reconciler（外部事件 → 链接索引动作；自写钩子）。
+  const linkReconciler = new DesktopLinkIndexReconciler({
+    api,
+    scans,
+    aliases,
+    linkIndex,
   });
   // 搜索索引：标题搜索（fallback 路径）；onCommitted 钩子——正文提交
   // 成功后通知 reconciler（自写 upsert，§12.4）。
@@ -174,6 +187,7 @@ export function createDesktopRuntime(
     {
       onCommitted: (pageId) => {
         void searchReconciler.onDocumentCommitted(pageId);
+        void linkReconciler.onDocumentCommitted(pageId);
       },
     },
   );
@@ -202,6 +216,12 @@ export function createDesktopRuntime(
     preferences: preferencesService,
     secrets: secretStore,
   });
+  // R010 Stage 6：documentQueries 先行构造——commands.document 的
+  // relocateBrokenLink 复用同一实例读取源文档（openDocument 打开语义）。
+  const documentQueries = new DocumentQueryService({
+    content: contentRepository,
+    revisions: revisionRepository,
+  });
   const commands = {
     workspace: new WorkspaceCommandService({
       workspace: workspaceRepository,
@@ -213,7 +233,11 @@ export function createDesktopRuntime(
       syncChannel,
     }),
     tag: new TagCommandService({ tag: tagRepository }),
-    document: new DocumentCommandService({ documentCommit, syncChannel }),
+    document: new DocumentCommandService({
+      documentCommit,
+      documentQueries,
+      syncChannel,
+    }),
   };
   const queries = {
     workspace: new WorkspaceQueryService({
@@ -223,10 +247,7 @@ export function createDesktopRuntime(
       session,
       searchIndex,
     }),
-    document: new DocumentQueryService({
-      content: contentRepository,
-      revisions: revisionRepository,
-    }),
+    document: documentQueries,
     search: new SearchQueryService({
       searchIndex,
       content: contentRepository,
@@ -290,8 +311,10 @@ export function createDesktopRuntime(
   });
   externalVaultChanges.start();
   // R008 Stage 5（R8-05）：Watcher 事实 → 搜索索引动作（增量维护）。
+  // R010 Stage 4（§12）：同一变更流 → 链接索引动作（增量维护）。
   externalVaultChanges.subscribe((changes) => {
     void searchReconciler.reconcile(changes);
+    void linkReconciler.reconcile(changes);
   });
   // R007 阶段 5：文件管理器定位（note.reveal/asset.reveal）。
   const reveal = new DesktopRevealService(api, scans);
@@ -316,6 +339,8 @@ export function createDesktopRuntime(
     update,
     // 全文搜索索引（R008 Stage 4；SearchQueryService 在 ready 时优先消费）。
     fullTextSearch,
+    // 派生链接索引（R010 Stage 3；Stage 4 reconciler 驱动增量维护）。
+    linkIndex,
     // 机密存储运行状态（R008 Stage 1，R8-02）：secure-persistent 才持久，
     // 其余模式设置页提示「本次会话使用」；缺省未探测按 unavailable。
     secretStorageStatus: options.secretStatus ?? {

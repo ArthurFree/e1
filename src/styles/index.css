@@ -10,3 +10,5 @@
 @import "./components/buttons.css" layer(components);
 @import "./components/sidebar.css" layer(components);
 @import "./components/empty-state.css" layer(components);
+@import "./components/document-links.css" layer(components);
+@import "./components/broken-links.css" layer(components);

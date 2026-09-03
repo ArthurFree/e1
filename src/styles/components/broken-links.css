@@ -1,0 +1,84 @@
+/* ===== 失效链接面板（R010 Stage 6 §14）：知识库级 broken 链接列表 ===== */
+/* 弹层外壳复用 .trash-panel / .dialog__header / .trash-panel__list。 */
+
+.broken-links__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+
+.broken-links__row:hover {
+  background: var(--color-surface-hover);
+}
+
+/* 来源文档：图标 + 标题，点击打开来源。 */
+.broken-links__source {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  max-width: 40%;
+  min-width: 0;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+}
+
+.broken-links__source-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 原 href：等宽截断展示（磁盘原文，LINK-01）。 */
+.broken-links__href {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+/* 状态徽标（与 doc-links__tag 的 broken 形态同语义）。 */
+.broken-links__tag {
+  flex: none;
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-strong);
+  color: var(--color-danger);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.broken-links__relocate {
+  flex: none;
+  padding: 1px 8px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font-size: 12px;
+}
+
+.broken-links__relocate:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+}
+
+.broken-links__relocate:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 重新定位失败的错误提示行。 */
+.broken-links__error {
+  margin: 4px 10px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-hover);
+  color: var(--color-danger);
+  font-size: 13px;
+}

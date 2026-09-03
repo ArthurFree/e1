@@ -1,7 +1,10 @@
 /**
- * `@` 提及建议：在文档中插入指向当前工作区其他页面的提及节点。
+ * `@` 页面引用建议：在文档中插入指向当前工作区其他页面的链接节点。
  * 候选页由编辑器宿主以 getPages 延迟注入，仅在弹层查询时读取，
  * 使本模块不与状态层（AppState）产生静态依赖。
+ *
+ * R010 Stage 1：插入节点自本阶段起为 internalLink（内部页面链接）；
+ * Mention 扩展保留注册只为渲染存量 mention 节点，不再产生新 mention。
  */
 import type { Editor } from "@tiptap/core";
 import type { MentionOptions } from "@tiptap/extension-mention";
@@ -46,8 +49,9 @@ export function createMentionSuggestion(
         .chain()
         .focus()
         .insertContentAt(range, [
-          { type: "mention", attrs: { id: props.id, label: props.label } },
-          // 提及节点后补一个空格，便于用户直接继续输入正文。
+          // R010 Stage 1：@ 插入升级为 internalLink 节点（mention 仅存量渲染）。
+          { type: "internalLink", attrs: { id: props.id, label: props.label } },
+          // 链接节点后补一个空格，便于用户直接继续输入正文。
           { type: "text", text: " " },
         ])
         .run();

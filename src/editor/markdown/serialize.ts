@@ -6,8 +6,8 @@
  * - localImage：portable → `![alt](相对路径)`（路径经 MarkdownAssetResolver）；
  *   plain → 可见占位文本；宽度无法携带时记 local-image-width；
  * - attachment：portable → `[name](相对路径)` 链接段落；plain → 可见占位文本；
- * - mention（@ 页面提及）：portable 且 resolveMentionPath 命中 → 标准相对
- *   Markdown 链接；否则降级为纯文本 `@标题`（矩阵既定策略）；
+ * - mention / internalLink（@ 页面引用）：portable 且 resolveMentionPath
+ *   命中 → 标准相对 Markdown 链接；否则降级为纯文本 `@标题`（矩阵既定策略）；
  * - image（旧 Base64，src 为 data:）：无法迁移为资源文件，降级为占位文本；
  * - textStyle（颜色/字号）、subscript/superscript、textAlign、indent、
  *   表格单元格复杂内容：Markdown 无对应语法，正文保留、样式丢失并记录。
@@ -146,8 +146,8 @@ export function transformDocumentForMarkdown(
       return placeholderParagraph(`（附件：${name || "附件"}）`);
     }
 
-    // —— 行内 @ 页面提及 ——
-    if (node.type === "mention") {
+    // —— 行内页面引用（@ 提及 / R010 Stage 1 internalLink 内部链接） ——
+    if (node.type === "mention" || node.type === "internalLink") {
       const attrs = node.attrs ?? {};
       const id = typeof attrs.id === "string" ? attrs.id : "";
       const label =
@@ -161,10 +161,10 @@ export function transformDocumentForMarkdown(
         };
       }
       report({
-        kind: "mention",
+        kind: node.type === "mention" ? "mention" : "internal-link",
         snippet: snippetOf(label, id),
         message:
-          "@ 页面提及无法解析为 vault 内相对链接，已降级为纯文本（@标题）。",
+          "页面引用无法解析为 vault 内相对链接，已降级为纯文本（@标题）。",
       });
       return { type: "text", text: `@${label}` };
     }

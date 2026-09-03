@@ -51,11 +51,7 @@ import type {
   UnsupportedMarkdownFeature,
 } from "../../editor/markdown/types";
 import { jsonToText } from "../../editor/markdown";
-import type {
-  E1DesktopAPI,
-  OpenedVault,
-  ReadNoteResult,
-} from "./desktopApi";
+import type { E1DesktopAPI, OpenedVault, ReadNoteResult } from "./desktopApi";
 import { DesktopIpcError } from "./desktopApi";
 import {
   stashPendingVaultSelection,
@@ -481,7 +477,11 @@ export class DesktopPageRepository implements PageRepository {
     if (!found || isTransientVaultId(found.vaultId)) return null;
     const pathKey = `path:${found.entry.relativePath}`;
     if (found.entry.noteId) {
-      return { vaultId: found.vaultId, key: found.entry.noteId, stalePathKey: pathKey };
+      return {
+        vaultId: found.vaultId,
+        key: found.entry.noteId,
+        stalePathKey: pathKey,
+      };
     }
     return { vaultId: found.vaultId, key: pathKey };
   }
@@ -541,7 +541,10 @@ export class DesktopPageRepository implements PageRepository {
       this.sources.updateRelativePath(id, moved.relativePath);
       const alias = this.scans.aliases.getByStableNoteId(id);
       if (alias) {
-        this.sources.updateRelativePath(alias.sessionPageId, moved.relativePath);
+        this.sources.updateRelativePath(
+          alias.sessionPageId,
+          moved.relativePath,
+        );
       }
     }
     this.scans.invalidate(found.vaultId);
@@ -743,6 +746,14 @@ export class DesktopContentRepository
     const parsed = await this.codec.parse({
       markdown: result.markdown,
       relativePath: result.relativePath,
+      // R010 Stage 1：相对 .md 链接反解为 internalLink 节点——vault 根相对
+      // 路径 → 规范页面 id 走扫描缓存同步反查（上方 findDocument 已确保
+      // 该 vault 快照就绪）；解析不到（broken/外部）保持普通 link mark。
+      resolveInternalLinkTarget: (targetRelativePath) =>
+        this.scans.getPageIdByRelativePathSync(
+          found.vaultId,
+          targetRelativePath,
+        ),
     });
     const hydrated = this.assets
       ? hydrateDesktopMarkdownAssets({
@@ -850,10 +861,7 @@ export class DesktopContentRepository
   ): Promise<{ version: string; updatedAt: number }> {
     const parsed = parseDocumentContent(contentJson);
     if (!parsed.ok) {
-      throw new DomainError(
-        "CORRUPTED_DOCUMENT",
-        "正文 JSON 未通过白名单校验",
-      );
+      throw new DomainError("CORRUPTED_DOCUMENT", "正文 JSON 未通过白名单校验");
     }
     const result = await this.writer.save({
       pageId,
@@ -961,7 +969,9 @@ export class DesktopDocumentWriteRepository implements DocumentWriteRepository {
       new DesktopMarkdownWriteService(api, sources, scans, this.codec);
   }
 
-  async createWithContent(input: CreateDocumentWithContentInput): Promise<Page> {
+  async createWithContent(
+    input: CreateDocumentWithContentInput,
+  ): Promise<Page> {
     if (isTransientVaultId(input.workspaceId)) {
       throw new DomainError(
         "VAULT_READ_ONLY",
@@ -1015,14 +1025,16 @@ export class DesktopDocumentWriteRepository implements DocumentWriteRepository {
     }
 
     this.scans.invalidate(input.workspaceId);
-    const pages = await this.scans.scan(input.workspaceId).then((snap) =>
-      mapScanEntriesToPages(
-        input.workspaceId,
-        snap.result.entries,
-        snap.scannedAt,
-        this.scans.aliases,
-      ),
-    );
+    const pages = await this.scans
+      .scan(input.workspaceId)
+      .then((snap) =>
+        mapScanEntriesToPages(
+          input.workspaceId,
+          snap.result.entries,
+          snap.scannedAt,
+          this.scans.aliases,
+        ),
+      );
     const found = pages.find((p) => p.id === created.noteId);
     if (found) return found;
     const now = Date.now();
@@ -1047,10 +1059,7 @@ export class DesktopDocumentWriteRepository implements DocumentWriteRepository {
   ): Promise<DocumentContent> {
     const parsed = parseDocumentContent(input.contentJson);
     if (!parsed.ok) {
-      throw new DomainError(
-        "CORRUPTED_DOCUMENT",
-        "正文 JSON 未通过白名单校验",
-      );
+      throw new DomainError("CORRUPTED_DOCUMENT", "正文 JSON 未通过白名单校验");
     }
     const ctx = this.sources.get(input.pageId);
     const result = await this.writer.save({

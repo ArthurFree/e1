@@ -11,6 +11,10 @@
  * 不支持语法检测、serialize 侧节点降级与有损标记。图片/附件二进制写回
  * assets/ 属批次 4B（本批 portable 模式已生成相对引用路径）。
  */
+import {
+  classifyLinkHref,
+  resolveLinkPath,
+} from "../../../shared/links/linkKind";
 import { sanitizeDocumentContent } from "../../domain/validation/documentContent";
 import { jsonToMarkdown, markdownToJson } from "../markdown";
 import { generateFrontmatter, splitFrontmatter } from "./frontmatter";
@@ -73,13 +77,71 @@ function dedupeUnsupported(
   });
 }
 
+interface LinkRestoreNode {
+  type?: string;
+  text?: string;
+  attrs?: Record<string, unknown>;
+  marks?: { type: string; attrs?: Record<string, unknown> }[];
+  content?: LinkRestoreNode[];
+}
+
+/**
+ * 把「相对 .md 链接且目标能解析到页面 id」的文本节点改写为 internalLink
+ * 节点（R010 Stage 1，mention 序列化链接的解析回读）。判定规则：
+ * - 链接必须是该文本节点的唯一 mark（叠加粗体等样式的链接保持原样，
+ *   避免 atom 节点丢失 mark）；
+ * - 带锚点（#片段）的链接保持 link mark——锚点无节点字段可携带，
+ *   改写会丢信息；
+ * - 目标解析不到（broken/外部）保持 link mark，不丢信息。
+ * 返回新树，不修改输入。
+ */
+function restoreInternalLinks(
+  document: unknown,
+  relativePath: string,
+  resolve: (targetRelativePath: string) => string | null,
+): unknown {
+  const walk = (node: LinkRestoreNode): LinkRestoreNode => {
+    if (!node || typeof node !== "object") return node;
+    if (
+      node.type === "text" &&
+      typeof node.text === "string" &&
+      Array.isArray(node.marks) &&
+      node.marks.length === 1
+    ) {
+      const mark = node.marks[0];
+      const href =
+        mark.type === "link" && typeof mark.attrs?.href === "string"
+          ? mark.attrs.href
+          : null;
+      if (href) {
+        const classified = classifyLinkHref(href);
+        if (classified.kind === "internal" && classified.fragment === null) {
+          const resolved = resolveLinkPath(relativePath, href);
+          const pageId = resolved ? resolve(resolved) : null;
+          if (pageId) {
+            return {
+              type: "internalLink",
+              attrs: { id: pageId, label: node.text },
+            };
+          }
+        }
+      }
+    }
+    if (Array.isArray(node.content)) {
+      return { ...node, content: node.content.map((child) => walk(child)) };
+    }
+    return node;
+  };
+  return walk(document as LinkRestoreNode);
+}
+
 /**
  * 创建 MarkdownCodec 实例。无状态，可直接复用模块级单例
  * （底层转换器本身也是模块级复用的 headless editor）。
  */
 export function createMarkdownCodec(): MarkdownCodec {
   return {
-    async parse({ markdown, relativePath }) {
+    async parse({ markdown, relativePath, resolveInternalLinkTarget }) {
       // 换行符策略：检测输入风格，解析前统一归一为 \n
       // （serialize 默认输出 LF，调用方可传 lineEnding 跟随）。
       const lineEnding: ParsedNote["lineEnding"] = markdown.includes("\r\n")
@@ -94,7 +156,7 @@ export function createMarkdownCodec(): MarkdownCodec {
       // 脚注先转义再解析：避免 marked 把 `[^1]` 误读为引用式链接（生成
       // href 为脚注文本的伪链接），转义后以纯文本原样保留。
       const parsed = markdownToJson(escapeFootnoteRefs(body));
-      const document = sanitizeDocumentContent(parsed);
+      const sanitized = sanitizeDocumentContent(parsed);
 
       // 源文本扫描（先屏蔽围栏代码块防误报）：Wiki 链接 / raw HTML / 脚注。
       const masked = maskFencedCode(body);
@@ -107,7 +169,18 @@ export function createMarkdownCodec(): MarkdownCodec {
         // Wiki 目标是页面名而非路径，不做相对路径解析。
       }));
 
-      const { links, assets } = collectDocumentLinks(document, relativePath);
+      const { links, assets } = collectDocumentLinks(sanitized, relativePath);
+
+      // R010 Stage 1：链接收集基于磁盘原文形态（link mark），随后才把
+      // 可解析的相对 .md 链接升级为 internalLink 节点——links 字段语义不变。
+      const document =
+        resolveInternalLinkTarget && relativePath
+          ? restoreInternalLinks(
+              sanitized,
+              relativePath,
+              resolveInternalLinkTarget,
+            )
+          : sanitized;
 
       const unsupported: UnsupportedMarkdownFeature[] = [
         ...wikiMatches.map((match) => ({

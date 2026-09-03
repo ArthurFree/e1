@@ -9,6 +9,8 @@
 // 持久化）与 note.reveal / asset.reveal（文件管理器显示）。
 // R009 Stage 6：新增 update 组（getState/check/download/install/
 // openReleasePage）与 events.subscribeUpdateStatus（更新状态推送）。
+// R010 Stage 3：新增 links 组——派生链接索引（outgoing/backlinks/broken/
+// rebuild/upsert/remove/relocate/status，与搜索共库单连接）。
 // sandbox 预加载只支持 CJS（构建产物 dist-electron/preload.cjs）。
 //
 // 错误传递策略（与 src/platform/desktop/desktopApi.ts 注释共同锁定）：
@@ -32,6 +34,15 @@ import {
   type IpcResult,
   type ImportAssetInput,
   type ImportedAsset,
+  type LinkQueryInput,
+  type LinkRebuildResult,
+  type LinkRelocateInput,
+  type LinkRemoveInput,
+  type LinkUpsertInput,
+  type LinkUpsertResult,
+  type LinkVaultInput,
+  type Backlink,
+  type DocumentLink,
   type ListTrashInput,
   type MoveNoteInput,
   type MoveNoteResult,
@@ -81,7 +92,10 @@ import {
   encodeIpcBridgeError,
   isIpcErrorPayload,
 } from "../../shared/errors.js";
-import { parseUpdateStatus, parseVaultFsEvents } from "../../shared/ipc/schemas.js";
+import {
+  parseUpdateStatus,
+  parseVaultFsEvents,
+} from "../../shared/ipc/schemas.js";
 
 async function invoke<T>(channel: string, payload?: unknown): Promise<T> {
   const result = (await ipcRenderer.invoke(channel, payload)) as IpcResult<T>;
@@ -165,6 +179,24 @@ const api: E1DesktopAPI = {
       invoke<void>(IPC_CHANNELS.searchRelocate, input),
     status: (input: SearchStatusInput) =>
       invoke<SearchIndexStatus>(IPC_CHANNELS.searchStatus, input),
+  },
+  links: {
+    outgoing: (input: LinkQueryInput) =>
+      invoke<DocumentLink[]>(IPC_CHANNELS.linkOutgoing, input),
+    backlinks: (input: LinkQueryInput) =>
+      invoke<Backlink[]>(IPC_CHANNELS.linkBacklinks, input),
+    broken: (input: LinkVaultInput) =>
+      invoke<DocumentLink[]>(IPC_CHANNELS.linkBroken, input),
+    rebuild: (input: LinkVaultInput) =>
+      invoke<LinkRebuildResult>(IPC_CHANNELS.linkRebuild, input),
+    upsert: (input: LinkUpsertInput) =>
+      invoke<LinkUpsertResult>(IPC_CHANNELS.linkUpsert, input),
+    remove: (input: LinkRemoveInput) =>
+      invoke<void>(IPC_CHANNELS.linkRemove, input),
+    relocate: (input: LinkRelocateInput) =>
+      invoke<void>(IPC_CHANNELS.linkRelocate, input),
+    status: (input: LinkVaultInput) =>
+      invoke<SearchIndexStatus>(IPC_CHANNELS.linkStatus, input),
   },
   asset: {
     pick: (input?: AssetPickRequest) =>
