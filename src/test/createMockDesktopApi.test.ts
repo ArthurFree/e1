@@ -18,6 +18,7 @@ import { createMockDesktopApi } from "./createMockDesktopApi";
 const EXPECTED_GROUPS = [
   "asset",
   "events",
+  "fileOperation",
   "links",
   "note",
   "platform",
@@ -37,6 +38,7 @@ const EXPECTED_SHAPE: Record<string, string[]> = {
     "openRecent",
     "openSelection",
     "purgeTrash",
+    "rename",
     "restore",
     "scan",
     "selectDirectory",
@@ -55,6 +57,7 @@ const EXPECTED_SHAPE: Record<string, string[]> = {
   secret: ["get", "remove", "set", "status"],
   search: ["query", "rebuild", "relocate", "remove", "status", "upsert"],
   links: [
+    "analyzeRelocation",
     "backlinks",
     "broken",
     "outgoing",
@@ -64,6 +67,7 @@ const EXPECTED_SHAPE: Record<string, string[]> = {
     "status",
     "upsert",
   ],
+  fileOperation: ["execute", "plan", "recover", "recoveryStatus"],
   asset: ["import", "pick", "read", "resolveUrl", "reveal"],
   events: ["subscribeUpdateStatus", "subscribeVaultChanges"],
   update: ["check", "download", "getState", "install", "openReleasePage"],

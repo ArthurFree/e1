@@ -10,5 +10,6 @@
 export type {
   LinkIndex,
   LinkIndexDocument,
+  LinkRelocationImpact,
 } from "../../../shared/links/LinkIndex";
 export type { Backlink, DocumentLink } from "../../../shared/links/types";

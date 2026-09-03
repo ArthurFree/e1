@@ -52,6 +52,7 @@ import { registerSecretHandlers } from "./secrets.js";
 import { registerRevealHandlers, type ShellLike } from "./reveal.js";
 import { registerSearchHandlers } from "./search.js";
 import { registerLinkHandlers } from "./links.js";
+import { registerFileOperationHandlers } from "./fileOperation.js";
 import { VaultRegistry } from "../vaultRegistry.js";
 import { DesktopVaultStateStore } from "../state/DesktopVaultStateStore.js";
 import { SecretFilePersistence } from "../secrets/SecretFilePersistence.js";
@@ -185,6 +186,12 @@ export function registerIpcHandlers(
   registerRevealHandlers(bus, { registry, transients, shell: deps.shell });
   registerSearchHandlers(bus, { registry, transients, indexes });
   registerLinkHandlers(bus, { registry, transients, indexes });
+  registerFileOperationHandlers(bus, {
+    registry,
+    transients,
+    indexes,
+    selfWrites,
+  });
   registerAssetHandlers(bus, {
     openDialog: openDialog as FileDialogLike,
     registry,

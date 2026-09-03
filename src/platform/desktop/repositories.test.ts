@@ -325,14 +325,16 @@ describe("DesktopWorkspaceRepository", () => {
     await repo.setLastOpened("transient:t-1", Date.now());
   });
 
-  it("rename/update 抛 NOT_IMPLEMENTED", async () => {
+  it("rename 走 vault.rename；update 仍 NOT_IMPLEMENTED", async () => {
     const api = mockApi({});
     const repo: WorkspaceRepository = new DesktopWorkspaceRepository(
       api,
       stateClient(api),
     );
-    await expect(repo.rename("v1", "x")).rejects.toMatchObject({
-      code: "NOT_IMPLEMENTED",
+    await repo.rename("v1", "新名称");
+    expect(api.vault.rename).toHaveBeenCalledWith({
+      vaultId: "v1",
+      name: "新名称",
     });
     await expect(repo.update("v1", { name: "x" })).rejects.toMatchObject({
       code: "NOT_IMPLEMENTED",
@@ -703,7 +705,7 @@ describe("DesktopPageRepository", () => {
     expect((err as DomainError).code).toBe("INVALID_INPUT");
   });
 
-  it("move/rename 分组：Main 契约暂无目录 IPC，诚实 NOT_IMPLEMENTED", async () => {
+  it("move/rename 分组：未注入 fileOperations 时诚实 NOT_IMPLEMENTED", async () => {
     const api = mockApi({});
     const { repo } = pageRepo(api);
     await repo.listByWorkspace("v1");

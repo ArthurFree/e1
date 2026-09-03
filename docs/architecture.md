@@ -17,6 +17,7 @@
 9. [architecture/portable-vault.md](./architecture/portable-vault.md)：Portable Vault v1 格式定义——ZIP 布局、manifest/vault 字段、转换规则、导入流程与报告（R005，实现在阶段 7）。
 10. [architecture/markdown-compatibility.md](./architecture/markdown-compatibility.md)：编辑器节点/mark → Markdown 迁移策略矩阵与有损处理约定（R005，DUAL-07 对照表）。
 11. [architecture/link-index.md](./architecture/link-index.md)：链接索引（R010）——链接语义冻结、双提取器、SQLite 共库、增量 Reconciliation、Backlinks/失效链接 UI 门控。
+12. [architecture/file-operations.md](./architecture/file-operations.md)：Desktop 文件操作 v2（R011）——plan/preflight/journaled execute、源码级链接改写、crash recovery、显式索引 reconcile。
 
 ## 决策记录
 

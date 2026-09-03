@@ -67,6 +67,7 @@ import {
   deterministicTagColor,
   tagIdOfName,
 } from "./vaultMapping";
+import type { FileOperationService } from "../../application/fileOperations/FileOperationService";
 import { DesktopDocumentSourceCache } from "./DesktopDocumentSourceCache";
 import type { DesktopNoteMetadataService } from "./DesktopNoteMetadataService";
 import type { DesktopVaultStateClient } from "./DesktopVaultStateClient";
@@ -105,7 +106,16 @@ function mapFileOpError(err: unknown): never {
       case "VAULT_PATH_COLLISION":
       case "VAULT_RESERVED_PATH":
       case "VAULT_RESTORE_COLLISION":
-        throw new DomainError("INVALID_INPUT", err.message);
+      case "FILE_OPERATION_STALE_PLAN":
+      case "FILE_OPERATION_BLOCKED_DIRTY":
+      case "FILE_OPERATION_RECOVERY_REQUIRED":
+      case "FILE_OPERATION_PARTIAL_FAILURE":
+        throw new DomainError(
+          err.code === "FILE_OPERATION_STALE_PLAN"
+            ? "DOCUMENT_CONFLICT"
+            : "INVALID_INPUT",
+          err.message,
+        );
       case "VAULT_TRASH_NOT_FOUND":
         throw new DomainError(
           "PAGE_NOT_FOUND",
@@ -122,6 +132,8 @@ function mapFileOpError(err: unknown): never {
   }
   throw err;
 }
+
+export { mapFileOpError };
 
 /**
  * 知识库仓储：list 映射最近 Vault 列表并合并会话内 transient（仅预览）
@@ -207,8 +219,21 @@ export class DesktopWorkspaceRepository implements WorkspaceRepository {
     return workspace;
   }
 
-  async rename(): Promise<void> {
-    throw notImplemented("重命名本地知识库", "后续阶段");
+  async rename(id: string, name: string): Promise<void> {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      throw new DomainError("INVALID_INPUT", "知识库名称不能为空。");
+    }
+    if (this.transientWorkspaces.has(id)) {
+      const existing = this.transientWorkspaces.get(id)!;
+      this.transientWorkspaces.set(id, { ...existing, name: trimmed });
+      return;
+    }
+    try {
+      await this.api.vault.rename({ vaultId: id, name: trimmed });
+    } catch (err) {
+      mapFileOpError(err);
+    }
   }
 
   async update(): Promise<void> {
@@ -241,6 +266,8 @@ export class DesktopWorkspaceRepository implements WorkspaceRepository {
 
 /** 页面仓储：listByWorkspace/listAll 真实（扫描映射 + vault-state 合并 + 回收站合并）。 */
 export class DesktopPageRepository implements PageRepository {
+  private fileOperations: FileOperationService | null = null;
+
   constructor(
     private readonly api: E1DesktopAPI,
     private readonly scans: DesktopVaultScanCache,
@@ -253,6 +280,11 @@ export class DesktopPageRepository implements PageRepository {
      */
     private readonly sources?: DesktopDocumentSourceCache,
   ) {}
+
+  /** R011：注入 journaled 文件操作服务（装配后回填，避免循环构造）。 */
+  setFileOperations(service: FileOperationService): void {
+    this.fileOperations = service;
+  }
 
   async listByWorkspace(vaultId: string): Promise<Page[]> {
     const snapshot = await this.scans.scan(vaultId);
@@ -416,13 +448,28 @@ export class DesktopPageRepository implements PageRepository {
    * 文件名不随标题改动（Title rename ≠ File rename，R007 §4.4）。
    */
   async rename(pageId: string, title: string): Promise<void> {
-    // 分组（目录）改名：Main 契约暂无目录 rename IPC（note.renameFile 仅
-    // .md），诚实失败待契约补充；文档标题重命名走 Frontmatter 通道。
+    // 分组（目录）改名：R011 经 journaled fileOperations；文档标题走 Frontmatter。
     const doc = await this.scans.findDocument(pageId);
     if (!doc) {
       const any = await this.scans.findEntry(pageId);
       if (any?.entry.kind === "group") {
-        throw notImplemented("重命名分组（目录改名）", "后续批次");
+        if (!this.fileOperations) {
+          throw notImplemented("重命名分组（目录改名）", "R011");
+        }
+        const plan = await this.fileOperations.plan({
+          kind: "rename-group",
+          vaultId: any.vaultId,
+          fromRelativePath: any.entry.relativePath,
+          newName: title.trim(),
+        });
+        if (plan.blockers.length > 0) {
+          throw new DomainError(
+            "INVALID_INPUT",
+            plan.blockers[0]!.message,
+          );
+        }
+        await this.fileOperations.execute(plan);
+        return;
       }
     }
     await this.metadata.patch(pageId, { title });
@@ -497,7 +544,6 @@ export class DesktopPageRepository implements PageRepository {
   async move(
     id: string,
     newParentId: string | null,
-    // Desktop 无 position 概念（文件名排序即展示顺序），index 忽略。
     _index?: number,
   ): Promise<void> {
     void _index;
@@ -505,10 +551,27 @@ export class DesktopPageRepository implements PageRepository {
     if (!found) {
       const any = await this.scans.findEntry(id);
       if (any?.entry.kind === "group") {
-        throw notImplemented(
-          "移动分组（目录移动）",
-          "后续批次（本版仅支持文档移入目录）",
+        if (!this.fileOperations) {
+          throw notImplemented("移动分组（目录移动）", "R011");
+        }
+        const targetDirectory = this.resolveCreateDirectory(
+          any.vaultId,
+          newParentId,
         );
+        const plan = await this.fileOperations.plan({
+          kind: "move-group",
+          vaultId: any.vaultId,
+          fromRelativePath: any.entry.relativePath,
+          toRelativePath: targetDirectory,
+        });
+        if (plan.blockers.length > 0) {
+          throw new DomainError(
+            "INVALID_INPUT",
+            plan.blockers[0]!.message,
+          );
+        }
+        await this.fileOperations.execute(plan);
+        return;
       }
       throw new DomainError(
         "PAGE_NOT_FOUND",
@@ -525,6 +588,27 @@ export class DesktopPageRepository implements PageRepository {
       found.vaultId,
       newParentId,
     );
+
+    if (this.fileOperations) {
+      const plan = await this.fileOperations.plan({
+        kind: "move-document",
+        vaultId: found.vaultId,
+        fromRelativePath: found.entry.relativePath,
+        toRelativePath: targetDirectory,
+      });
+      if (plan.blockers.length > 0) {
+        throw new DomainError(
+          plan.blockers[0]!.code === "FILE_OPERATION_BLOCKED_DIRTY"
+            ? "INVALID_INPUT"
+            : "INVALID_INPUT",
+          plan.blockers[0]!.message,
+        );
+      }
+      await this.fileOperations.execute(plan);
+      return;
+    }
+
+    // 无 fileOperations 时回退裸 move（测试/旧装配）。
     let moved;
     try {
       moved = await this.api.note.move({
@@ -535,8 +619,6 @@ export class DesktopPageRepository implements PageRepository {
     } catch (err) {
       mapFileOpError(err);
     }
-    // 来源缓存同步（同 DesktopExternalVaultChangeService.syncMovedSourcePath
-    // 口径）：保存目标与 Mention/资源相对路径解析都以缓存路径为准。
     if (this.sources) {
       this.sources.updateRelativePath(id, moved.relativePath);
       const alias = this.scans.aliases.getByStableNoteId(id);

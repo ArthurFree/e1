@@ -19,27 +19,35 @@ function expectAllBoolean(value: unknown, expected: boolean): void {
   }
 }
 
-describe("RuntimeOperations 装配矩阵（R007 §9）", () => {
-  it("Web：全部操作已实现，矩阵全 true", () => {
-    expectAllBoolean(webOperations, true);
+describe("RuntimeOperations 装配矩阵（R007 §9 / R011 Stage 0）", () => {
+  it("Web：除 document.renameFile 外全 true（IndexedDB 无物理文件名）", () => {
+    expect(webOperations.page.document.renameFile).toBe(false);
+    const { renameFile: _ignored, ...restDocument } =
+      webOperations.page.document;
+    expectAllBoolean(restDocument, true);
+    expectAllBoolean(webOperations.workspace, true);
+    expectAllBoolean(webOperations.page.group, true);
+    expectAllBoolean(webOperations.page.trash, true);
+    expectAllBoolean(webOperations.tag, true);
+    expectAllBoolean(webOperations.revision, true);
   });
 
-  it("Desktop：未实现的操作 false（workspace.rename / document.renameFile / group.rename+move / revision）", () => {
+  it("Desktop：R011 路径操作已开启（revision 仍 false）", () => {
     expect(desktopOperations).toEqual({
-      workspace: { rename: false, favorite: true },
+      workspace: { rename: true, favorite: true },
       page: {
         document: {
           create: true,
           renameTitle: true,
-          renameFile: false,
+          renameFile: true,
           move: true,
           trash: true,
           favorite: true,
         },
         group: {
           create: true,
-          rename: false,
-          move: false,
+          rename: true,
+          move: true,
           trash: true,
         },
         trash: { restore: true, purge: true },

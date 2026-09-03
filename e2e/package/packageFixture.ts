@@ -83,11 +83,15 @@ export function launchPackaged(
   return electron.launch({
     executablePath,
     args: options.args,
-    env: {
-      ...process.env,
-      E1_USER_DATA_DIR: userDataDir,
-      ...options.env,
-    },
+    env: (() => {
+      const rest = { ...process.env };
+      delete rest.ELECTRON_RUN_AS_NODE;
+      return {
+        ...rest,
+        E1_USER_DATA_DIR: userDataDir,
+        ...options.env,
+      };
+    })(),
   });
 }
 

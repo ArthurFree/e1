@@ -56,6 +56,7 @@ function stubLinkIndex(input?: {
     upsert: vi.fn(async () => ({ indexed: true })),
     remove: vi.fn(async () => {}),
     relocate: vi.fn(async () => {}),
+    analyzeRelocation: vi.fn(async () => []),
     getOutgoing: vi.fn(async () => []),
     getBacklinks: vi.fn(async () => []),
     getBrokenLinks: vi.fn(async () => input?.broken ?? []),

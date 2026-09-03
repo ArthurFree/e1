@@ -60,6 +60,7 @@ import { DesktopSearchIndex } from "./DesktopSearchIndex";
 import { DesktopSearchIndexReconciler } from "./DesktopSearchIndexReconciler";
 import { DesktopLinkIndex } from "./DesktopLinkIndex";
 import { DesktopLinkIndexReconciler } from "./DesktopLinkIndexReconciler";
+import { DesktopFileOperationService } from "./DesktopFileOperationService";
 import { DesktopExternalVaultChangeService } from "./DesktopExternalVaultChangeService";
 import { createInMemoryDocumentVersionChannel } from "../../application/services/DocumentVersionChannel";
 import { DesktopAssetRegistry } from "./DesktopAssetRegistry";
@@ -177,6 +178,28 @@ export function createDesktopRuntime(
     aliases,
     linkIndex,
   });
+  // R011：dirty / pending-save 页面集合——plan 时解析为 relativePath
+  // 并注入 FILE_OPERATION_BLOCKED_DIRTY（FILEOP-09）。
+  const dirtyPageIds = new Set<string>();
+  const resolveDirtyRelativePaths = (): ReadonlySet<string> => {
+    const paths = new Set<string>();
+    for (const id of dirtyPageIds) {
+      const rel =
+        sources.get(id)?.relativePath ?? scans.lookupRelativePath(id);
+      if (rel) paths.add(rel);
+    }
+    return paths;
+  };
+  // R011：journaled 文件操作（依赖 link/search，成功后显式 reconcile）。
+  const fileOperations = new DesktopFileOperationService({
+    api,
+    scans,
+    sources,
+    linkIndex,
+    fullTextSearch,
+    getDirtyRelativePaths: resolveDirtyRelativePaths,
+  });
+  pageRepository.setFileOperations(fileOperations);
   // 搜索索引：标题搜索（fallback 路径）；onCommitted 钩子——正文提交
   // 成功后通知 reconciler（自写 upsert，§12.4）。
   const searchIndex = new DesktopTitleSearchIndex(
@@ -341,6 +364,8 @@ export function createDesktopRuntime(
     fullTextSearch,
     // 派生链接索引（R010 Stage 3；Stage 4 reconciler 驱动增量维护）。
     linkIndex,
+    // R011：路径变更文件操作（plan/execute + recovery）。
+    fileOperations,
     // 机密存储运行状态（R008 Stage 1，R8-02）：secure-persistent 才持久，
     // 其余模式设置页提示「本次会话使用」；缺省未探测按 unavailable。
     secretStorageStatus: options.secretStatus ?? {
@@ -367,7 +392,14 @@ export function createDesktopRuntime(
           recovery: recoveryStore,
           onMaintenanceError: (stage) =>
             increment("save-maintenance-error", stage),
-          onStateChange,
+          onStateChange: (state) => {
+            if (state.status === "dirty" || state.status === "saving") {
+              dirtyPageIds.add(pageId);
+            } else {
+              dirtyPageIds.delete(pageId);
+            }
+            onStateChange?.(state);
+          },
         },
         { initialVersion: options?.initialVersion },
       ),

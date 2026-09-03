@@ -35,6 +35,7 @@ function adapt(db: DesktopLinkDatabase): LinkIndex {
     remove: ({ vaultId, noteKey, relativePath }) =>
       noteKey ? db.remove(noteKey) : db.removeByPath(vaultId, relativePath!),
     relocate: (input) => db.relocate(input),
+    analyzeRelocation: (input) => db.analyzeRelocation(input),
     getOutgoing: ({ vaultId, noteKey }) => db.getOutgoing(vaultId, noteKey),
     getBacklinks: ({ vaultId, noteKey }) => db.getBacklinks(vaultId, noteKey),
     getBrokenLinks: (vaultId) => db.getBrokenLinks(vaultId),

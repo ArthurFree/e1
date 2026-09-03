@@ -68,6 +68,14 @@ export type IpcErrorCode =
   | "SECRET_STORAGE_UNAVAILABLE"
   /** R007 阶段 5：reveal 目标不存在（note.reveal / asset.reveal）。 */
   | "REVEAL_TARGET_NOT_FOUND"
+  /** R011：预检计划过期（外部改写 / versionToken 不匹配）。 */
+  | "FILE_OPERATION_STALE_PLAN"
+  /** R011：受影响文档处于 dirty / pending-save，禁止执行。 */
+  | "FILE_OPERATION_BLOCKED_DIRTY"
+  /** R011：crash recovery 无法自动判定安全状态，需人工介入。 */
+  | "FILE_OPERATION_RECOVERY_REQUIRED"
+  /** R011：部分路径/改写失败（回滚后仍可报告；或索引 reconcile 软失败）。 */
+  | "FILE_OPERATION_PARTIAL_FAILURE"
   /** 未分类的 Main 侧内部错误。 */
   | "INTERNAL";
 
@@ -195,6 +203,11 @@ const DOMAIN_TO_IPC: Record<string, IpcErrorCode> = {
   ASSET_WRITE_PERMISSION_DENIED: "ASSET_WRITE_PERMISSION_DENIED",
   ASSET_WRITE_IO_ERROR: "ASSET_WRITE_IO_ERROR",
   ASSET_SOURCE_NOT_FOUND: "ASSET_SOURCE_NOT_FOUND",
+  // R011：文件操作码在 domain 中同名（若抛 DomainError）原样透传。
+  FILE_OPERATION_STALE_PLAN: "FILE_OPERATION_STALE_PLAN",
+  FILE_OPERATION_BLOCKED_DIRTY: "FILE_OPERATION_BLOCKED_DIRTY",
+  FILE_OPERATION_RECOVERY_REQUIRED: "FILE_OPERATION_RECOVERY_REQUIRED",
+  FILE_OPERATION_PARTIAL_FAILURE: "FILE_OPERATION_PARTIAL_FAILURE",
 };
 
 /** IPC 错误码 → domain 错误码（可反向映射的子集；无对应 domain 语义时为 null）。 */
@@ -227,6 +240,12 @@ const IPC_TO_DOMAIN: Partial<Record<IpcErrorCode, string>> = {
   // 共用，UI 不需要进一步分流）；SECRET_STORAGE_UNAVAILABLE 无 domain
   // 语义（主路径不抛，见上），反向映射得 null。
   REVEAL_TARGET_NOT_FOUND: "PAGE_NOT_FOUND",
+  // R011：文件操作新码——UI 优先读 DesktopIpcError.code；反向映射到
+  // 最近的 domain 语义，避免无对应时一律 INTERNAL。
+  FILE_OPERATION_STALE_PLAN: "DOCUMENT_CONFLICT",
+  FILE_OPERATION_BLOCKED_DIRTY: "INVALID_INPUT",
+  FILE_OPERATION_RECOVERY_REQUIRED: "INVALID_INPUT",
+  FILE_OPERATION_PARTIAL_FAILURE: "INVALID_INPUT",
 };
 
 /** DomainError → IPC 错误载荷；未识别的 domain code 归一为 INTERNAL。 */

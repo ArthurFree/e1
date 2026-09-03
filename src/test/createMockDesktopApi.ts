@@ -35,6 +35,7 @@ export type MockDesktopApiOverrides = {
   asset?: Partial<E1DesktopAPI["asset"]>;
   events?: Partial<E1DesktopAPI["events"]>;
   update?: Partial<E1DesktopAPI["update"]>;
+  fileOperation?: Partial<E1DesktopAPI["fileOperation"]>;
   versions?: E1DesktopAPI["versions"];
 };
 
@@ -94,6 +95,48 @@ export function createMockDesktopApi(
     listTrash: vi.fn(async () => ({ entries: [] })),
     restore: vi.fn(async () => ({ relativePath: "restored.md" })),
     purgeTrash: vi.fn(async () => ({ purged: 0 })),
+    rename: vi.fn(async (input) => ({
+      vaultId: input.vaultId,
+      name: input.name,
+    })),
+  };
+
+  const fileOperation: E1DesktopAPI["fileOperation"] = {
+    plan: vi.fn(async (input) => ({
+      operationId: "op-mock",
+      kind: input.kind,
+      vaultId: input.vaultId,
+      target: {},
+      pathMoves: [],
+      patches: [],
+      summary: {
+        movedDocuments: 0,
+        rewrittenDocuments: 0,
+        rewrittenLinks: 0,
+        rewrittenAssets: 0,
+      },
+      blockers: [],
+      warnings: [],
+      createdAt: Date.now(),
+    })),
+    execute: vi.fn(async (input) => ({
+      operationId: input.plan.operationId,
+      kind: input.plan.kind,
+      vaultId: input.vaultId,
+      pathMoves: input.plan.pathMoves,
+      rewrittenDocuments: 0,
+      rewrittenLinks: 0,
+    })),
+    recoveryStatus: vi.fn(async (input) => ({
+      vaultId: input.vaultId,
+      phase: "clean" as const,
+      pendingOperationIds: [],
+    })),
+    recover: vi.fn(async (input) => ({
+      vaultId: input.vaultId,
+      recovered: true,
+      rolledBackOperationIds: [],
+    })),
   };
 
   const vaultState: E1DesktopAPI["vaultState"] = {
@@ -174,6 +217,7 @@ export function createMockDesktopApi(
     upsert: vi.fn(async () => ({ indexed: true })),
     remove: vi.fn(async () => {}),
     relocate: vi.fn(async () => {}),
+    analyzeRelocation: vi.fn(async () => []),
     status: vi.fn(async (): Promise<SearchIndexStatus> => ({
       state: "missing",
     })),
@@ -230,5 +274,6 @@ export function createMockDesktopApi(
     asset: mergeGroup(asset, overrides.asset),
     events: mergeGroup(events, overrides.events),
     update: mergeGroup(update, overrides.update),
+    fileOperation: mergeGroup(fileOperation, overrides.fileOperation),
   };
 }

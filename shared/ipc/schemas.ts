@@ -16,6 +16,7 @@ import type {
   ImportAssetInput,
   ImportAssetSource,
   LinkQueryInput,
+  LinkAnalyzeRelocationInput,
   LinkRelocateInput,
   LinkRemoveInput,
   LinkUpsertInput,
@@ -688,6 +689,34 @@ export function parseLinkRelocateInput(payload: unknown): LinkRelocateInput {
       "toRelativePath",
     ),
   };
+}
+
+/** R011：link.analyzeRelocation 入参校验。 */
+export function parseLinkAnalyzeRelocationInput(
+  payload: unknown,
+): LinkAnalyzeRelocationInput {
+  if (!isRecord(payload)) invalid("link.analyzeRelocation 入参必须为对象");
+  const vaultId = requireString(payload, "vaultId", { nonEmpty: true });
+  if (!Array.isArray(payload.pathMoves)) {
+    invalid("link.analyzeRelocation.pathMoves 必须为数组");
+  }
+  const pathMoves = payload.pathMoves.map((item, index) => {
+    if (!isRecord(item)) {
+      invalid(`link.analyzeRelocation.pathMoves[${index}] 必须为对象`);
+    }
+    return {
+      noteKey: requireString(item, "noteKey", { nonEmpty: true }),
+      fromRelativePath: assertRelativePath(
+        requireString(item, "fromRelativePath", { nonEmpty: true }),
+        "fromRelativePath",
+      ),
+      toRelativePath: assertRelativePath(
+        requireString(item, "toRelativePath", { nonEmpty: true }),
+        "toRelativePath",
+      ),
+    };
+  });
+  return { vaultId, pathMoves };
 }
 
 /**

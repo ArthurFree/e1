@@ -35,6 +35,11 @@ interface SelfWriteEntry {
 
 export class SelfWriteRegistry {
   private readonly entries = new Map<string, SelfWriteEntry>();
+  /** R011：operation-scoped 路径抑制（execute 成功后短时吞 watcher）。 */
+  private readonly operations = new Map<
+    string,
+    { paths: Set<string>; expiresAt: number }
+  >();
 
   constructor(
     private readonly ttlMs: number = SELF_WRITE_TTL_MS,
@@ -51,6 +56,25 @@ export class SelfWriteRegistry {
   }
 
   /**
+   * R011：登记一次 journaled 文件操作涉及的全部路径。
+   * watcher 命中任一路径即抑制（不要求 versionToken）。
+   */
+  beginOperation(input: {
+    vaultId: string;
+    operationId: string;
+    paths: string[];
+  }): void {
+    this.prune();
+    this.operations.set(`${input.vaultId} ${input.operationId}`, {
+      paths: new Set(input.paths),
+      expiresAt: this.now() + this.ttlMs,
+    });
+    for (const relativePath of input.paths) {
+      this.record({ vaultId: input.vaultId, relativePath });
+    }
+  }
+
+  /**
    * 判断 watcher 事件是否为本进程自写回声。
    * currentToken：事件时刻读到的当前文件 sha256 token；文件已不存在传 null。
    * 命中后消费该条记录。
@@ -60,6 +84,16 @@ export class SelfWriteRegistry {
     relativePath: string,
     currentToken: string | null,
   ): boolean {
+    this.prune();
+    for (const [opKey, op] of this.operations) {
+      if (!opKey.startsWith(`${vaultId} `)) continue;
+      if (op.paths.has(relativePath)) {
+        op.paths.delete(relativePath);
+        if (op.paths.size === 0) this.operations.delete(opKey);
+        return true;
+      }
+    }
+
     const key = keyOf(vaultId, relativePath);
     const entry = this.entries.get(key);
     if (!entry) return false;
@@ -67,13 +101,10 @@ export class SelfWriteRegistry {
       this.entries.delete(key);
       return false;
     }
-    // asset 等无 token 场景：有未过期记录即抑制。
     if (entry.versionToken === null) {
       this.entries.delete(key);
       return true;
     }
-    // note 场景：内容 hash 与自写结果一致才是回声；不等则保留记录（可能是
-    // 外部写入叠加在 E1 写之后，真正的事件尚未到达）。
     if (entry.versionToken === currentToken) {
       this.entries.delete(key);
       return true;
@@ -92,6 +123,9 @@ export class SelfWriteRegistry {
     const now = this.now();
     for (const [key, entry] of this.entries) {
       if (entry.expiresAt <= now) this.entries.delete(key);
+    }
+    for (const [key, op] of this.operations) {
+      if (op.expiresAt <= now) this.operations.delete(key);
     }
   }
 }

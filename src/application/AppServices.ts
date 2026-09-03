@@ -39,6 +39,7 @@ import type { SecretStorageStatus } from "./services/SecretStorageStatus";
 import type { FullTextSearchIndex } from "./search/FullTextSearchIndex";
 import type { LinkIndex } from "./links/LinkIndex";
 import type { UpdateService } from "./services/UpdateService";
+import type { FileOperationService } from "./fileOperations/FileOperationService";
 import type { RuntimeCapabilities } from "../runtime/RuntimeCapabilities";
 import type { RuntimeOperations } from "../runtime/RuntimeOperations";
 
@@ -201,6 +202,12 @@ export interface AppServices {
    * 存在性判断，DUAL-01）。Stage 4 起由 reconciler 做增量维护。
    */
   linkIndex?: LinkIndex;
+  /**
+   * 文件操作服务（可选，R011）：Desktop 装配——plan/execute + journal
+   * recovery；Web/内存不装配。UI 以 `services.fileOperations` 存在性
+   * + operations 矩阵共同门控（DUAL-01）。
+   */
+  fileOperations?: FileOperationService;
   /**
    * 应用更新服务（可选，R009 Stage 6 Auto Update）：由具备自更新能力的
    * 运行时装配（Desktop，electron-updater + GitHub Releases feed）；

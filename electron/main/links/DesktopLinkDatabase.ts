@@ -20,11 +20,15 @@
  */
 import type { DatabaseSync } from "node:sqlite";
 import type { SearchIndexStatus } from "../../../shared/ipc/contracts.js";
-import type { LinkIndexDocument } from "../../../shared/links/LinkIndex.js";
+import type {
+  LinkIndexDocument,
+  LinkRelocationImpact,
+} from "../../../shared/links/LinkIndex.js";
 import type { ExtractedLink } from "../../../shared/links/extractDocumentLinks.js";
 import { buildExtractedLink } from "../../../shared/links/extractDocumentLinks.js";
 import { resolveExtractedLinks } from "../../../shared/links/resolveLinks.js";
 import type { LinkIndexLookup } from "../../../shared/links/resolveLinks.js";
+import { computeRelocationImpacts } from "../../../shared/links/analyzeRelocation.js";
 import type { Backlink, DocumentLink } from "../../../shared/links/types.js";
 import { VaultIndexConnection } from "../index/VaultIndexConnection.js";
 
@@ -536,6 +540,38 @@ export class DesktopLinkDatabase {
       )
       .all(vaultId) as unknown as LinkRow[];
     return rows.map(toDocumentLink);
+  }
+
+  /** R011：pathMoves 影响分析（纯查询）。 */
+  async analyzeRelocation(input: {
+    vaultId: string;
+    pathMoves: Array<{
+      noteKey: string;
+      fromRelativePath: string;
+      toRelativePath: string;
+    }>;
+  }): Promise<LinkRelocationImpact[]> {
+    const db = await this.open();
+    const docs = db
+      .prepare(
+        "SELECT note_key, relative_path, version_token FROM link_docs WHERE vault_id = ?",
+      )
+      .all(input.vaultId) as Array<{
+      note_key: string;
+      relative_path: string;
+      version_token: string;
+    }>;
+    const documents = [];
+    for (const doc of docs) {
+      const links = await this.getOutgoing(input.vaultId, doc.note_key);
+      documents.push({
+        noteKey: doc.note_key,
+        relativePath: doc.relative_path,
+        versionToken: doc.version_token,
+        links,
+      });
+    }
+    return computeRelocationImpacts(documents, input.pathMoves);
   }
 
   private refreshReadyCount(db: DatabaseSync): void {

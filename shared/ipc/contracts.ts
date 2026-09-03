@@ -88,6 +88,14 @@ export const IPC_CHANNELS = {
   linkRemove: "link:remove",
   linkRelocate: "link:relocate",
   linkStatus: "link:status",
+  linkAnalyzeRelocation: "link:analyzeRelocation",
+  /** R011：文件操作预检 / 执行 / 恢复。 */
+  fileOperationPlan: "fileOperation:plan",
+  fileOperationExecute: "fileOperation:execute",
+  fileOperationRecoveryStatus: "fileOperation:recoveryStatus",
+  fileOperationRecover: "fileOperation:recover",
+  /** R011：Workspace 逻辑名（只改 vault.json name）。 */
+  vaultRename: "vault:rename",
   updateGetState: "update:getState",
   updateCheck: "update:check",
   updateDownload: "update:download",
@@ -299,6 +307,121 @@ export interface PurgeTrashInput {
 
 export interface PurgeTrashResult {
   purged: number;
+}
+
+/** R011：Workspace 逻辑名重命名（只改 vault.json name）。 */
+export interface RenameVaultInput {
+  vaultId: string;
+  name: string;
+}
+
+export interface RenameVaultResult {
+  vaultId: string;
+  name: string;
+}
+
+/* ----------------------- R011：fileOperation 组 ----------------------- */
+
+export type FileOperationKindDto =
+  | "rename-document-file"
+  | "move-document"
+  | "rename-group"
+  | "move-group"
+  | "rename-workspace";
+
+export interface FileOperationPlanInput {
+  kind: FileOperationKindDto;
+  vaultId: string;
+  /** 源相对路径（文档或分组）。 */
+  fromRelativePath?: string;
+  /** 目标相对路径（move）或新文件/目录完整相对路径（rename）。 */
+  toRelativePath?: string;
+  /** rename-document-file / rename-group：新名称（单段）。 */
+  newName?: string;
+  /** rename-workspace：新逻辑名。 */
+  workspaceName?: string;
+}
+
+export interface FilePathMoveDto {
+  noteKey: string | null;
+  kind: "document" | "group";
+  fromRelativePath: string;
+  toRelativePath: string;
+}
+
+export interface MarkdownLinkPatchPlanDto {
+  sourcePageId: string;
+  sourceRelativePathBefore: string;
+  sourceRelativePathAfter: string;
+  expectedVersionToken: string;
+  rules: Array<{
+    kind: "internal" | "asset";
+    oldHref: string;
+    newHref: string;
+  }>;
+}
+
+export interface FileOperationIssueDto {
+  code: string;
+  message: string;
+  pageId?: string;
+  relativePath?: string;
+}
+
+export interface FileOperationPlanDto {
+  operationId: string;
+  kind: FileOperationKindDto;
+  vaultId: string;
+  target: {
+    pageId?: string;
+    fromRelativePath?: string;
+    toRelativePath?: string;
+    workspaceName?: string;
+  };
+  pathMoves: FilePathMoveDto[];
+  patches: MarkdownLinkPatchPlanDto[];
+  summary: {
+    movedDocuments: number;
+    rewrittenDocuments: number;
+    rewrittenLinks: number;
+    rewrittenAssets: number;
+  };
+  blockers: FileOperationIssueDto[];
+  warnings: FileOperationIssueDto[];
+  createdAt: number;
+}
+
+export interface FileOperationExecuteInput {
+  vaultId: string;
+  plan: FileOperationPlanDto;
+}
+
+export interface FileOperationResultDto {
+  operationId: string;
+  kind: FileOperationKindDto;
+  vaultId: string;
+  pathMoves: FilePathMoveDto[];
+  rewrittenDocuments: number;
+  rewrittenLinks: number;
+  indexReconcileFailed?: boolean;
+}
+
+export interface FileOperationVaultInput {
+  vaultId: string;
+}
+
+export interface FileOperationRecoveryStatusDto {
+  vaultId: string;
+  phase: "clean" | "recoverable" | "manual-required";
+  pendingOperationIds: string[];
+  message?: string;
+}
+
+export interface FileOperationRecoveryResultDto {
+  vaultId: string;
+  recovered: boolean;
+  rolledBackOperationIds: string[];
+  message?: string;
 }
 
 /* -------------------------------- vaultState -------------------------------- */
@@ -673,6 +796,30 @@ export interface LinkRelocateInput {
   toRelativePath: string;
 }
 
+/** R011：link.analyzeRelocation 请求。 */
+export interface LinkAnalyzeRelocationInput {
+  vaultId: string;
+  pathMoves: Array<{
+    noteKey: string;
+    fromRelativePath: string;
+    toRelativePath: string;
+  }>;
+}
+
+/** R011：单条搬迁影响（与 shared/links LinkRelocationImpact 同形）。 */
+export interface LinkRelocationImpactDto {
+  sourcePageId: string;
+  sourceRelativePath: string;
+  futureSourceRelativePath: string;
+  targetPageId: string | null;
+  targetRelativePath: string;
+  futureTargetRelativePath: string;
+  kind: "internal" | "asset";
+  oldHref: string;
+  newHref: string;
+  sourceVersion: string;
+}
+
 /* ---------------------------------- asset ---------------------------------- */
 
 export interface AssetPickRequest {
@@ -857,6 +1004,25 @@ export interface E1DesktopAPI {
     restore(input: RestoreTrashInput): Promise<RestoreTrashResult>;
     /** R007 阶段 4：永久删除——单个 operationId 或缺省清空整个回收站。transient 拒写。 */
     purgeTrash(input: PurgeTrashInput): Promise<PurgeTrashResult>;
+    /**
+     * R011：重命名知识库逻辑名（只改 `.e1/vault.json` 的 name，
+     * 不改磁盘根目录）。transient 拒写。
+     */
+    rename(input: RenameVaultInput): Promise<RenameVaultResult>;
+  };
+  /**
+   * R011：路径变更类文件操作（plan → execute + crash recovery）。
+   * Renderer 不见 absolutePath；禁止通用 fs.rename。
+   */
+  fileOperation: {
+    plan(input: FileOperationPlanInput): Promise<FileOperationPlanDto>;
+    execute(input: FileOperationExecuteInput): Promise<FileOperationResultDto>;
+    recoveryStatus(
+      input: FileOperationVaultInput,
+    ): Promise<FileOperationRecoveryStatusDto>;
+    recover(
+      input: FileOperationVaultInput,
+    ): Promise<FileOperationRecoveryResultDto>;
   };
   /**
    * R007 阶段 2：设备级交互状态（收藏/最近打开），存 userData/vault-state/，
@@ -947,6 +1113,10 @@ export interface E1DesktopAPI {
     remove(input: LinkRemoveInput): Promise<void>;
     /** 移动/重命名：保持身份只改路径并重锚定出站链接。 */
     relocate(input: LinkRelocateInput): Promise<void>;
+    /** R011：分析 pathMoves 对链接的影响（纯查询）。 */
+    analyzeRelocation(
+      input: LinkAnalyzeRelocationInput,
+    ): Promise<LinkRelocationImpactDto[]>;
     status(input: LinkVaultInput): Promise<SearchIndexStatus>;
   };
   asset: {

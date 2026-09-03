@@ -31,12 +31,21 @@ import {
   type CreateNoteInput,
   type CreateNoteResult,
   type E1DesktopAPI,
+  type FileOperationExecuteInput,
+  type FileOperationPlanDto,
+  type FileOperationPlanInput,
+  type FileOperationRecoveryResultDto,
+  type FileOperationRecoveryStatusDto,
+  type FileOperationResultDto,
+  type FileOperationVaultInput,
   type IpcResult,
   type ImportAssetInput,
   type ImportedAsset,
   type LinkQueryInput,
+  type LinkAnalyzeRelocationInput,
   type LinkRebuildResult,
   type LinkRelocateInput,
+  type LinkRelocationImpactDto,
   type LinkRemoveInput,
   type LinkUpsertInput,
   type LinkUpsertResult,
@@ -61,6 +70,8 @@ import {
   type RecentVault,
   type RenameNoteFileInput,
   type RenameNoteFileResult,
+  type RenameVaultInput,
+  type RenameVaultResult,
   type RestoreTrashInput,
   type RestoreTrashResult,
   type RevealAssetInput,
@@ -138,6 +149,24 @@ const api: E1DesktopAPI = {
       invoke<RestoreTrashResult>(IPC_CHANNELS.vaultRestore, input),
     purgeTrash: (input: PurgeTrashInput) =>
       invoke<PurgeTrashResult>(IPC_CHANNELS.vaultPurgeTrash, input),
+    rename: (input: RenameVaultInput) =>
+      invoke<RenameVaultResult>(IPC_CHANNELS.vaultRename, input),
+  },
+  fileOperation: {
+    plan: (input: FileOperationPlanInput) =>
+      invoke<FileOperationPlanDto>(IPC_CHANNELS.fileOperationPlan, input),
+    execute: (input: FileOperationExecuteInput) =>
+      invoke<FileOperationResultDto>(IPC_CHANNELS.fileOperationExecute, input),
+    recoveryStatus: (input: FileOperationVaultInput) =>
+      invoke<FileOperationRecoveryStatusDto>(
+        IPC_CHANNELS.fileOperationRecoveryStatus,
+        input,
+      ),
+    recover: (input: FileOperationVaultInput) =>
+      invoke<FileOperationRecoveryResultDto>(
+        IPC_CHANNELS.fileOperationRecover,
+        input,
+      ),
   },
   vaultState: {
     get: (vaultId) => invoke<VaultState>(IPC_CHANNELS.vaultStateGet, vaultId),
@@ -195,6 +224,11 @@ const api: E1DesktopAPI = {
       invoke<void>(IPC_CHANNELS.linkRemove, input),
     relocate: (input: LinkRelocateInput) =>
       invoke<void>(IPC_CHANNELS.linkRelocate, input),
+    analyzeRelocation: (input: LinkAnalyzeRelocationInput) =>
+      invoke<LinkRelocationImpactDto[]>(
+        IPC_CHANNELS.linkAnalyzeRelocation,
+        input,
+      ),
     status: (input: LinkVaultInput) =>
       invoke<SearchIndexStatus>(IPC_CHANNELS.linkStatus, input),
   },

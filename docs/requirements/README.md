@@ -27,6 +27,7 @@
 | R009             | [Desktop 发布就绪与跨平台分发](./R009-desktop-release-readiness-distribution.md)            | 0.3      | 已完成 | 2026-08-30 |
 | R009 收口 / R010 | [R009 收口与 R010 规划：macOS 单平台路线](./R009-closeout-R010-macos-only-plan.md)          | 0.1      | 已采纳 | 2026-08-30 |
 | R010             | [内部链接、反向链接与链接完整性](./R010-internal-links-backlinks-link-integrity.md)         | 1.0      | 已完成 | 2026-08-31 |
+| R011             | [Desktop 文件操作 v2](./R011-desktop-file-operations-v2.md)                                  | 1.0      | 已完成 | 2026-09-03 |
 
 ## 单份需求的完成定义
 

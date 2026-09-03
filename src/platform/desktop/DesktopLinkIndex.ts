@@ -16,6 +16,7 @@ import type {
   Backlink,
   DocumentLink,
   LinkIndex,
+  LinkRelocationImpact,
 } from "../../application/links/LinkIndex";
 import type { SearchIndexStatus } from "../../application/search/SearchIndexStatus";
 import type { E1DesktopAPI } from "./desktopApi";
@@ -130,6 +131,31 @@ export class DesktopLinkIndex implements LinkIndex {
   async getBrokenLinks(vaultId: string): Promise<DocumentLink[]> {
     const rows = await this.api.links.broken({ vaultId });
     return rows.map((row) => this.toSessionLink(vaultId, row));
+  }
+
+  async analyzeRelocation(input: {
+    vaultId: string;
+    pathMoves: Array<{
+      noteKey: string;
+      fromRelativePath: string;
+      toRelativePath: string;
+    }>;
+  }): Promise<LinkRelocationImpact[]> {
+    const rows = await this.api.links.analyzeRelocation({
+      vaultId: input.vaultId,
+      pathMoves: input.pathMoves.map((move) => ({
+        ...move,
+        noteKey: this.toNoteKey(input.vaultId, move.noteKey),
+      })),
+    });
+    return rows.map((row) => ({
+      ...row,
+      sourcePageId: this.toSessionPageId(input.vaultId, row.sourcePageId),
+      targetPageId:
+        row.targetPageId === null
+          ? null
+          : this.toSessionPageId(input.vaultId, row.targetPageId),
+    }));
   }
 
   /** 会话页面 id → Main 稳定键（Adoption 别名；无别名时原样透传）。 */

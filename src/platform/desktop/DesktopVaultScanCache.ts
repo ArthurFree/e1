@@ -105,6 +105,15 @@ export class DesktopVaultScanCache {
     this.assetsDirectoryByVault.clear();
   }
 
+  /** 同步反查 pageId → relativePath（已扫描缓存；无则 null）。 */
+  lookupRelativePath(pageId: string): string | null {
+    for (const index of this.pageRelativePathsByVault.values()) {
+      const rel = index.get(pageId);
+      if (rel) return rel;
+    }
+    return null;
+  }
+
   /** 强制重新扫描（跳过缓存并以新快照替换；失败时保留语义同 scan）。 */
   rescan(vaultId: string): Promise<VaultScanSnapshot> {
     this.invalidate(vaultId);

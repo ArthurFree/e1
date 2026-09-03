@@ -83,6 +83,7 @@
 | 内部链接语义与存储（R010 Stage 0/1） | 磁盘只存普通 Markdown 相对路径链接（LINK-01），运行时身份用 stable page id（LINK-02），禁止按 title 定位（LINK-04）；新增 `internalLink` 编辑器节点取代 mention 作为 `@` 插入形态，mention 保留渲染存量文档；链接分类/路径归一/URL 解码语义冻结于 `shared/links/`（vault 外逃逸 → broken） | Vault 必须兼容 VS Code/Typora/Obsidian/Git；私有协议会把用户锁进 E1；路径即磁盘身份使链接可被任何工具读写 |
 | LinkIndex 派生索引与共库（R010 Stage 2–4） | LinkIndex Port 复刻 R008 SearchIndex 管线（契约双实现 + reconciler + degraded 30s 防抖重建）；SQLite 与搜索共库单连接（`VaultIndexConnection`/`DesktopVaultIndexManager`，独立 meta key `link_schema_version`），损坏文件级 `.corrupt` 备份重建；双提取器（Tiptap JSON / Markdown 文本）共用 `shared/links` 语义核心，契约测试锁定一致；broken 是落库时的解析结果而非独立状态机 | 两个 DatabaseSync 指向同一文件有 SQLITE_BUSY 写冲突风险；派生数据可全量重建，损坏自愈无需迁移；链接索引失败绝不阻断正文保存 |
 | 链接能力 Web 门控（R010） | `AppServices.linkIndex` 为可选字段，仅 Desktop 装配；Backlinks/失效链接 UI 以存在性门控（沿用 `fullTextSearch` 先例，不加 RuntimeCapabilities 字段）；共享编辑器层（internalLink 节点、序列化、点击导航）双端一致 | R010 价值在 Desktop 本地 Vault；Web 端 JSON 存储的链接语义不变，避免为单一端需求膨胀能力矩阵 |
+| Desktop 文件操作 v2（R011） | 路径变更统一走 `FileOperationService`（plan → Preflight → journaled execute）；Markdown 目的地源码级改写；Workspace Rename 只改 `vault.json` name；Web `document.renameFile=false`；操作开关测绿后翻 true；成功后显式 reconcile 索引 | 裸 `fs.rename` 会断相对链接且自写抑制吞掉 watcher；物理根目录改名延期 R014 |
 
 重大架构决策另有 ADR 详述（背景/替代方案），见 [adr/](./adr/)。
 

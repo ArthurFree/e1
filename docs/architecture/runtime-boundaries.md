@@ -107,17 +107,17 @@ R005 将项目划分为四层运行时边界：Shared UI、Shared Application、
 
 | 字段                      | 语义                                                             | Web | Desktop |
 | ------------------------- | ---------------------------------------------------------------- | :-: | :-----: |
-| `workspace.rename`        | 重命名知识库（Desktop 库名取自 vault.json/目录名，未实现）      | 是  |   否    |
+| `workspace.rename`        | 重命名知识库（Desktop：只改 `.e1/vault.json` 的 `name`，R011） | 是  |   是    |
 | `workspace.favorite`      | 收藏/取消收藏知识库                                              | 是  |   是    |
 | `page.document.create`    | 新建文档                                                         | 是  |   是    |
 | `page.document.renameTitle` | 标题重命名（Desktop 写 Frontmatter title）                     | 是  |   是    |
-| `page.document.renameFile` | 物理文件名重命名（§4.4 P2，与标题重命名分开；UI 入口属 R011）   | 是  |   否    |
-| `page.document.move`      | 移动文档（Desktop 仅 document → directory，不支持自定义排序）    | 是  |   是    |
+| `page.document.renameFile` | 物理文件名重命名（与标题分离；Web 无物理文件名 → false，R011） | 否  |   是    |
+| `page.document.move`      | 移动文档（Desktop：journaled + 链接改写，R011）                  | 是  |   是    |
 | `page.document.trash`     | 文档移入回收站（Desktop = rename 进 .e1/trash）                  | 是  |   是    |
 | `page.document.favorite`  | 收藏/取消收藏文档                                                | 是  |   是    |
 | `page.group.create`       | 新建分组（Desktop = 真实目录）                                   | 是  |   是    |
-| `page.group.rename`       | 分组重命名（目录 rename；Desktop 待 Main 目录 IPC，R011）        | 是  |   否    |
-| `page.group.move`         | 分组移动（目录 move；Desktop 未实现，R011）                      | 是  |   否    |
+| `page.group.rename`       | 分组重命名（目录 rename；journaled，R011）                       | 是  |   是    |
+| `page.group.move`         | 分组移动（目录 move；journaled + 索引 rebuild，R011）            | 是  |   是    |
 | `page.group.trash`        | 分组移入回收站                                                   | 是  |   是    |
 | `page.trash.restore`      | 从回收站恢复                                                     | 是  |   是    |
 | `page.trash.purge`        | 永久删除（含清空回收站）                                         | 是  |   是    |

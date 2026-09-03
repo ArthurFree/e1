@@ -14,6 +14,7 @@
 import type {
   LinkIndex,
   LinkIndexDocument,
+  LinkRelocationImpact,
 } from "../../application/links/LinkIndex";
 import type { DocumentLink, Backlink } from "../../application/links/LinkIndex";
 import type { SearchIndexStatus } from "../../application/search/SearchIndexStatus";
@@ -22,6 +23,7 @@ import {
   type LinkIndexLookup,
 } from "../../../shared/links/resolveLinks";
 import { buildExtractedLink } from "../../../shared/links/extractDocumentLinks";
+import { computeRelocationImpacts } from "../../../shared/links/analyzeRelocation";
 
 /** upsert 的文档来源（「磁盘」抽象）；返回 null 表示文件已消失。 */
 export interface LinkIndexDocumentSource {
@@ -276,6 +278,27 @@ export class InMemoryLinkIndex implements LinkIndex {
       }
     }
     return Promise.resolve(broken);
+  }
+
+  analyzeRelocation(input: {
+    vaultId: string;
+    pathMoves: Array<{
+      noteKey: string;
+      fromRelativePath: string;
+      toRelativePath: string;
+    }>;
+  }): Promise<LinkRelocationImpact[]> {
+    const bucket = this.byVault.get(input.vaultId);
+    if (!bucket) return Promise.resolve([]);
+    const documents = [...bucket.values()].map((stored) => ({
+      noteKey: stored.document.noteKey,
+      relativePath: stored.document.relativePath,
+      versionToken: stored.document.versionToken,
+      links: stored.links,
+    }));
+    return Promise.resolve(
+      computeRelocationImpacts(documents, input.pathMoves),
+    );
   }
 
   getStatus(vaultId: string): SearchIndexStatus {

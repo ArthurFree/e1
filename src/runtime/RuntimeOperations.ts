@@ -18,7 +18,10 @@
  */
 export interface RuntimeOperations {
   workspace: {
-    /** 重命名知识库（Web 改名称记录；Desktop 库名取自 vault.json/目录名）。 */
+    /**
+     * 重命名知识库——Web 改名称记录；Desktop（R011）只改 `.e1/vault.json`
+     * 的 `name`，不改 Vault 根目录物理文件夹名。
+     */
     rename: boolean;
     /** 收藏/取消收藏知识库。 */
     favorite: boolean;
@@ -31,11 +34,13 @@ export interface RuntimeOperations {
       /** 标题重命名（Title rename；Desktop 写 Frontmatter title）。 */
       renameTitle: boolean;
       /**
-       * 物理文件名重命名（File rename，R007 §4.4「重命名文件」）——
+       * 物理文件名重命名（File rename，R007 §4.4 / R011）——
        * 与标题重命名是两个独立概念，UI 入口必须分开命名。
+       * Web 无磁盘文件名（IndexedDB），恒为 false；Desktop 在 R011
+       * Stage 3 测绿后翻 true。
        */
       renameFile: boolean;
-      /** 移动文档（Desktop 第一版仅 document → directory，不支持自定义排序）。 */
+      /** 移动文档（Desktop 仅 document → directory/root，不支持自定义排序）。 */
       move: boolean;
       /** 移入回收站。 */
       trash: boolean;
@@ -46,9 +51,9 @@ export interface RuntimeOperations {
     group: {
       /** 新建分组。 */
       create: boolean;
-      /** 分组重命名（目录 rename；Desktop 待 Main 目录 IPC，R011）。 */
+      /** 分组重命名（目录 rename；Desktop R011 Stage 4 后开启）。 */
       rename: boolean;
-      /** 分组移动（目录 move；Desktop 未实现，R011）。 */
+      /** 分组移动（目录 move；Desktop R011 Stage 4 后开启）。 */
       move: boolean;
       /** 移入回收站。 */
       trash: boolean;

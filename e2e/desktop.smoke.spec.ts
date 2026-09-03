@@ -79,6 +79,7 @@ test.describe("桌面冒烟", () => {
         "openRecent",
         "openSelection",
         "purgeTrash",
+        "rename",
         "restore",
         "scan",
         "selectDirectory",

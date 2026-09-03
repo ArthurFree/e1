@@ -42,6 +42,9 @@ import {
   IconTrash,
   PageIcon,
 } from "./ui/icons";
+import { FileOperationPreflightDialog } from "./FileOperationPreflightDialog";
+import type { FileOperationPlan } from "../application/fileOperations/FileOperationService";
+import { FILE_OPERATION_LABELS } from "../../shared/fileOperations/types";
 
 /** 拖拽时放入 dataTransfer 的自定义 MIME，用于识别「树内页面」拖动。 */
 const DND_MIME = "application/x-page-id";
@@ -76,6 +79,9 @@ interface PageTreeBodyProps {
    * （而不是点了抛 NOT_IMPLEMENTED）。
    */
   pageOps: RuntimeOperations["page"];
+  /** R011：是否装配了 fileOperations（物理文件名重命名入口门控）。 */
+  fileOperationsAvailable: boolean;
+  onRenameFile?(page: Page): void;
 }
 
 /**
@@ -96,6 +102,8 @@ const PageTreeBody = memo(function PageTreeBody({
   onPick,
   renameRequest,
   pageOps,
+  fileOperationsAvailable,
+  onRenameFile,
 }: PageTreeBodyProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -111,6 +119,10 @@ const PageTreeBody = memo(function PageTreeBody({
   // Group 不支持的动作（rename/move）入口与拖拽必须整体隐藏/禁用。
   const canRenamePage = (page: Page) =>
     page.kind === "group" ? pageOps.group.rename : pageOps.document.renameTitle;
+  const canRenameFile = (page: Page) =>
+    page.kind === "document" &&
+    pageOps.document.renameFile &&
+    fileOperationsAvailable;
   const canTrashPage = (page: Page) =>
     page.kind === "group" ? pageOps.group.trash : pageOps.document.trash;
   const canMovePage = (page: Page) =>
@@ -335,6 +347,20 @@ const PageTreeBody = memo(function PageTreeBody({
               <IconPencil size={14} />
             </button>
           )}
+          {canRenameFile(page) && onRenameFile && (
+            <button
+              type="button"
+              className="tree-row__action"
+              aria-label={`${FILE_OPERATION_LABELS.renameFile}「${page.title || "无标题"}」`}
+              title={FILE_OPERATION_LABELS.renameFile}
+              onClick={(event) => {
+                event.stopPropagation();
+                onRenameFile(page);
+              }}
+            >
+              <IconImport size={14} />
+            </button>
+          )}
           {canTrashPage(page) && (
             <button
               type="button"
@@ -413,7 +439,7 @@ const PageTreeBody = memo(function PageTreeBody({
 
 /** 文档树侧栏：层级展示、新建、重命名、删除、拖拽移动、标签筛选、Markdown 导入。 */
 export function PageTreeSidebar() {
-  const { operations } = useAppServices();
+  const { operations, fileOperations } = useAppServices();
   const { pages, tags, pageTags, workspace } = useWorkspaceData();
   const {
     createPage,
@@ -433,8 +459,53 @@ export function PageTreeSidebar() {
   // 树内动作错误条（导入失败 + R006 阶段 2 起移动/重命名/删除/新建的
   // 诚实失败提示——Desktop 写路径抛 DomainError 时用户可感知）。
   const [actionError, setActionError] = useState<string | null>(null);
+  const [fileOpPlan, setFileOpPlan] = useState<FileOperationPlan | null>(null);
+  const [fileOpBusy, setFileOpBusy] = useState(false);
+  const [fileOpError, setFileOpError] = useState<string | null>(null);
   const widthRef = useRef(preferences.sidebarWidth);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const startRenameFile = useCallback(
+    async (page: Page) => {
+      if (!fileOperations || !workspace) return;
+      const suggested =
+        page.id.startsWith("path:") && page.id.endsWith(".md")
+          ? page.id.slice("path:".length).split("/").pop()!
+          : `${page.title || "无标题"}.md`;
+      const entered = window.prompt(FILE_OPERATION_LABELS.renameFile, suggested);
+      if (!entered) return;
+      const newName = entered.trim().endsWith(".md")
+        ? entered.trim()
+        : `${entered.trim()}.md`;
+      try {
+        const plan = await fileOperations.plan({
+          kind: "rename-document-file",
+          vaultId: workspace.id,
+          pageId: page.id,
+          newName,
+        });
+        setFileOpError(null);
+        setFileOpPlan(plan);
+      } catch (err) {
+        setActionError(err instanceof Error ? err.message : "预检失败");
+      }
+    },
+    [fileOperations, workspace],
+  );
+
+  const confirmFileOp = useCallback(async () => {
+    if (!fileOperations || !fileOpPlan) return;
+    setFileOpBusy(true);
+    setFileOpError(null);
+    try {
+      await fileOperations.execute(fileOpPlan);
+      setFileOpPlan(null);
+    } catch (err) {
+      setFileOpError(err instanceof Error ? err.message : "执行失败");
+    } finally {
+      setFileOpBusy(false);
+    }
+  }, [fileOperations, fileOpPlan]);
 
   const onResizeStart = useCallback(
     (event: React.PointerEvent) => {
@@ -606,6 +677,24 @@ export function PageTreeSidebar() {
         onPick={closeTreeDrawer}
         renameRequest={renamingSeed}
         pageOps={operations.page}
+        fileOperationsAvailable={Boolean(fileOperations)}
+        onRenameFile={(page) => {
+          void startRenameFile(page);
+        }}
+      />
+      <FileOperationPreflightDialog
+        open={fileOpPlan !== null}
+        plan={fileOpPlan}
+        busy={fileOpBusy}
+        errorMessage={fileOpError}
+        onCancel={() => {
+          if (fileOpBusy) return;
+          setFileOpPlan(null);
+          setFileOpError(null);
+        }}
+        onConfirm={() => {
+          void confirmFileOp();
+        }}
       />
       <div className="tree-tags" aria-label="标签筛选">
         <span className="tree-tags__label">标签</span>

@@ -69,6 +69,15 @@ export class VaultRegistry {
     return records.find((r) => r.vaultId === vaultId) ?? null;
   }
 
+  /** R011：best-effort 同步 displayName（不改 absolutePath / lastOpenedAt）。 */
+  async updateDisplayName(vaultId: string, displayName: string): Promise<void> {
+    const records = await this.read();
+    const next = records.map((r) =>
+      r.vaultId === vaultId ? { ...r, displayName } : r,
+    );
+    await this.write(next);
+  }
+
   private async isAccessible(absolutePath: string): Promise<boolean> {
     try {
       return (await stat(absolutePath)).isDirectory();

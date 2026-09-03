@@ -364,3 +364,26 @@ describe("renameNoteFile（§4.4 重命名文件）", () => {
     );
   });
 });
+
+describe("R011 Stage 0 缺口：裸 moveNoteFile 不断链改写", () => {
+  it("移动含相对链接的文档后，磁盘 href 仍指向旧相对位置（证明缺口）", async () => {
+    const { readFile } = await import("node:fs/promises");
+    await writeFile(join(vaultRoot, "React.md"), "# React\n", "utf8");
+    await writeFile(
+      join(vaultRoot, "Fiber.md"),
+      "见 [React](React.md)\n",
+      "utf8",
+    );
+    await mkdir(join(vaultRoot, "notes"));
+    const moved = await moveNoteFile({
+      vaultRoot,
+      relativePath: "Fiber.md",
+      targetDirectory: "notes",
+    });
+    expect(moved.relativePath).toBe("notes/Fiber.md");
+    const body = await readFile(join(vaultRoot, "notes", "Fiber.md"), "utf8");
+    // 裸 rename 不改 Markdown：相对 href 仍是 React.md，从 notes/ 解析会 broken。
+    expect(body).toContain("[React](React.md)");
+    expect(body).not.toContain("../React.md");
+  });
+});

@@ -105,6 +105,22 @@ export class DesktopDocumentSourceCache {
     this.byPageId.set(pageId, { ...existing, relativePath });
   }
 
+  /** R011：分组移动/重命名后，按路径前缀批量 remap 来源缓存。 */
+  remapPathPrefix(fromPrefix: string, toPrefix: string): void {
+    const prefix = fromPrefix.endsWith("/") ? fromPrefix : `${fromPrefix}/`;
+    for (const [pageId, ctx] of this.byPageId) {
+      if (ctx.relativePath === fromPrefix) {
+        this.byPageId.set(pageId, { ...ctx, relativePath: toPrefix });
+      } else if (ctx.relativePath.startsWith(prefix)) {
+        this.byPageId.set(pageId, {
+          ...ctx,
+          relativePath:
+            toPrefix + ctx.relativePath.slice(fromPrefix.length),
+        });
+      }
+    }
+  }
+
   remove(pageId: string): void {
     this.byPageId.delete(pageId);
   }

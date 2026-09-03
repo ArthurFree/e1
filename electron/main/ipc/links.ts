@@ -16,6 +16,7 @@ import {
 } from "../../../shared/ipc/contracts.js";
 import {
   parseLinkQueryInput,
+  parseLinkAnalyzeRelocationInput,
   parseLinkRelocateInput,
   parseLinkRemoveInput,
   parseLinkUpsertInput,
@@ -148,6 +149,17 @@ export function registerLinkHandlers(
       await resolveVaultRoot(input.vaultId, deps);
       await indexes.linksFor(input.vaultId).relocate(input);
     }),
+  );
+
+  bus.handle(
+    IPC_CHANNELS.linkAnalyzeRelocation,
+    handleRequest(
+      parseLinkAnalyzeRelocationInput,
+      async (input) => {
+        await resolveVaultRoot(input.vaultId, deps);
+        return indexes.linksFor(input.vaultId).analyzeRelocation(input);
+      },
+    ),
   );
 
   bus.handle(

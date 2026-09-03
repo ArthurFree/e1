@@ -168,6 +168,19 @@ export function registerVaultHandlers(
           );
         }
         await assertVaultRootDirectory(record.absolutePath);
+        const { recoverPendingFileOperations } = await import(
+          "../filesystem/JournaledFileOperationEngine.js"
+        );
+        const recovery = await recoverPendingFileOperations({
+          vaultRoot: record.absolutePath,
+        });
+        if (recovery.manualRequired) {
+          throw new IpcFailure(
+            "FILE_OPERATION_RECOVERY_REQUIRED",
+            recovery.message ??
+              "检测到未完成的文件操作且无法自动恢复，请先处理后再打开。",
+          );
+        }
         const read = await readVault(record.absolutePath);
         if (read.status !== "initialized") {
           // 登记过的目录丢了 vault.json：不自动重建（SEC-07），显式失败。

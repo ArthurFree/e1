@@ -49,6 +49,7 @@ describe("preload 暴露形状", () => {
       "openRecent",
       "openSelection",
       "purgeTrash",
+      "rename",
       "restore",
       "scan",
       "selectDirectory",
@@ -89,6 +90,7 @@ describe("preload 暴露形状", () => {
     ]);
     // R010 Stage 3：派生链接索引组（与搜索共库单连接）。
     expect(Object.keys(api.links).sort()).toEqual([
+      "analyzeRelocation",
       "backlinks",
       "broken",
       "outgoing",
@@ -97,6 +99,12 @@ describe("preload 暴露形状", () => {
       "remove",
       "status",
       "upsert",
+    ]);
+    expect(Object.keys(api.fileOperation).sort()).toEqual([
+      "execute",
+      "plan",
+      "recover",
+      "recoveryStatus",
     ]);
     // R009 Stage 6：应用更新组 + 更新状态订阅（Auto Update）。
     expect(Object.keys(api.update).sort()).toEqual([

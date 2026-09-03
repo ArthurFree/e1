@@ -387,5 +387,49 @@ export function runLinkIndexContract(
         (await index.getBrokenLinks(VAULT)).map((l) => l.label).sort(),
       ).toEqual(["到缺失", "逃逸"]);
     });
+
+    it("R011 analyzeRelocation：目标下移产生 newHref；同迁 skip", async () => {
+      const index = await readyIndex();
+      const impacts = await index.analyzeRelocation({
+        vaultId: VAULT,
+        pathMoves: [
+          {
+            noteKey: "01AAA",
+            fromRelativePath: "甲.md",
+            toRelativePath: "子目录/甲.md",
+          },
+        ],
+      });
+      // 乙.md → 甲.md 应变为 ../子目录/甲.md；甲 自身出站也需按新位置重算。
+      expect(impacts.some((i) => i.oldHref === "甲.md")).toBe(true);
+      const back = impacts.find(
+        (i) => i.sourcePageId === "path:乙.md" && i.oldHref === "甲.md",
+      );
+      expect(back?.newHref).toBe("子目录/甲.md");
+
+      const sameMove = await index.analyzeRelocation({
+        vaultId: VAULT,
+        pathMoves: [
+          {
+            noteKey: "01AAA",
+            fromRelativePath: "甲.md",
+            toRelativePath: "子目录/甲.md",
+          },
+          {
+            noteKey: "path:乙.md",
+            fromRelativePath: "乙.md",
+            toRelativePath: "子目录/乙.md",
+          },
+        ],
+      });
+      // 甲↔乙 相对关系不变 → 不应产出甲↔乙的改写。
+      expect(
+        sameMove.some(
+          (i) =>
+            (i.oldHref === "甲.md" || i.oldHref === "乙.md") &&
+            (i.sourcePageId === "01AAA" || i.sourcePageId === "path:乙.md"),
+        ),
+      ).toBe(false);
+    });
   });
 }

@@ -28,6 +28,20 @@ import type { SearchIndexStatus } from "../ipc/contracts.js";
 import type { ExtractedLink } from "./extractDocumentLinks.js";
 import type { Backlink, DocumentLink } from "./types.js";
 
+/** R011：单条链接在 pathMoves 下的搬迁影响。 */
+export interface LinkRelocationImpact {
+  sourcePageId: string;
+  sourceRelativePath: string;
+  futureSourceRelativePath: string;
+  targetPageId: string | null;
+  targetRelativePath: string;
+  futureTargetRelativePath: string;
+  kind: "internal" | "asset";
+  oldHref: string;
+  newHref: string;
+  sourceVersion: string;
+}
+
 /** 索引一篇文档所需的全部字段（Main 索引侧由 Markdown 提取供给）。 */
 export interface LinkIndexDocument {
   /** 索引身份：stableNoteId ?? "path:<relativePath>"。 */
@@ -94,6 +108,19 @@ export interface LinkIndex {
     fromRelativePath: string;
     toRelativePath: string;
   }): Promise<void>;
+
+  /**
+   * R011：分析 pathMoves 对链接的影响（纯查询，不改索引）。
+   * Memory / SQLite 经同一契约套件锁定。
+   */
+  analyzeRelocation(input: {
+    vaultId: string;
+    pathMoves: Array<{
+      noteKey: string;
+      fromRelativePath: string;
+      toRelativePath: string;
+    }>;
+  }): Promise<LinkRelocationImpact[]>;
 
   /** 单篇文档的出站链接（文档顺序）；未索引返回 []。 */
   getOutgoing(input: {

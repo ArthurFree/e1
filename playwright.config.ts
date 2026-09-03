@@ -11,6 +11,10 @@ import { setupProjectTmpDir } from "./src/test/projectTmp";
  */
 setupProjectTmpDir();
 
+// Cursor/代理环境可能注入 ELECTRON_RUN_AS_NODE=1，会导致
+// Playwright `_electron.launch` 以 Node 模式起进程并立刻崩溃。
+delete process.env.ELECTRON_RUN_AS_NODE;
+
 export default defineConfig({
   testDir: "./e2e",
   timeout: 30_000,
