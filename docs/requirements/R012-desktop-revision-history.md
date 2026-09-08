@@ -1,7 +1,7 @@
 # R012 Desktop Revision History
 
 > 版本：1.0
-> 状态：实施完成（Stage 0–6），Stage 7 验收进行中（E2E/packaged/性能已绿，latest remote CI 待推送后验证）
+> 状态：全部完成（Stage 0–7；E2E/packaged/性能/远端 CI 全绿，run 34201541622）
 > 更新时间：2026-09-08
 > 目标平台：macOS Desktop
 > 前置需求：R006、R007、R008、R010、R011、R011.1
@@ -289,7 +289,7 @@ S2–S5 的 list/get/preview/capture/restore/retention 全部测绿后，`deskto
 | 4 | Safe Restore（flush → before-restore → 乐观锁复核 → raw body 合并 → 原子写 → SourceCache/版本通道推进 → 双索引 reconcile） | 完成 |
 | 5 | VersionPanel + Diff（summary lazy list / preview / manual create / 行级 diff / restore 确认 / degraded 状态） | 完成 |
 | 6 | 文件生命周期集成（rename/move relocate、purge 后 purgeSeries）+ operation matrix `revision.read/write` 翻 true | 完成 |
-| 7 | Scale / E2E / Packaged / Docs：G44–G56 与 P17–P20 全绿、性能达标、文档收口；latest remote CI 待推送后验证 | 进行中 |
+| 7 | Scale / E2E / Packaged / Docs：G44–G56 与 P17–P20 全绿、性能达标、文档收口、远端 CI 六 job 全绿（run 34201541622） | 完成 |
 
 ## 18. Unit / Contract Test Matrix（已覆盖）
 
@@ -435,7 +435,7 @@ Edit / Snapshot / Diff / Restore Version。
 - [x] P17–P20 real packaged green（4/4）；
 - [x] typecheck / lint / deps:check green；
 - [x] build:web / build:desktop green；
-- [ ] latest remote CI green（待推送后远端验证）。
+- [x] latest remote CI green（2026-09-08 run 34201541622 六 job 全绿）。
 
 ### Docs
 
@@ -537,4 +537,4 @@ RevisionSeries relocate metadata
 
 | 版本 | 日期 | 变更 |
 | ---- | ---- | ---- |
-| 1.0 | 2026-09-08 | 从 `R011.1-closeout-and-R012-desktop-revision-history.md` Part B（原 §13–§50）拆出为独立需求文档；按实施完成状态修正全文（Stage 0–6 已落地，Stage 7 验收进行中：G44–G56 / P17–P20 / 性能实测达标，latest remote CI 待推送后验证） |
+| 1.0 | 2026-09-08 | 从 `R011.1-closeout-and-R012-desktop-revision-history.md` Part B（原 §13–§50）拆出为独立需求文档；按实施完成状态修正全文（Stage 0–6 已落地，Stage 7 验收完成：G44–G56 / P17–P20 / 性能实测达标 / 远端 CI 全绿） |
