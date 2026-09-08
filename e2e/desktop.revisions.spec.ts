@@ -366,7 +366,10 @@ async function replaceBodyAndWaitSaved(
 ) {
   const editor = window.locator(".editor__content .ProseMirror");
   await editor.click();
-  await window.keyboard.press("Meta+A");
+  // ControlOrMeta：macOS 解析为 Cmd、Linux/Windows 解析为 Ctrl——
+  // 远端 CI 是 ubuntu+xvfb，写死 Meta+A 不会全选，编辑退化为「中间插入」
+  //（远端 run 34199399248 的 G47/G48/G55/G56 失败根因）。
+  await window.keyboard.press("ControlOrMeta+A");
   await window.keyboard.type(text);
   await expect(window.getByText(/已保存/)).toBeVisible({ timeout: UI_TIMEOUT });
   await expect
@@ -380,19 +383,31 @@ async function rescanViaUi(window: Page) {
   await window.getByRole("button", { name: "重新扫描" }).click();
 }
 
-/** 面板内经二次确认恢复「摘要含 snippet 的版本」，成功后面板自动关闭。 */
-async function restoreViaPanel(window: Page, snippet: string) {
+/**
+ * 面板内经二次确认恢复「摘要含 snippet 且原因标签为 reason 的版本」，
+ * 成功后面板自动关闭。reason 收窄是必须的：同一正文可能同时被 manual
+ * 与 interval 快照收录（编辑若未整体替换，混合正文也会命中摘要子串），
+ * 只按摘要匹配会 strict violation 或恢复错版本（不用 .first() 蒙混）。
+ */
+async function restoreViaPanel(
+  window: Page,
+  snippet: string,
+  reason: "手动" | "自动" | "恢复前" = "手动",
+) {
   const panel = await openVersionPanel(window);
-  const summary = panel.locator(".version-panel__summary", {
-    hasText: snippet,
-  });
-  await expect(summary).toBeVisible({ timeout: UI_TIMEOUT });
-  await summary.click();
+  // 摘要 + 原因标签双重 hasText 收窄（原因「手动/自动/恢复前」就渲染在
+  // 条目内，文本过滤即可，避免 filter({has}) 相对定位器作用域坑）。
+  const item = panel
+    .locator(".version-panel__item")
+    .filter({ hasText: snippet })
+    .filter({ hasText: reason });
+  await expect(item).toHaveCount(1, { timeout: UI_TIMEOUT });
+  await item.locator(".version-panel__summary").click();
   // lazy get 加载完整快照后才出现恢复按钮。
-  const restore = panel.getByRole("button", { name: "恢复此版本" });
+  const restore = item.getByRole("button", { name: "恢复此版本" });
   await expect(restore).toBeVisible({ timeout: UI_TIMEOUT });
   await restore.click();
-  await panel.getByRole("button", { name: "确认恢复？" }).click();
+  await item.getByRole("button", { name: "确认恢复？" }).click();
   await expect(panel).toHaveCount(0, { timeout: UI_TIMEOUT });
 }
 
@@ -1174,6 +1189,11 @@ test.describe("桌面冒烟：R012 版本历史（G44–G56）", () => {
 
       // 编辑移除链接并落盘：出边/反向链接随之清零（保存自写钩子 upsert）。
       await replaceBodyAndWaitSaved(window, sourceAbs, "链接已移除。");
+      // 就绪条件：磁盘正文确实不再含链接（编辑未整体生效时链接仍残留，
+      // 直接断言索引会把「编辑没生效」误诊为「索引没同步」）。
+      await expect
+        .poll(async () => readFile(sourceAbs, "utf8"), { timeout: UI_TIMEOUT })
+        .not.toContain("[目标页](目标.md)");
       await expect
         .poll(async () => backlinkCount(window, targetId), {
           timeout: UI_TIMEOUT,
@@ -1237,6 +1257,10 @@ test.describe("桌面冒烟：R012 版本历史（G44–G56）", () => {
 
       // 编辑去掉独特词并落盘：搜索索引同步，旧词不再命中该文档。
       await replaceBodyAndWaitSaved(window, abs, "第二版没有那个词。");
+      // 就绪条件：磁盘正文确实不再含独特词（同 G55，先证编辑生效）。
+      await expect
+        .poll(async () => readFile(abs, "utf8"), { timeout: UI_TIMEOUT })
+        .not.toContain("琥珀独特词甲");
       await expect
         .poll(
           async () =>

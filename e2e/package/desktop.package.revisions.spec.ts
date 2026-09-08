@@ -275,7 +275,7 @@ test.describe("安装包冒烟：R012 版本历史（P17–P20）", () => {
         // 恢复时的 before-restore 捕获会被 §19 去重吞掉，面板/磁盘上
         // 就不会出现「恢复前」条目。
         await editor.click();
-        await window.keyboard.press("Meta+A");
+        await window.keyboard.press("ControlOrMeta+A");
         await window.keyboard.type("打包第二版正文。");
         await expect(window.getByText(/已保存/)).toBeVisible({
           timeout: 20_000,
@@ -284,7 +284,7 @@ test.describe("安装包冒烟：R012 版本历史（P17–P20）", () => {
           .poll(async () => readFile(abs, "utf8"), { timeout: 20_000 })
           .toContain("打包第二版正文。");
         await editor.click();
-        await window.keyboard.press("Meta+A");
+        await window.keyboard.press("ControlOrMeta+A");
         await window.keyboard.type("打包第二版正文。追加未快照段。");
         await expect(window.getByText(/已保存/)).toBeVisible({
           timeout: 20_000,
@@ -294,13 +294,17 @@ test.describe("安装包冒烟：R012 版本历史（P17–P20）", () => {
           .toContain("打包第二版正文。追加未快照段。");
 
         // 面板恢复 v1（二次确认）：AtomicFileWriter 落盘 + 编辑器重建。
+        // 按摘要 + 原因（手动）双条件收窄，防 interval 快照摘要撞车。
         await window.getByRole("button", { name: "版本历史" }).click();
         const panel2 = window.getByRole("dialog", { name: "版本历史" });
-        await panel2
-          .locator(".version-panel__summary", { hasText: "打包第一版正文。" })
-          .click();
-        await panel2.getByRole("button", { name: "恢复此版本" }).click();
-        await panel2.getByRole("button", { name: "确认恢复？" }).click();
+        const targetItem = panel2
+          .locator(".version-panel__item")
+          .filter({ hasText: "打包第一版正文。" })
+          .filter({ hasText: "手动" });
+        await expect(targetItem).toHaveCount(1, { timeout: 20_000 });
+        await targetItem.locator(".version-panel__summary").click();
+        await targetItem.getByRole("button", { name: "恢复此版本" }).click();
+        await targetItem.getByRole("button", { name: "确认恢复？" }).click();
         await expect(panel2).toHaveCount(0, { timeout: 20_000 });
         await expect(editor).toContainText("打包第一版正文。", {
           timeout: 20_000,
