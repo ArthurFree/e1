@@ -8,6 +8,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { requireDesktopArtifacts } from "./desktopArtifacts";
+import { clickTreeItem } from "./tree";
 
 interface VaultFixture {
   vaultDir: string;
@@ -107,7 +108,8 @@ test.describe("桌面冒烟：Markdown 创建与安全保存（R006-C4）", () =
     const app = await launch(fixture.userDataDir);
     try {
       const window = await app.firstWindow();
-      await window.getByRole("treeitem", { name: /React 笔记/ }).click();
+      // 点击标题文本而非行中心（行内动作按钮 hover 浮现覆盖行中心，见 e2e/tree.ts）。
+      await clickTreeItem(window, /React 笔记/);
       const editor = window.locator(".editor__content .ProseMirror");
       await expect(editor).toContainText("原始正文。");
       await editor.click();
@@ -225,7 +227,8 @@ test.describe("桌面冒烟：Markdown 创建与安全保存（R006-C4）", () =
     try {
       const window = await app.firstWindow();
       const treeItem = window.getByRole("treeitem", { name: /随笔/ });
-      await treeItem.click();
+      // 点击标题文本而非行中心（行内动作按钮 hover 浮现覆盖行中心，见 e2e/tree.ts）。
+      await clickTreeItem(window, /随笔/);
       await window.getByRole("button", { name: "启用编辑" }).click();
       const editor = window.locator(".editor__content .ProseMirror");
       await expect(editor).toHaveAttribute("contenteditable", "true");
@@ -236,7 +239,7 @@ test.describe("桌面冒烟：Markdown 创建与安全保存（R006-C4）", () =
       await window.getByRole("button", { name: "首页" }).click();
       await window.getByRole("button", { name: "重新扫描" }).click();
       await expect(treeItem).toHaveAttribute("aria-selected", "true");
-      await treeItem.click();
+      await clickTreeItem(window, /随笔/);
       await expect(editor).toHaveAttribute("contenteditable", "true");
       await expect(window.getByRole("button", { name: "启用编辑" })).toHaveCount(
         0,

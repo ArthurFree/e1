@@ -151,6 +151,41 @@ const WATCHER_READY_MS = 800;
 /** watcher → reconciler → 索引/UI 全链路断言超时。 */
 const LINK_TIMEOUT = 15_000;
 
+/** RegExp 转义（treeitem 名按子串匹配，页名原样嵌入前需转义）。 */
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * R11C-07：打开文档并等待真正的就绪条件（不堆固定 timeout）：
+ * 1. 页面树中目标 treeitem 出现并点击（树已渲染）；
+ * 2. 标题区（TitleEditor 的 input.doc-title，aria-label「文档标题」）
+ *    显示目标页名——「当前活动文档已切换」的可观测信号；
+ * 3. 编辑器内容 hydrate（expectedText 出现在 ProseMirror，expect 自动重试）。
+ * 返回编辑器 locator 供后续断言/交互。
+ */
+async function openDocumentAndWaitReady(
+  window: Page,
+  options: { pageName: string; expectedText: string },
+) {
+  const { pageName, expectedText } = options;
+  const item = window.getByRole("treeitem", {
+    name: new RegExp(escapeRegExp(pageName)),
+  });
+  await expect(item).toBeVisible({ timeout: LINK_TIMEOUT });
+  // 行内动作按钮在 hover 后浮现并可能覆盖行的几何中心（R007 阶段 5 偏差 3
+  // 已记录同型问题），直接点 treeitem 中心会误触「新建子文档」等动作；
+  // 改点标题文本（无 stopPropagation，冒泡到行 onClick 选中页面）。
+  await item.locator(".tree-row__title").click();
+  await expect(window.getByRole("textbox", { name: "文档标题" })).toHaveValue(
+    pageName,
+    { timeout: LINK_TIMEOUT },
+  );
+  const editor = window.locator(".editor__content .ProseMirror");
+  await expect(editor).toContainText(expectedText, { timeout: LINK_TIMEOUT });
+  return editor;
+}
+
 /** 在当前打开的文档中经 @ 建议弹层插入指向 targetTitle 的内部链接。 */
 async function insertInternalLink(window: Page, targetTitle: string) {
   const editor = window.locator(".editor__content .ProseMirror");
@@ -185,9 +220,10 @@ test.describe("桌面冒烟：内部链接与失效链接（R010 Stage 7 §16）
     try {
       const window = await app.firstWindow();
       await waitLinkIndexReady(window);
-      await window.getByRole("treeitem", { name: /索引页/ }).click();
-      const editor = window.locator(".editor__content .ProseMirror");
-      await expect(editor).toContainText("索引正文。");
+      const editor = await openDocumentAndWaitReady(window, {
+        pageName: "索引页",
+        expectedText: "索引正文。",
+      });
 
       // G21：@ 插入内部链接（internalLink 节点出现在编辑器中）。
       await insertInternalLink(window, "React 笔记");
@@ -248,9 +284,10 @@ test.describe("桌面冒烟：内部链接与失效链接（R010 Stage 7 §16）
     try {
       const window = await app1.firstWindow();
       await waitLinkIndexReady(window);
-      await window.getByRole("treeitem", { name: /中文源/ }).click();
-      const editor = window.locator(".editor__content .ProseMirror");
-      await expect(editor).toContainText("源正文。");
+      await openDocumentAndWaitReady(window, {
+        pageName: "中文源",
+        expectedText: "源正文。",
+      });
       await insertInternalLink(window, "中文目标");
       // 跨目录的相对链接（含中文路径段）落盘。
       await expect
@@ -265,11 +302,10 @@ test.describe("桌面冒烟：内部链接与失效链接（R010 Stage 7 §16）
     try {
       const window = await app2.firstWindow();
       await waitLinkIndexReady(window);
-      await window
-        .getByRole("treeitem", { name: /中文源/ })
-        .click({ timeout: LINK_TIMEOUT });
-      const editor = window.locator(".editor__content .ProseMirror");
-      await expect(editor).toContainText("源正文。");
+      const editor = await openDocumentAndWaitReady(window, {
+        pageName: "中文源",
+        expectedText: "源正文。",
+      });
       const link = editor.locator("span.internal-link", {
         hasText: "中文目标",
       });
@@ -295,10 +331,10 @@ test.describe("桌面冒烟：内部链接与失效链接（R010 Stage 7 §16）
     try {
       const window = await app.firstWindow();
       await waitLinkIndexReady(window);
-      await window.getByRole("treeitem", { name: /目标页/ }).click();
-      await expect(
-        window.locator(".editor__content .ProseMirror"),
-      ).toContainText("目标正文。");
+      await openDocumentAndWaitReady(window, {
+        pageName: "目标页",
+        expectedText: "目标正文。",
+      });
       await window.waitForTimeout(WATCHER_READY_MS);
 
       // 外部程序在另一篇文档中加入指向目标页的链接。
@@ -338,10 +374,10 @@ test.describe("桌面冒烟：内部链接与失效链接（R010 Stage 7 §16）
       const window = await app.firstWindow();
       await waitLinkIndexReady(window);
       expect(await linksOf(window).brokenCount()).toBe(0);
-      await window.getByRole("treeitem", { name: /源页/ }).click();
-      await expect(
-        window.locator(".editor__content .ProseMirror"),
-      ).toContainText("指向");
+      await openDocumentAndWaitReady(window, {
+        pageName: "源页",
+        expectedText: "指向",
+      });
       await expect(window.getByText("此页面引用 · 1")).toBeVisible({
         timeout: LINK_TIMEOUT,
       });

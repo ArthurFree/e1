@@ -629,18 +629,26 @@ test.describe("桌面冒烟：R011 文件操作（G31–G43）", () => {
     await writeFile(
       path.join(journalDir, "manifest.json"),
       JSON.stringify({
-        version: 1,
+        version: 2,
         operationId: opId,
         vaultId: VAULT_ID,
         kind: "rename-document-file",
         phase: "rewriting",
-        fromRelativePath: "原稿.md",
-        toRelativePath: "改写中.md",
         backups: [
           {
             originalRelativePath: "原稿.md",
             backupRelativePath: "backup/原稿.md",
             versionToken: "sha256:deadbeef",
+          },
+        ],
+        pathSteps: [
+          {
+            id: "step-0",
+            kind: "document",
+            fromRelativePath: "原稿.md",
+            toRelativePath: "改写中.md",
+            hopRelativePath: null,
+            state: "pending",
           },
         ],
         createdAt: "2026-09-03T00:00:00.000Z",

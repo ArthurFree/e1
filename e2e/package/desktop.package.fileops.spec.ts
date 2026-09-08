@@ -1,5 +1,8 @@
 // R011 Stage 7：Packaged App 文件操作冒烟 P13–P16。
+// R11C-08：P14 必须真断言 LinkIndex/SearchIndex（ready + 新路径 + 全文命中），
+// 不允许只读回状态不 expect。
 import { test, expect } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { requirePackagedArtifact } from "../desktopArtifacts";
@@ -18,6 +21,50 @@ async function exists(abs: string): Promise<boolean> {
   }
 }
 
+/**
+ * R11C-08：links/search 组 IPC 弱类型桥（形状以 shared/ipc/contracts.ts
+ * E1DesktopAPI 为准，此处只声明断言用到的字段子集；API 缺失时返回
+ * null/[]，随后的 expect 会红而不是静默跳过）。
+ */
+interface PackageIndexBridge {
+  links?: {
+    status(input: { vaultId: string }): Promise<{ state: string }>;
+    rebuild(input: { vaultId: string }): Promise<unknown>;
+    outgoing(input: {
+      vaultId: string;
+      noteKey: string;
+    }): Promise<Array<{ targetRelativePath: string | null; broken: boolean }>>;
+    backlinks(input: {
+      vaultId: string;
+      noteKey: string;
+    }): Promise<Array<{ sourcePageId: string; href: string }>>;
+  };
+  search?: {
+    status(input: { vaultId: string }): Promise<{ state: string }>;
+    rebuild(input: { vaultId: string }): Promise<unknown>;
+    query(input: {
+      vaultId?: string;
+      query: string;
+    }): Promise<Array<{ relativePath: string; stableNoteId: string | null }>>;
+  };
+}
+
+/** links.status 的 state（API 缺失为 null）。 */
+function linkStateOf(window: Page, vaultId: string) {
+  return window.evaluate(async (vid) => {
+    const e1 = (window as unknown as { e1?: PackageIndexBridge }).e1;
+    return (await e1?.links?.status({ vaultId: vid }))?.state ?? null;
+  }, vaultId);
+}
+
+/** search.status 的 state（API 缺失为 null）。 */
+function searchStateOf(window: Page, vaultId: string) {
+  return window.evaluate(async (vid) => {
+    const e1 = (window as unknown as { e1?: PackageIndexBridge }).e1;
+    return (await e1?.search?.status({ vaultId: vid }))?.state ?? null;
+  }, vaultId);
+}
+
 test.describe("安装包冒烟：R011 文件操作（P13–P16）", () => {
   test.beforeAll(() => {
     requirePackagedArtifact();
@@ -27,10 +74,7 @@ test.describe("安装包冒烟：R011 文件操作（P13–P16）", () => {
     const vaultId = "v-e2e-pkg-fileops-p13";
     const fixture = await createPackageVaultFixture(
       [
-        [
-          "目标.md",
-          note("01JEPKGFILE00000000001", "目标页", "目标。"),
-        ],
+        ["目标.md", note("01JEPKGFILE00000000001", "目标页", "目标。")],
         [
           "来源.md",
           note("01JEPKGFILE00000000002", "来源页", "见 [目标页](目标.md)。"),
@@ -89,16 +133,12 @@ test.describe("安装包冒烟：R011 文件操作（P13–P16）", () => {
 
   test("P14：打包产物 Group move + index rebuild", async () => {
     const vaultId = "v-e2e-pkg-fileops-p14";
+    const innerId = "01JEPKGFILE00000000011";
+    const outerId = "01JEPKGFILE00000000012";
     const fixture = await createPackageVaultFixture(
       [
-        [
-          "组/内.md",
-          note("01JEPKGFILE00000000011", "内", "指 [外](../外.md)。"),
-        ],
-        [
-          "外.md",
-          note("01JEPKGFILE00000000012", "外", "指 [内](组/内.md)。"),
-        ],
+        ["组/内.md", note(innerId, "内", "组内孤本词，指 [外](../外.md)。")],
+        ["外.md", note(outerId, "外", "指 [内](组/内.md)。")],
         ["箱/.gitkeep", ""],
       ],
       vaultId,
@@ -111,6 +151,15 @@ test.describe("安装包冒烟：R011 文件操作（P13–P16）", () => {
         await expect(window.getByRole("tree").first()).toBeVisible({
           timeout: 20_000,
         });
+        // R11C-08：LinkIndex/SearchIndex 状态必须 expect 为 ready
+        //（打开 Vault 自动 prepare → rebuild；也保证后续 plan 能发现 inbound 影响）。
+        await expect
+          .poll(() => linkStateOf(window, vaultId), { timeout: 20_000 })
+          .toBe("ready");
+        await expect
+          .poll(() => searchStateOf(window, vaultId), { timeout: 20_000 })
+          .toBe("ready");
+
         const result = await window.evaluate(async (vid) => {
           const e1 = (
             window as unknown as {
@@ -118,10 +167,6 @@ test.describe("安装包冒烟：R011 文件操作（P13–P16）", () => {
                 fileOperation?: {
                   plan: (i: unknown) => Promise<unknown>;
                   execute: (i: unknown) => Promise<unknown>;
-                };
-                links?: {
-                  rebuild: (i: unknown) => Promise<unknown>;
-                  status: (i: unknown) => Promise<{ state: string }>;
                 };
               };
             }
@@ -134,19 +179,83 @@ test.describe("安装包冒烟：R011 文件操作（P13–P16）", () => {
             toRelativePath: "箱",
           });
           await e1.fileOperation.execute({ vaultId: vid, plan });
-          // 打包环境确认 links API 仍可用（rebuild 由 Renderer reconcile 触发）。
-          const status = await e1.links?.status({ vaultId: vid });
-          return { ok: true, linkState: status?.state ?? null };
+          return { ok: true };
         }, vaultId);
         expect(result.ok).toBe(true);
-        expect(await exists(path.join(fixture.vaultDir, "箱", "组", "内.md"))).toBe(
-          true,
-        );
+        expect(
+          await exists(path.join(fixture.vaultDir, "箱", "组", "内.md")),
+        ).toBe(true);
         const outer = await readFile(
           path.join(fixture.vaultDir, "外.md"),
           "utf8",
         );
         expect(outer).toContain("[内](箱/组/内.md)");
+
+        // IPC 直调跳过 Renderer reconcile（同 G35 口径）：显式 rebuild 双索引，
+        // 同时验证打包产物内 node:sqlite 索引链路可用。
+        await window.evaluate(async (vid) => {
+          const e1 = (window as unknown as { e1?: PackageIndexBridge }).e1;
+          await e1?.links?.rebuild({ vaultId: vid });
+          await e1?.search?.rebuild({ vaultId: vid });
+        }, vaultId);
+        await expect
+          .poll(() => linkStateOf(window, vaultId), { timeout: 20_000 })
+          .toBe("ready");
+        await expect
+          .poll(() => searchStateOf(window, vaultId), { timeout: 20_000 })
+          .toBe("ready");
+
+        // R11C-08：LinkIndex 功能断言——move 后 外.md 的出边指向新路径，
+        // 内.md 的反向链接 href 同样是新路径。
+        const outgoing = await window.evaluate(
+          async ({ vid, key }) => {
+            const e1 = (window as unknown as { e1?: PackageIndexBridge }).e1;
+            return (
+              (await e1?.links?.outgoing({ vaultId: vid, noteKey: key })) ?? []
+            );
+          },
+          { vid: vaultId, key: outerId },
+        );
+        expect(
+          outgoing.some(
+            (link) =>
+              link.targetRelativePath === "箱/组/内.md" &&
+              link.broken === false,
+          ),
+        ).toBe(true);
+        const backlinks = await window.evaluate(
+          async ({ vid, key }) => {
+            const e1 = (window as unknown as { e1?: PackageIndexBridge }).e1;
+            return (
+              (await e1?.links?.backlinks({ vaultId: vid, noteKey: key })) ?? []
+            );
+          },
+          { vid: vaultId, key: innerId },
+        );
+        expect(
+          backlinks.some(
+            (backlink) =>
+              backlink.sourcePageId === outerId &&
+              backlink.href === "箱/组/内.md",
+          ),
+        ).toBe(true);
+
+        // R11C-08：SearchIndex 功能断言——内.md 正文独特词全文命中，
+        // 且命中行已更新为搬迁后的新路径与稳定 id。
+        const hits = await window.evaluate(
+          async ({ vid, query }) => {
+            const e1 = (window as unknown as { e1?: PackageIndexBridge }).e1;
+            return (await e1?.search?.query({ vaultId: vid, query })) ?? [];
+          },
+          { vid: vaultId, query: "组内孤本词" },
+        );
+        expect(
+          hits.some(
+            (hit) =>
+              hit.stableNoteId === innerId &&
+              hit.relativePath === "箱/组/内.md",
+          ),
+        ).toBe(true);
       } finally {
         await app.close();
       }
@@ -163,12 +272,7 @@ test.describe("安装包冒烟：R011 文件操作（P13–P16）", () => {
       vaultId,
     );
     const opId = "op-pkg-crash-001";
-    const journalDir = path.join(
-      fixture.vaultDir,
-      ".e1",
-      "operations",
-      opId,
-    );
+    const journalDir = path.join(fixture.vaultDir, ".e1", "operations", opId);
     await mkdir(path.join(journalDir, "backup"), { recursive: true });
     await writeFile(
       path.join(journalDir, "backup", "原稿.md"),
@@ -178,18 +282,26 @@ test.describe("安装包冒烟：R011 文件操作（P13–P16）", () => {
     await writeFile(
       path.join(journalDir, "manifest.json"),
       JSON.stringify({
-        version: 1,
+        version: 2,
         operationId: opId,
         vaultId,
         kind: "rename-document-file",
         phase: "rewriting",
-        fromRelativePath: "原稿.md",
-        toRelativePath: "改写中.md",
         backups: [
           {
             originalRelativePath: "原稿.md",
             backupRelativePath: "backup/原稿.md",
             versionToken: "sha256:deadbeef",
+          },
+        ],
+        pathSteps: [
+          {
+            id: "step-0",
+            kind: "document",
+            fromRelativePath: "原稿.md",
+            toRelativePath: "改写中.md",
+            hopRelativePath: null,
+            state: "pending",
           },
         ],
         createdAt: "2026-09-03T00:00:00.000Z",

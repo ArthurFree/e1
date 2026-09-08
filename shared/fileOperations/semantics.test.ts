@@ -43,20 +43,29 @@ describe("R011 Stage 0 语义冻结", () => {
     ]);
   });
 
-  it("journal v1 schema 形状稳定", () => {
+  it("journal v2 schema 形状稳定", () => {
     const journal: FileOperationJournal = {
       version: FILE_OPERATION_JOURNAL_VERSION,
       operationId: "op_1",
       vaultId: "v1",
       kind: "move-document",
       phase: "prepared",
-      fromRelativePath: "a.md",
-      toRelativePath: "notes/a.md",
       backups: [],
+      pathSteps: [
+        {
+          id: "step-0",
+          kind: "document",
+          fromRelativePath: "a.md",
+          toRelativePath: "notes/a.md",
+          hopRelativePath: null,
+          state: "pending",
+        },
+      ],
       createdAt: "2026-09-03T00:00:00.000Z",
     };
-    expect(journal.version).toBe(1);
+    expect(journal.version).toBe(2);
     expect(journal.phase).toBe("prepared");
+    expect(journal.pathSteps[0]?.state).toBe("pending");
   });
 
   it("case-only rename 必须识别为 temp-hop 候选", () => {

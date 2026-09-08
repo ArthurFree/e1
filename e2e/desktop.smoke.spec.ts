@@ -106,7 +106,9 @@ test.describe("桌面冒烟", () => {
       // R008 Stage 4：全文搜索索引组（SQLite 派生索引）。
       search: ["query", "rebuild", "relocate", "remove", "status", "upsert"],
       // R007 阶段 3：Main→Renderer 单向事件组（Watcher 事实订阅）。
-      events: ["subscribeVaultChanges"],
+      // R009 Stage 6：subscribeUpdateStatus（Auto Update 状态推送，第二个
+      // Main→Renderer 事件通道）。
+      events: ["subscribeUpdateStatus", "subscribeVaultChanges"],
     });
 
     // R006 阶段 2 起 desktop.html 经 IPC-backed 容器渲染；隔离 userData 下

@@ -4,12 +4,14 @@
  * 从 extractMarkdownLinks 抽出公共底层：返回 destination 在**整篇 markdown**
  *（含 Frontmatter）中的字符偏移，供 source-preserving 改写使用。
  *
- * 偏移约定：
- * - 输入先归一 `\r\n` → `\n`；
- * - 起点/终点相对整篇 markdown（含 Frontmatter 前缀）；
- * - Frontmatter / 围栏代码 / 行内代码内的链接样例不产出。
+ * 偏移约定（R011.1 C2 起）：
+ * - 不做整文件换行归一：扫描直接在原始字符串上进行，以 `\n` 切行、
+ *   `\r` 留在行尾内容中，`\r\n` 与 `\n` 均能正确切行且偏移与原串
+ *   逐字节一致；
+ * - 起点/终点相对整篇 markdown（含 BOM 与 Frontmatter 前缀）；
+ * - BOM / Frontmatter / 围栏代码 / 行内代码内的链接样例不产出。
  */
-import { splitFrontmatter } from "../markdown/frontmatter.js";
+import { frontmatterBodyStartOffset } from "../markdown/frontmatter.js";
 
 /** 行内链接/图片候选起点：`[text](` 或 `![alt](`。label 不支持嵌套方括号。 */
 const LINK_START = /(!)?\[([^\]\n]*)\]\(/g;
@@ -106,43 +108,16 @@ function maskInlineCode(line: string): string {
 }
 
 /**
- * 计算 body 在整篇 markdown 中的起始偏移（与 splitFrontmatter 跳空行规则对齐）。
- */
-function bodyStartOffset(markdown: string, body: string): number {
-  if (body.length === 0) return markdown.length;
-  // 无 Frontmatter：body === markdown。
-  if (body === markdown) return 0;
-  // 有 Frontmatter：body 是尾部切片；用「从末尾对齐」求前缀长度。
-  if (markdown.endsWith(body)) {
-    return markdown.length - body.length;
-  }
-  // 极端：正文恰好也出现在 Frontmatter 中——回退到 split 行算法。
-  const lines = markdown.split("\n");
-  if (lines[0]?.trim() !== "---") return 0;
-  let closeIndex = -1;
-  for (let i = 1; i < lines.length; i++) {
-    if (lines[i]!.trim() === "---") {
-      closeIndex = i;
-      break;
-    }
-  }
-  if (closeIndex === -1) return 0;
-  let bodyStart = closeIndex + 1;
-  if (lines[bodyStart]?.trim() === "") bodyStart += 1;
-  if (bodyStart >= lines.length) return markdown.length;
-  return lines.slice(0, bodyStart).join("\n").length + 1;
-}
-
-/**
  * 扫描 Markdown 中全部可改写链接目的地（含图片）。
  * 空 href 不产出；与 extractMarkdownLinks 取舍一致。
  */
 export function scanMarkdownLinkDestinations(
   markdown: string,
 ): MarkdownLinkDestinationSpan[] {
-  const normalized = markdown.replace(/\r\n/g, "\n");
-  const { body } = splitFrontmatter(normalized);
-  const bodyOffset = bodyStartOffset(normalized, body);
+  // CRLF/BOM 感知：frontmatterBodyStartOffset 返回原串中的正文起点，
+  // body 切行时 `\r` 留在行尾，偏移始终相对原始字符串。
+  const bodyOffset = frontmatterBodyStartOffset(markdown);
+  const body = markdown.slice(bodyOffset);
 
   const spans: MarkdownLinkDestinationSpan[] = [];
   let inFence = false;
@@ -153,8 +128,7 @@ export function scanMarkdownLinkDestinations(
     const rawLine = bodyLines[lineIndex]!;
     const lineAbsStart = lineOffset;
     // 除最后一行外，split 去掉的 `\n` 计入下一行起点。
-    lineOffset +=
-      rawLine.length + (lineIndex < bodyLines.length - 1 ? 1 : 0);
+    lineOffset += rawLine.length + (lineIndex < bodyLines.length - 1 ? 1 : 0);
 
     if (FENCE_MARKER.test(rawLine)) {
       inFence = !inFence;

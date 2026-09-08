@@ -2,6 +2,10 @@
  * R011 Stage 1：source-preserving Markdown 链接目的地改写。
  * 只替换 destination 字节；保留 label / title / Frontmatter / 代码 / fragment。
  * external / mailto / anchor 永不改写。
+ *
+ * R011.1 C2：不再做整文件 `\r\n` → `\n` 归一——扫描与替换都在原始字符串
+ * 上进行（扫描器 CRLF/BOM 感知，偏移相对原串），未命中字节原样保留，
+ * CRLF 行尾与文件首部 BOM 均不变。
  */
 import { classifyLinkHref, splitHref } from "./linkKind.js";
 import { scanMarkdownLinkDestinations } from "./scanMarkdownLinkDestinations.js";
@@ -40,7 +44,6 @@ export function rewriteMarkdownLinkDestinations(
     return { markdown, rewrittenCount: 0 };
   }
 
-  const normalized = markdown.replace(/\r\n/g, "\n");
   const byOld = new Map<string, string>();
   for (const rule of rules) {
     const kind = classifyLinkHref(rule.oldHref).kind;
@@ -48,12 +51,12 @@ export function rewriteMarkdownLinkDestinations(
     byOld.set(pathKey(rule.oldHref), pathKey(rule.newHref));
   }
 
-  const spans = scanMarkdownLinkDestinations(normalized);
+  const spans = scanMarkdownLinkDestinations(markdown);
   const ordered = [...spans].sort(
     (a, b) => b.destinationStart - a.destinationStart,
   );
 
-  let result = normalized;
+  let result = markdown;
   let rewrittenCount = 0;
 
   for (const span of ordered) {

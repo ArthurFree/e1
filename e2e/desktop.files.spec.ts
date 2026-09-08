@@ -20,6 +20,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { requireDesktopArtifacts } from "./desktopArtifacts";
+import { clickTreeItem } from "./tree";
 
 interface VaultFixture {
   vaultDir: string;
@@ -185,8 +186,12 @@ test.describe("桌面冒烟：文件操作闭环（R007 阶段 4）", () => {
       await expect(tree).toContainText("已有笔记", { timeout: UI_TIMEOUT });
 
       await window.getByRole("button", { name: "新建分组" }).click();
-      // R008 Stage 0（§7.3）：Desktop 不支持 group.rename，新建分组后
-      // 不再自动进入必然失败的重命名流程，直接断言落盘结果。
+      // R011 起 Desktop 支持 group.rename（操作开关翻 true），新建分组后自动
+      // 进入行内重命名（标题在 input 里，tree 文本不含「新建分组」）；
+      // 按 Escape 保留默认名退出重命名，不断发起重命名操作。
+      const renameInput = window.getByRole("textbox", { name: "重命名" });
+      await expect(renameInput).toBeVisible({ timeout: UI_TIMEOUT });
+      await renameInput.press("Escape");
       await expect(tree).toContainText("新建分组", { timeout: UI_TIMEOUT });
       await expect
         .poll(
@@ -243,7 +248,8 @@ test.describe("桌面冒烟：文件操作闭环（R007 阶段 4）", () => {
         window.getByRole("treeitem", { name: /根笔记/ }),
       ).toHaveCount(1, { timeout: UI_TIMEOUT });
       // 移动后可正常打开（来源缓存路径已同步，不回写旧路径）。
-      await window.getByRole("treeitem", { name: /根笔记/ }).click();
+      // 点击标题文本而非行中心（行内动作按钮 hover 浮现覆盖行中心，见 e2e/tree.ts）。
+      await clickTreeItem(window, /根笔记/);
       await expect(
         window.locator(".editor__content .ProseMirror"),
       ).toContainText("根目录正文。");

@@ -13,6 +13,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { requireDesktopArtifacts } from "./desktopArtifacts";
+import { clickTreeItem } from "./tree";
 
 interface VaultFixture {
   vaultDir: string;
@@ -114,9 +115,8 @@ test.describe("桌面冒烟：Markdown 安全阅读（R006-C3 §43）", () => {
     const app = await launch(fixture.userDataDir);
     try {
       const window = await app.firstWindow();
-      const doc = window.getByRole("treeitem", { name: /React 笔记/ });
-      await expect(doc).toBeVisible();
-      await doc.click();
+      // 点击标题文本而非行中心（行内动作按钮 hover 浮现覆盖行中心，见 e2e/tree.ts）。
+      await clickTreeItem(window, /React 笔记/);
       // note.read → MarkdownCodec → Tiptap：真实正文渲染。
       await expect(window.locator(".editor__content")).toContainText(
         "组件化与 Hooks 要点。",
@@ -152,9 +152,8 @@ test.describe("桌面冒烟：Markdown 安全阅读（R006-C3 §43）", () => {
     const app = await launch(fixture.userDataDir);
     try {
       const window = await app.firstWindow();
-      const doc = window.getByRole("treeitem", { name: /unsupported/ });
-      await expect(doc).toBeVisible();
-      await doc.click();
+      // 点击标题文本而非行中心（行内动作按钮 hover 浮现覆盖行中心，见 e2e/tree.ts）。
+      await clickTreeItem(window, /unsupported/);
       // FR-19/20：lossy → 兼容性警告条 + 默认只读。
       await expect(window.getByText(/暂不完全支持的格式/)).toBeVisible();
       const editor = window.locator(".editor__content .ProseMirror");

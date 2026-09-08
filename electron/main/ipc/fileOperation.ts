@@ -158,21 +158,25 @@ export function registerFileOperationHandlers(
       parseFileOperationVaultInput,
       async (input): Promise<FileOperationRecoveryStatusDto> => {
         const root = await resolveVaultRoot(input.vaultId, deps);
-        const pending = await listPendingJournals(root.absolutePath);
-        if (pending.length === 0) {
+        const scan = await listPendingJournals(root.absolutePath);
+        if (scan.pending.length === 0 && scan.unreadable.length === 0) {
           return {
             vaultId: input.vaultId,
             phase: "clean",
             pendingOperationIds: [],
           };
         }
-        const incompatible = pending.some((j) => j.version !== 1);
+        // R11C-03：corrupt / 不兼容版本的 journal 不得静默跳过。
+        const manual = scan.unreadable.length > 0;
         return {
           vaultId: input.vaultId,
-          phase: incompatible ? "manual-required" : "recoverable",
-          pendingOperationIds: pending.map((j) => j.operationId),
-          message: incompatible
-            ? "发现不兼容的文件操作日志。"
+          phase: manual ? "manual-required" : "recoverable",
+          pendingOperationIds: [
+            ...scan.pending.map((j) => j.operationId),
+            ...scan.unreadable.map((u) => u.operationId),
+          ],
+          message: manual
+            ? "发现损坏或不兼容的文件操作日志。"
             : "检测到未完成的文件操作，可自动恢复。",
         };
       },

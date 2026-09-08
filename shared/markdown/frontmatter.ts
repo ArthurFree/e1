@@ -259,6 +259,37 @@ export function splitFrontmatter(markdown: string): FrontmatterSplit {
   };
 }
 
+/**
+ * R011.1（R11C-06）：CRLF/BOM 感知的 Frontmatter 正文起点偏移。
+ *
+ * 边界判定规则与 splitFrontmatter 一致（首行整行 `---` + 闭合 `---` 行 +
+ * 闭合行之后最多跳过一个空行），但只返回 body 在**原始字符串**中的字符
+ * 偏移，不做字段解析、不做换行归一：
+ * - 以 `\n` 切行，`\r` 留在行尾内容中（trim 判定不受影响），join 还原后
+ *   offset 与原串逐字节一致，CRLF 文件不会产生偏移漂移；
+ * - 文件首字符 BOM（U+FEFF）视为前缀：trim 会忽略它，BOM 之后紧跟 `---`
+ *   仍算 Frontmatter，BOM 本身计入 Frontmatter 区域、原样保留；
+ * - 无 Frontmatter 返回 0。
+ * splitFrontmatter 的既有行为（要求 LF 输入）不受影响。
+ */
+export function frontmatterBodyStartOffset(markdown: string): number {
+  const lines = markdown.split("\n");
+  if (lines[0]?.trim() !== "---") return 0;
+  let closeIndex = -1;
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i].trim() === "---") {
+      closeIndex = i;
+      break;
+    }
+  }
+  if (closeIndex === -1) return 0;
+  // 闭合行之后最多跳过一个空行，与 splitFrontmatter 对齐。
+  let bodyStart = closeIndex + 1;
+  if (lines[bodyStart]?.trim() === "") bodyStart += 1;
+  if (bodyStart >= lines.length) return markdown.length;
+  return lines.slice(0, bodyStart).join("\n").length + 1;
+}
+
 /** 标量写出时是否需要加引号（最小 YAML 规则）。 */
 function needsQuoting(value: string): boolean {
   if (value === "") return true;
@@ -343,8 +374,7 @@ export function ensureFrontmatterId(
       split.metadata.aliases.length > 0 ? split.metadata.aliases : undefined,
     extra: split.metadata.extra,
   });
-  const next =
-    split.body.length > 0 ? `${fm}\n\n${split.body}` : `${fm}\n\n`;
+  const next = split.body.length > 0 ? `${fm}\n\n${split.body}` : `${fm}\n\n`;
   return {
     markdown: crlf ? next.replace(/\n/g, "\r\n") : next,
     noteId: generatedId,

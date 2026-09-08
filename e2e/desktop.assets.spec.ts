@@ -7,6 +7,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { requireDesktopArtifacts } from "./desktopArtifacts";
+import { clickTreeItem } from "./tree";
 
 const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
@@ -364,7 +365,8 @@ test.describe("桌面冒烟：本地附件与资源闭环（R006-C5）", () => {
     const app = await launch(fixture.userDataDir);
     try {
       const window = await app.firstWindow();
-      await window.getByRole("treeitem", { name: /缺失图/ }).click();
+      // 点击标题文本而非行中心（行内动作按钮 hover 浮现覆盖行中心，见 e2e/tree.ts）。
+      await clickTreeItem(window, /缺失图/);
       await expect(window.getByText("图片不可用")).toBeVisible({
         timeout: 15_000,
       });
@@ -438,7 +440,8 @@ test.describe("桌面冒烟：本地附件与资源闭环（R006-C5）", () => {
     const app = await launch(fixture.userDataDir);
     try {
       const window = await app.firstWindow();
-      await window.getByRole("treeitem", { name: /嵌套笔记/ }).click();
+      // 点击标题文本而非行中心（行内动作按钮 hover 浮现覆盖行中心，见 e2e/tree.ts）。
+      await clickTreeItem(window, /嵌套笔记/);
       await stubFileDialog(app, source);
       await insertFromToolbar(window, "图片");
       await expect(window.locator(".local-image__img")).toBeVisible({
@@ -474,7 +477,8 @@ test.describe("桌面冒烟：本地附件与资源闭环（R006-C5）", () => {
     const app = await launch(fixture.userDataDir);
     try {
       const window = await app.firstWindow();
-      await window.getByRole("treeitem", { name: /导出笔记/ }).click();
+      // 点击标题文本而非行中心（行内动作按钮 hover 浮现覆盖行中心，见 e2e/tree.ts）。
+      await clickTreeItem(window, /导出笔记/);
       await expect(window.locator(".local-image__img")).toBeVisible({
         timeout: 15_000,
       });
