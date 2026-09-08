@@ -27,6 +27,9 @@
  * macOS 未签名期间 canAutoInstall=false 降级为手动下载（R013 签名后翻 true）。
  * R010 Stage 3：link.* 组——派生链接索引（与搜索共库单连接，LINK-03）
  * 的 outgoing/backlinks/broken/rebuild/upsert/remove/relocate/status。
+ * R012 Stage 2：revision.* 组——Desktop 版本历史（.e1/revisions/
+ * 不可变快照）的 list/get/capture/restore/prune/relocate/purgeSeries；
+ * restore 本 Stage 只冻结 schema（一律 NOT_IMPLEMENTED，Stage 4 实现）。
  *
  * shared/ 为 Renderer（src/platform/desktop）与 Electron Main/Preload 共用
  * 的唯一契约来源：channel 常量、请求/响应类型、E1DesktopAPI 形状。
@@ -43,6 +46,7 @@
  */
 import type { IpcErrorPayload } from "../errors.js";
 import type { Backlink, DocumentLink } from "../links/types.js";
+import type { DesktopRevisionReason } from "../revisions/types.js";
 
 /** IPC channel 常量：Main 注册与 Preload 调用共用，禁止散落字符串。 */
 export const IPC_CHANNELS = {
@@ -89,6 +93,14 @@ export const IPC_CHANNELS = {
   linkRelocate: "link:relocate",
   linkStatus: "link:status",
   linkAnalyzeRelocation: "link:analyzeRelocation",
+  /** R012 Stage 2：Desktop 版本历史（revision）组。 */
+  revisionList: "revision:list",
+  revisionGet: "revision:get",
+  revisionCapture: "revision:capture",
+  revisionRestore: "revision:restore",
+  revisionPrune: "revision:prune",
+  revisionRelocate: "revision:relocate",
+  revisionPurgeSeries: "revision:purgeSeries",
   /** R011：文件操作预检 / 执行 / 恢复。 */
   fileOperationPlan: "fileOperation:plan",
   fileOperationExecute: "fileOperation:execute",
@@ -820,6 +832,161 @@ export interface LinkRelocationImpactDto {
   sourceVersion: string;
 }
 
+/* --------------------------------- revision --------------------------------- */
+
+/**
+ * R012 Stage 2（需求 §21/§44）：Desktop 版本历史 wire 形态。
+ *
+ * 安全边界（§44）：请求只允许 vaultId + 身份字段（relativePath /
+ * stableNoteId? / seriesId?）+ revisionId + reason + expectedVersionToken +
+ * keep/maxBytes——禁止 absolutePath；Renderer 不传任何正文，capture 的权威
+ * 来源是 Main 重读磁盘（REV-02：raw Markdown body）。日志不记正文。
+ */
+export type { DesktopRevisionReason } from "../revisions/types.js";
+
+/**
+ * 文档身份定位：stable-id 优先（rename/move 后历史不变，§17）；
+ * path-only 文档 stableNoteId 缺省/null，按当前路径匹配孤儿 series。
+ */
+export interface RevisionNoteLocator {
+  vaultId: string;
+  relativePath: string;
+  /** Frontmatter stable id；path-only 文档缺省或 null。 */
+  stableNoteId?: string | null;
+}
+
+/** 版本摘要（列表用；body 惰性——经 revision.get 单条取回）。 */
+export interface RevisionSummaryDto {
+  revisionId: string;
+  reason: DesktopRevisionReason;
+  /** ISO 时间字符串。 */
+  createdAt: string;
+  /** raw Markdown body 的 UTF-8 字节数（retention 计量口径）。 */
+  bodyBytes: number;
+  textPreview: string;
+}
+
+/** revision.list 请求：按文档身份列出版本摘要。只读；transient 允许。 */
+export type RevisionListInput = RevisionNoteLocator;
+
+export interface RevisionListResult {
+  /** 有效快照摘要，createdAt 倒序（最新在前）。 */
+  summaries: RevisionSummaryDto[];
+  /** 损坏/未知版本的降级说明（"revisionId（原因）"），仅在有降级时携带。 */
+  degraded?: string[];
+}
+
+/** revision.get 请求：定位 + revisionId。只读；transient 允许。 */
+export interface RevisionGetInput extends RevisionNoteLocator {
+  revisionId: string;
+}
+
+/**
+ * revision.get 响应：完整快照。不存在/损坏返回 null（与 domain
+ * RevisionRepository.get 的 undefined 语义对齐）。raw body 回 Renderer
+ * 仅供预览/diff——Desktop 恢复不走 contentJson（Stage 4 RevisionRestorePort）。
+ */
+export interface RevisionGetResult {
+  revisionId: string;
+  reason: DesktopRevisionReason;
+  /** ISO 时间字符串。 */
+  createdAt: string;
+  /** raw Markdown body（不含 Frontmatter，逐字节原样）。 */
+  body: string;
+  bodyBytes: number;
+  lineEnding: "lf" | "crlf";
+  /** 捕获时笔记的 Vault 内相对路径。 */
+  relativePathAtCapture: string;
+}
+
+/**
+ * revision.capture 请求（§22）：Main 重读磁盘当前 Markdown 捕获 raw body
+ * 快照；与最新快照同 body 去重返回 null。transient 拒写。
+ */
+export interface RevisionCaptureInput extends RevisionNoteLocator {
+  reason: DesktopRevisionReason;
+  /** 触发本次捕获的保存版本令牌（审计/诊断用，原样记入 manifest）。 */
+  sourceVersionToken?: string;
+  /**
+   * 可选乐观锁（§21 expectedVersion revalidate）：携带时 Main 复核磁盘当前
+   * versionToken，不一致即 DOCUMENT_CONFLICT（不捕获外部改写后的状态）。
+   */
+  expectedVersionToken?: string;
+}
+
+/** 新快照摘要；去重命中（与最新快照同 body）为 null。 */
+export type RevisionCaptureResult = RevisionSummaryDto | null;
+
+/**
+ * revision.restore 请求（§23 Safe Restore）：Main 复核磁盘版本令牌
+ *（不一致 → DOCUMENT_CONFLICT，不写任何字节），保留当前 Frontmatter
+ *（仅 updated 推进）+ 历史 raw body 拼回，AtomicFileWriter 落盘。
+ * transient 拒写。
+ */
+export interface RevisionRestoreInput extends RevisionNoteLocator {
+  revisionId: string;
+  /** 乐观锁：恢复前 flush 后的当前版本令牌。 */
+  expectedVersionToken: string;
+}
+
+export interface RevisionRestoreResult {
+  /** 恢复写入后的新令牌。 */
+  versionToken: string;
+  /** 恢复写入后的磁盘 mtime（ms 整数）。 */
+  updatedAt: number;
+}
+
+/**
+ * revision.prune 请求（§26）：裁剪 interval 快照（manual/before-restore
+ * 不动）；keep/maxBytes 缺省用 Main 侧策略常量（100 / 5MiB）。transient 拒写。
+ */
+export interface RevisionPruneInput extends RevisionNoteLocator {
+  keep?: number;
+  maxBytes?: number;
+}
+
+export interface RevisionPruneResult {
+  /** 被物理删除的快照数。 */
+  pruned: number;
+}
+
+/**
+ * revision.relocate 请求（§24）：文档/分组 rename/move 后同步 series 的
+ * 当前路径元数据（历史 snapshot 不动）。prefix=true 为分组批量语义
+ *（fromRelativePath 为旧前缀，忽略 stableNoteId）。transient 拒写。
+ */
+export interface RevisionRelocateInput {
+  vaultId: string;
+  /** 已知 stable id 时直给（优先于 fromRelativePath 定位）。 */
+  stableNoteId?: string | null;
+  fromRelativePath: string;
+  toRelativePath: string;
+  /** true：分组 rename/move 的前缀批量语义（relocateSeriesPrefix）。 */
+  prefix?: boolean;
+}
+
+export interface RevisionRelocateResult {
+  /** 更新的 series 数（单文档 0/1；prefix 批量为命中数）。 */
+  relocated: number;
+}
+
+/**
+ * revision.purgeSeries 请求：文档永久删除时物理清理其全部历史
+ *（seriesId 直给，或按 stableNoteId / relativePath 定位，至少其一）。
+ * transient 拒写。
+ */
+export interface RevisionPurgeSeriesInput {
+  vaultId: string;
+  seriesId?: string;
+  stableNoteId?: string | null;
+  relativePath?: string;
+}
+
+export interface RevisionPurgeSeriesResult {
+  /** 是否命中并删除了某个 series。 */
+  purged: boolean;
+}
+
 /* ---------------------------------- asset ---------------------------------- */
 
 export interface AssetPickRequest {
@@ -1118,6 +1285,35 @@ export interface E1DesktopAPI {
       input: LinkAnalyzeRelocationInput,
     ): Promise<LinkRelocationImpactDto[]>;
     status(input: LinkVaultInput): Promise<SearchIndexStatus>;
+  };
+  /**
+   * R012 Stage 2（§21）：Desktop 版本历史——`.e1/revisions/` 不可变快照的
+   * 列表/读取/捕获/裁剪与 series 路径维护。list/get 只读（transient 允许）；
+   * capture/prune/relocate/purgeSeries 为写通道（transient 拒写）。
+   * raw body 经 get 回 Renderer 仅供预览/diff；Desktop 恢复不走
+   * contentJson（Stage 4 RevisionRestorePort）——restore 本 Stage 只冻结
+   * schema，一律 NOT_IMPLEMENTED。
+   */
+  revisions: {
+    /** 版本摘要列表（createdAt 倒序）+ 降级说明。 */
+    list(input: RevisionListInput): Promise<RevisionListResult>;
+    /** 单条完整快照（raw body）；不存在/损坏返回 null。 */
+    get(input: RevisionGetInput): Promise<RevisionGetResult | null>;
+    /**
+     * 捕获当前 Markdown 的 raw body 快照（Main 读盘为准，Renderer 不传
+     * 正文）；与最新快照同 body 去重返回 null。
+     */
+    capture(input: RevisionCaptureInput): Promise<RevisionCaptureResult>;
+    /** Stage 4 Safe Restore；本 Stage 一律 NOT_IMPLEMENTED。 */
+    restore(input: RevisionRestoreInput): Promise<RevisionRestoreResult>;
+    /** 裁剪 interval 快照（manual/before-restore 不动）。 */
+    prune(input: RevisionPruneInput): Promise<RevisionPruneResult>;
+    /** 文档/分组 rename/move 后同步 series 路径元数据（历史不动）。 */
+    relocate(input: RevisionRelocateInput): Promise<RevisionRelocateResult>;
+    /** 文档永久删除时物理清理其全部历史。 */
+    purgeSeries(
+      input: RevisionPurgeSeriesInput,
+    ): Promise<RevisionPurgeSeriesResult>;
   };
   asset: {
     /** 原生文件选择；取消返回 null。不得返回绝对路径。 */

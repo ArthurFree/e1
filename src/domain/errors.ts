@@ -76,7 +76,19 @@ export type DomainErrorCode =
    * 「仅预览 / 初始化并打开 / 取消」——仅 Desktop 打开本地知识库链路使用，
    * 不跨 IPC；UI 接住后调 platform/desktop 的确认握手模块再继续。
    */
-  | "VAULT_CONFIRMATION_REQUIRED";
+  | "VAULT_CONFIRMATION_REQUIRED"
+  /**
+   * R012 Stage 3（需求 §43）：手动创建版本快照失败。
+   * 手动 capture 不走 maintenance warning 降级——用户点了「创建版本」就要
+   * 知道成败；仓储已实现映射的 DomainError 原样透传，未识别错误由应用层
+   * 统一包装为本码。
+   */
+  | "REVISION_CAPTURE_FAILED"
+  /**
+   * R012 Stage 4（需求 §23）：恢复目标版本不存在或无法读取
+   * （purged / 损坏降级 / 与 purge 竞态）。
+   */
+  | "REVISION_NOT_FOUND";
 
 /** 领域错误：code 是稳定契约，message 是中文用户文案。 */
 export class DomainError extends Error {

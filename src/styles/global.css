@@ -1189,6 +1189,7 @@
 .version-panel__actions {
   display: flex;
   justify-content: flex-end;
+  gap: 4px;
   padding-top: 8px;
 }
 
@@ -1211,6 +1212,41 @@
 
 .version-panel__restore--danger:hover {
   background: var(--color-danger);
+}
+
+/* R012 Stage 5（需求 §28）：创建版本入口 / 版本大小 / 与当前版本比较。 */
+.version-panel__create {
+  font: inherit;
+  font-size: 13px;
+  color: var(--color-brand);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+}
+
+.version-panel__create:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+}
+
+.version-panel__create:disabled {
+  color: var(--color-text-tertiary);
+}
+
+.version-panel__size {
+  flex: none;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+
+.version-panel__compare {
+  font: inherit;
+  font-size: 13px;
+  color: var(--color-info);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+}
+
+.version-panel__compare:hover {
+  background: var(--color-surface-hover);
 }
 
 .trash-panel__date {
@@ -2997,6 +3033,13 @@
   margin: 8px 0 0;
   font-size: 13px;
   color: var(--color-danger);
+}
+
+/* 版本历史面板的非错误提示（如创建版本去重命中）。 */
+.version-panel__notice {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--color-text-secondary);
 }
 
 /* 存储连接事件提示条（R004 阶段 7 §7.1）：固定在视口顶部，不参与网格布局。 */

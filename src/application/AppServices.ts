@@ -40,6 +40,7 @@ import type { FullTextSearchIndex } from "./search/FullTextSearchIndex";
 import type { LinkIndex } from "./links/LinkIndex";
 import type { UpdateService } from "./services/UpdateService";
 import type { FileOperationService } from "./fileOperations/FileOperationService";
+import type { RevisionRestoreCoordinator } from "./services/RevisionRestoreCoordinator";
 import type { RuntimeCapabilities } from "../runtime/RuntimeCapabilities";
 import type { RuntimeOperations } from "../runtime/RuntimeOperations";
 
@@ -216,6 +217,14 @@ export interface AppServices {
    * 完成，Renderer 只消费 UpdateStatus.canAutoInstall。
    */
   update?: UpdateService;
+  /**
+   * 版本恢复协调器（可选，R012 Stage 4，需求 §23）：Safe Restore 编排
+   * （before-restore 快照 + 平台 port——Web 走 JSON 提交，Desktop 走
+   * revision.restore IPC raw body 合并）。Web/Desktop/内存三端均装配；
+   * 可选仅为兼容测试夹具，UI 以存在性门控恢复入口（DUAL-01，
+   * 不判断平台名称）。
+   */
+  revisionRestore?: RevisionRestoreCoordinator;
   /**
    * 命令服务（R005 批次 1）：业务写编排入口，状态层经此触发仓储写、
    * 搜索索引同步与跨标签页广播。

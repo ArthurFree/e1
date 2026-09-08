@@ -111,6 +111,7 @@ async function makeBrowserContext(): Promise<CommandTestContext> {
           content: idbContent,
           revisions: idbRevision,
         }),
+        revisions: idbRevision,
         syncChannel,
       }),
     },
@@ -347,6 +348,36 @@ function describeCommandServices(
         workspaceId: ws.id,
         pageId: page.id,
       });
+    });
+
+    it("document.createManualRevision 落库 manual 版本且不受 interval 节流（R012 Stage 3）", async () => {
+      const ctx = await makeContext();
+      const ws = await ctx.repos.workspace.create("知识库");
+      const page = await ctx.commands.document.createWithContent({
+        workspaceId: ws.id,
+        parentId: null,
+        title: "手动版本",
+        contentJson: VALID_DOC,
+        textSnapshot: "初始正文",
+      });
+
+      // 连续两次手动创建（间隔远小于 5 分钟，内容不同）都成功。
+      ctx.posted.length = 0;
+      const first = await ctx.commands.document.createManualRevision(
+        page.id,
+        VALID_DOC,
+        "第一版",
+      );
+      const second = await ctx.commands.document.createManualRevision(
+        page.id,
+        { type: "doc", content: [{ type: "paragraph" }] },
+        "第二版",
+      );
+      expect(first?.reason).toBe("manual");
+      expect(second?.reason).toBe("manual");
+      expect(second?.id).not.toBe(first?.id);
+      // 手动创建不广播（版本历史不触发跨标签页内容刷新）。
+      expect(eventsOf(ctx.posted)).toEqual([]);
     });
   });
 }

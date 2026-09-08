@@ -128,7 +128,7 @@ describe("版本恢复与编辑器保存串行化（R004 INV-06）", () => {
       async () => {
         const revisions = await revisionRepository.listByPage(pageId);
         expect(
-          revisions.some((r) => r.textSnapshot.includes("编辑A的旧文本")),
+          revisions.some((r) => r.textPreview.includes("编辑A的旧文本")),
         ).toBe(true);
       },
       { timeout: 4000 },

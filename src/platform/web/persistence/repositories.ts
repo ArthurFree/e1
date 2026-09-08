@@ -36,9 +36,11 @@ import {
   type PageTag,
   type Preferences,
   type RevisionReason,
+  type RevisionSummary,
   type Tag,
   type Workspace,
 } from "../../../domain/types";
+import { REVISION_TEXT_PREVIEW_MAX_CHARS } from "../../../../shared/revisions/rawMarkdownBody";
 import {
   getDB,
   STORE_ATTACHMENTS,
@@ -860,8 +862,29 @@ function revisionContentKey(contentJson: unknown): string {
 }
 
 /**
- * 版本历史仓储（R001 §8.3）。版本按 pageId 索引存储；
- * 自动（interval）版本有数量上限并由 `pruneInterval` 清理，手动与恢复前版本永久保留。
+ * 完整版本 → 列表摘要（R012 Stage 0：summary + lazy get）。
+ * bytes 沿用 contentJson 序列化字节（字节预算裁剪口径不变）；
+ * textPreview 为 textSnapshot 截断（与 Desktop raw body 摘要同名字段，
+ * 语义差异见 domain/types.ts RevisionSummary 注释）。
+ */
+function toRevisionSummary(revision: DocumentRevision): RevisionSummary {
+  return {
+    id: revision.id,
+    pageId: revision.pageId,
+    createdAt: revision.createdAt,
+    reason: revision.reason,
+    bytes: revisionContentBytes(revision.contentJson),
+    textPreview: revision.textSnapshot.slice(
+      0,
+      REVISION_TEXT_PREVIEW_MAX_CHARS,
+    ),
+  };
+}
+
+/**
+ * 版本历史仓储（R001 §8.3；R012 Stage 0：listByPage 返回摘要 + 新增 lazy get）。
+ * 版本按 pageId 索引存储；自动（interval）版本有数量上限并由
+ * `pruneInterval` 清理，手动与恢复前版本永久保留。
  */
 export const revisionRepository: RevisionRepository = {
   async listByPage(pageId) {
@@ -874,18 +897,30 @@ export const revisionRepository: RevisionRepository = {
     // 损坏记录跳过，其余按创建时间倒序。
     return all
       .filter(isValidRevision)
-      .sort((a, b) => b.createdAt - a.createdAt);
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map(toRevisionSummary);
+  },
+
+  async get(pageId, revisionId) {
+    const db = await getDB();
+    const record = (await db.get(STORE_REVISIONS, revisionId)) as unknown;
+    if (!isValidRevision(record) || record.pageId !== pageId) return undefined;
+    return record;
   },
 
   async add(pageId, contentJson, textSnapshot, reason: RevisionReason) {
     const db = await getDB();
     // 与最新版本内容一致时不重复落库：防抖保存与间隔自动版本可能在没有实际编辑时触发。
-    const latest = (await revisionRepository.listByPage(pageId))[0];
-    if (
-      latest &&
-      revisionContentKey(latest.contentJson) === revisionContentKey(contentJson)
-    ) {
-      return null;
+    const latestSummary = (await revisionRepository.listByPage(pageId))[0];
+    if (latestSummary) {
+      const latest = await revisionRepository.get(pageId, latestSummary.id);
+      if (
+        latest &&
+        revisionContentKey(latest.contentJson) ===
+          revisionContentKey(contentJson)
+      ) {
+        return null;
+      }
     }
     const revision: DocumentRevision = {
       id: createId(),
@@ -896,7 +931,7 @@ export const revisionRepository: RevisionRepository = {
       reason,
     };
     await db.put(STORE_REVISIONS, revision);
-    return revision;
+    return toRevisionSummary(revision);
   },
 
   async pruneInterval(pageId, keep, maxBytes) {
@@ -905,12 +940,9 @@ export const revisionRepository: RevisionRepository = {
       (r) => r.reason === "interval",
     );
     // 数量与总字节双重预算（R004 阶段 6）：裁剪规则集中在 domain/revisions，
-    // 保证两实现语义一致且可确定性测试。
+    // 保证两实现语义一致且可确定性测试；bytes 直接取摘要字段。
     const excess = selectRevisionsToPrune(
-      interval.map((r) => ({
-        ...r,
-        bytes: revisionContentBytes(r.contentJson),
-      })),
+      interval,
       keep,
       maxBytes ?? Number.POSITIVE_INFINITY,
     );

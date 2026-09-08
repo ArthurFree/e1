@@ -50,7 +50,7 @@ import { DesktopNoteMetadataService } from "./DesktopNoteMetadataService";
 import { DesktopVaultStateClient } from "./DesktopVaultStateClient";
 import { createInMemoryDocumentVersionChannel } from "../../application/services/DocumentVersionChannel";
 import { DesktopPreferencesRepository } from "./preferencesRepository";
-import { DesktopRevisionRepository } from "./stubRepositories";
+import { DesktopRevisionRepository } from "./DesktopRevisionRepository";
 import { DesktopAssetStore } from "./DesktopAssetStore";
 import { DesktopAssetRegistry } from "./DesktopAssetRegistry";
 import { deterministicTagColor } from "./vaultMapping";
@@ -605,6 +605,9 @@ describe("DesktopPageRepository", () => {
     });
     await repo.listByWorkspace("v1");
     expect(scan).toHaveBeenCalledTimes(3);
+    // R012 Stage 6（需求 §25）：trash 不动 revision（历史保留）。
+    expect(api.revisions.purgeSeries).not.toHaveBeenCalled();
+    expect(api.revisions.relocate).not.toHaveBeenCalled();
   });
 
   it("remove/transient：仅预览 Vault 拒写（VAULT_READ_ONLY），不调 IPC", async () => {
@@ -655,11 +658,16 @@ describe("DesktopPageRepository", () => {
       vaultId: "v1",
       operationId: "op-1",
     });
+    // R012 Stage 6（需求 §25）：restore 不动 revision（历史保留）。
+    expect(api.revisions.purgeSeries).not.toHaveBeenCalled();
+    expect(api.revisions.relocate).not.toHaveBeenCalled();
     await repo.purge("trash:v1/op-2");
     expect(purgeTrash).toHaveBeenCalledWith({
       vaultId: "v1",
       operationId: "op-2",
     });
+    // 默认 listTrash 为空（找不到条目身份）→ 跳过 purgeSeries，不阻断。
+    expect(api.revisions.purgeSeries).not.toHaveBeenCalled();
     await repo.purgeTrashed("v1");
     expect(purgeTrash).toHaveBeenCalledWith({ vaultId: "v1" });
     // 非回收站 id：诚实失败 PAGE_NOT_FOUND，不调 IPC。
@@ -668,6 +676,101 @@ describe("DesktopPageRepository", () => {
     });
     await expect(repo.purge("01JABC")).rejects.toMatchObject({
       code: "PAGE_NOT_FOUND",
+    });
+  });
+
+  it("purge：正文永久删除成功后 purgeSeries 清理 revision series（stableNoteId 透传）", async () => {
+    const listTrash = vi.fn(async () => ({
+      entries: [
+        {
+          operationId: "op-2",
+          originalRelativePath: "学习/旧文.md",
+          deletedAt: "2026-08-15T10:00:00.000Z",
+          stableNoteId: "01DEL",
+        },
+      ],
+    }));
+    const api = mockApi({ listTrash });
+    const { repo } = pageRepo(api);
+    await repo.purge("trash:v1/op-2");
+    expect(api.vault.purgeTrash).toHaveBeenCalledWith({
+      vaultId: "v1",
+      operationId: "op-2",
+    });
+    expect(api.revisions.purgeSeries).toHaveBeenCalledWith({
+      vaultId: "v1",
+      stableNoteId: "01DEL",
+      relativePath: "学习/旧文.md",
+    });
+  });
+
+  it("purge：purgeSeries 失败仅告警（正文已删、历史按孤儿语义残留），不阻断结果", async () => {
+    const listTrash = vi.fn(async () => ({
+      entries: [
+        {
+          operationId: "op-3",
+          originalRelativePath: "学习/旧文.md",
+          deletedAt: "2026-08-15T10:00:00.000Z",
+        },
+      ],
+    }));
+    const api = mockApi({ listTrash });
+    (api.revisions as { purgeSeries: unknown }).purgeSeries = vi.fn(
+      async () => {
+        throw new Error("ipc down");
+      },
+    );
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { repo } = pageRepo(api);
+    await expect(repo.purge("trash:v1/op-3")).resolves.toBeUndefined();
+    warn.mockRestore();
+    // 无 stableNoteId 的条目：stableNoteId 以 null 透传，按 relativePath 定位。
+    expect(api.revisions.purgeSeries).toHaveBeenCalledWith({
+      vaultId: "v1",
+      stableNoteId: null,
+      relativePath: "学习/旧文.md",
+    });
+    expect(api.vault.purgeTrash).toHaveBeenCalledWith({
+      vaultId: "v1",
+      operationId: "op-3",
+    });
+  });
+
+  it("purgeTrashed：逐条清理文档 series（分组目录条目跳过）", async () => {
+    const listTrash = vi.fn(async () => ({
+      entries: [
+        {
+          operationId: "op-a",
+          originalRelativePath: "学习/甲.md",
+          deletedAt: "2026-08-15T10:00:00.000Z",
+          stableNoteId: "01AAA",
+        },
+        {
+          operationId: "op-b",
+          originalRelativePath: "旧目录",
+          deletedAt: "2026-08-14T10:00:00.000Z",
+        },
+        {
+          operationId: "op-c",
+          originalRelativePath: "乙.md",
+          deletedAt: "2026-08-13T10:00:00.000Z",
+        },
+      ],
+    }));
+    const api = mockApi({ listTrash });
+    const { repo } = pageRepo(api);
+    await repo.purgeTrashed("v1");
+    expect(api.vault.purgeTrash).toHaveBeenCalledWith({ vaultId: "v1" });
+    expect(api.revisions.purgeSeries).toHaveBeenCalledTimes(2);
+    expect(api.revisions.purgeSeries).toHaveBeenNthCalledWith(1, {
+      vaultId: "v1",
+      stableNoteId: "01AAA",
+      relativePath: "学习/甲.md",
+    });
+    expect(api.revisions.purgeSeries).toHaveBeenNthCalledWith(2, {
+      vaultId: "v1",
+      stableNoteId: null,
+      relativePath: "乙.md",
     });
   });
 
@@ -1075,11 +1178,17 @@ describe("DesktopTagRepository", () => {
 });
 
 describe("维护桩与 DocumentWrite（C4-E/G）", () => {
-  it("RevisionRepository：列表空；add/prune 为空操作", async () => {
-    const repo: RevisionRepository = new DesktopRevisionRepository();
+  // R012 Stage 2：RevisionRepository 换 IPC-backed 真实实现——未扫描到
+  // 文档时按原 stub 语义降级（列表空 / get undefined / add null / prune no-op）。
+  it("RevisionRepository：未扫描到文档时降级为空语义，不发起 IPC", async () => {
+    const api = mockApi({});
+    const scans = new DesktopVaultScanCache(api);
+    const repo: RevisionRepository = new DesktopRevisionRepository(api, scans);
     await expect(repo.listByPage("p")).resolves.toEqual([]);
+    await expect(repo.get("p", "r")).resolves.toBeUndefined();
     await expect(repo.add("p", {}, "", "manual")).resolves.toBeNull();
     await expect(repo.pruneInterval("p", 1)).resolves.toBeUndefined();
+    expect(api.revisions.list).not.toHaveBeenCalled();
   });
 
   it("AssetStore：读取空；removeOrphans 返回 0；remove 不抛错", async () => {

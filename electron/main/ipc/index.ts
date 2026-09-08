@@ -27,6 +27,9 @@
  * electron-updater（GitHub Releases feed），autoUpdater 实例由 main.ts
  * 注入（electron-updater 为 CJS 懒加载 getter，main.ts 是唯一入口），
  * 状态变化经 broadcastUpdateStatus 推送 events:updateStatus。
+ * R012 Stage 2：revision 组——Desktop 版本历史（.e1/revisions/ 不可变
+ * 快照）的 list/get/capture/prune/relocate/purgeSeries；restore 只冻结
+ * schema（NOT_IMPLEMENTED，Stage 4 实现）。
  */
 import {
   app,
@@ -53,6 +56,7 @@ import { registerRevealHandlers, type ShellLike } from "./reveal.js";
 import { registerSearchHandlers } from "./search.js";
 import { registerLinkHandlers } from "./links.js";
 import { registerFileOperationHandlers } from "./fileOperation.js";
+import { registerRevisionHandlers } from "./revisions.js";
 import { VaultRegistry } from "../vaultRegistry.js";
 import { DesktopVaultStateStore } from "../state/DesktopVaultStateStore.js";
 import { SecretFilePersistence } from "../secrets/SecretFilePersistence.js";
@@ -192,6 +196,9 @@ export function registerIpcHandlers(
     indexes,
     selfWrites,
   });
+  // R012 Stage 2：revision 组（.e1/revisions/ 版本历史；Stage 4 起
+  // restore 落地，自写登记抑制 watcher 回声）。
+  registerRevisionHandlers(bus, { registry, transients, selfWrites });
   registerAssetHandlers(bus, {
     openDialog: openDialog as FileDialogLike,
     registry,

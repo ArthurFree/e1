@@ -40,7 +40,7 @@ R005 将项目划分为四层运行时边界：Shared UI、Shared Application、
 **现状（当前事实）：**
 
 - Electron Shell：`electron/main` ESM + sandbox preload CJS，contextIsolation 开启、nodeIntegration 关闭；装配根 `src/main.desktop.tsx` 经 `desktop.html` 多页入口加载。
-- IPC：`shared/ipc` 契约与手写 schema 校验、`shared/errors` 统一错误码、preload `window.e1`（vault/note/asset 三组，信封解包 + 带码拒签）。注意 sandbox 下跨 contextBridge 的错误会被重建为 plain Error（自定义属性丢失），preload 把 `{code,message,details}` 编码进 message（`encodeIpcBridgeError`），Renderer 侧 `desktopApi.getDesktopApi()` 统一解码还原为 `DesktopIpcError`，调用方按 `err.code` 分流。
+- IPC：`shared/ipc` 契约与手写 schema 校验、`shared/errors` 统一错误码、preload `window.e1`（vault/vaultState/note/asset/files/secrets/reveal/update/revision 等组，信封解包 + 带码拒签）。注意 sandbox 下跨 contextBridge 的错误会被重建为 plain Error（自定义属性丢失），preload 把 `{code,message,details}` 编码进 message（`encodeIpcBridgeError`），Renderer 侧 `desktopApi.getDesktopApi()` 统一解码还原为 `DesktopIpcError`，调用方按 `err.code` 分流。
 - 授权边界（C2.1）：Renderer 全程不接触 absolutePath（一次性 selectionToken + `openRecent` + transient 仅预览，SEC-01）；未初始化目录经三选项确认框后才初始化。
 - **文档读写已真实**：`note.read` / `note.create` / `note.save` 经 PathGuard、NoteFileSystem、AtomicFileWriter；Renderer 侧 `DesktopContentRepository` + `DesktopMarkdownWriteService`（Source/Identity/Output Gate、Frontmatter 保留、Stable ID Adoption）；`documentPersistence: true`，编辑走共享 SaveCoordinator。
 - **附件已真实（C5）**：`asset.pick` / `import` / `read`、`DesktopAssetStore` / Registry / Access、`e1-asset://` 协议、Markdown Hydration 与相对路径写出；`persistentAssetPaths: true`。
@@ -48,6 +48,7 @@ R005 将项目划分为四层运行时边界：Shared UI、Shared Application、
 - **机密存储已真实（R007 阶段 5 落地 + R008 Stage 1 对齐）**：Main `electron/main/secrets/SecretFilePersistence.ts` 用 safeStorage 加密后落 `userData/secrets.json`（密文 base64，永不明文/弱保护；Linux basic_text 等不安全后端只 session-only）；`secret.status/get/set/delete` IPC + Renderer `DesktopSecretStore` 实现既有 SecretStore port（替换内存 PoC），AI API Key 在安全后端下重启保持；不安全后端降级会话内存并经 `AppServices.secretStorageStatus` 驱动设置页提示，不伪装为安全。
 - **文件管理器定位已真实（R007 阶段 5）**：`note.reveal` / `asset.reveal` IPC（resolveVaultRoot + PathGuard 后 `shell.showItemInFolder`，Renderer 不见 absolutePath，目标不存在报 REVEAL_TARGET_NOT_FOUND）；Renderer `DesktopRevealService`（可选 port `AppServices.reveal`），EditorShell 顶栏「在文件管理器中显示」（当前文档）与附件节点「在文件夹中显示」按 `capabilities.revealInFileManager` 门控。
 - **外部文件监听已真实（R007 阶段 3）**：Main 侧 `electron/main/watcher/`（chokidar + coalescing + 自写抑制）经首个单向事件通道 `events:vaultChanges` 推送 `VaultFsEvent` 批次；Renderer 侧 `ExternalVaultChangeService`（application 契约 + Desktop 实现）做静止窗口合并 → 重扫 → stable-id diff → 归一化变更；页面树经 `ExternalVaultChangeBridge` 刷新，当前文档按 clean 自动重载 / dirty 冲突面板 / 外部删除提示处理。
+- **版本历史已真实（R012）**：`revision.*` 七通道 IPC + Main 侧 `electron/main/revisions/` 不可变快照存储（`.e1/revisions/`，raw Markdown body 为权威快照，REV-02）；Renderer `DesktopRevisionRepository`（替换 no-op stub）+ Safe Restore（`RevisionRestoreCoordinator` 平台无关编排 + `DesktopRevisionRestoreService`：Main 乐观锁复核、保留当前 Frontmatter、AtomicFileWriter 落盘、SourceCache/版本通道推进、双索引显式 reconcile）；操作矩阵 `revision.read/write` 已翻 true。详见 `docs/architecture/revision-history.md`。
 - 平台专属能力经**平台无关的可选 port** 注入（PR5，原 `AppServices.desktopExtras` PoC 通道已删除）：`AppServices.vaultMaintenance`（`rescan(vaultId)`，FR-26 重新扫描）与 `AppServices.documentSafety`（`approveLossySource` / `approveLossyOutput` / `approveIdentityAdoption` 会话级门闸）。Web/内存容器不装配这两个字段；UI 一律以「能力矩阵字段 + port 是否存在」门控（DUAL-01，不判断平台名称）。
 
 职责：Renderer 侧经 IPC Client 实现同一组 port；Electron Main 负责目录选择、路径安全校验、Markdown 文件读写、临时文件原子替换、附件复制、自定义资源协议、文件 hash、IPC 参数校验。Desktop 以 Markdown 文件为真实数据源（DUAL-04）。
@@ -122,7 +123,7 @@ R005 将项目划分为四层运行时边界：Shared UI、Shared Application、
 | `page.trash.restore`      | 从回收站恢复                                                     | 是  |   是    |
 | `page.trash.purge`        | 永久删除（含清空回收站）                                         | 是  |   是    |
 | `tag.write`               | 标签写入（create / setPageTags）                                 | 是  |   是    |
-| `revision.read`           | 读取版本历史（false 时 UI 必须隐藏版本历史入口，R007 §8）        | 是  |   否    |
-| `revision.write`          | 写入版本快照（Desktop 版本历史为空实现）                         | 是  |   否    |
+| `revision.read`           | 读取版本历史（false 时 UI 必须隐藏版本历史入口，R007 §8）        | 是  |   是    |
+| `revision.write`          | 写入版本快照（R012：Desktop `.e1/revisions` 已落地，S6 翻转）    | 是  |   是    |
 
 注意：false 的操作必须整体不可达——入口隐藏、不可拖拽、F2 不触发（R008 §7.3：PageTreeSidebar 按页面 kind 门控；group.rename=false 时新建分组不自动进入重命名流程）。变更任一字段时须同步更新本表与 `desktopOperations.test.ts`。

@@ -18,6 +18,7 @@
 10. [architecture/markdown-compatibility.md](./architecture/markdown-compatibility.md)：编辑器节点/mark → Markdown 迁移策略矩阵与有损处理约定（R005，DUAL-07 对照表）。
 11. [architecture/link-index.md](./architecture/link-index.md)：链接索引（R010）——链接语义冻结、双提取器、SQLite 共库、增量 Reconciliation、Backlinks/失效链接 UI 门控。
 12. [architecture/file-operations.md](./architecture/file-operations.md)：Desktop 文件操作 v2（R011）——plan/preflight/journaled execute、源码级链接改写、crash recovery、显式索引 reconcile。
+13. [architecture/revision-history.md](./architecture/revision-history.md)：版本历史（R012）——REV-01~04 不变量、`.e1/revisions/` 存储结构、series identity、SHA-256 去重、retention、RevisionRepository summary + lazy get、revision IPC 七通道与 Safe Restore（Stage 0–6 已落地，Desktop 实现已真实）。
 
 ## 决策记录
 

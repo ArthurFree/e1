@@ -10,6 +10,10 @@ import type { AppServices } from "../../application/AppServices";
 import { increment } from "../../application/devDiagnostics";
 import { DocumentCommitService } from "../../application/services/DocumentCommitService";
 import { DocumentSaveCoordinator } from "../../application/services/SaveCoordinator";
+import {
+  JsonRevisionRestorePort,
+  RevisionRestoreCoordinator,
+} from "../../application/services/RevisionRestoreCoordinator";
 import { WorkspaceSessionService } from "../../application/services/WorkspaceSessionService";
 import { PreferencesService } from "../../application/services/PreferencesService";
 import { BroadcastChangeChannel } from "./BroadcastChangeChannel";
@@ -118,6 +122,7 @@ export function createBrowserAppServices(): AppServices {
     document: new DocumentCommandService({
       documentCommit,
       documentQueries,
+      revisions: revisionRepository,
       syncChannel,
     }),
   };
@@ -143,6 +148,12 @@ export function createBrowserAppServices(): AppServices {
     picker: new WebAssetPicker(),
     notify: new WebNotificationService(),
   };
+  // R012 Stage 4：Safe Restore 协调器——Web 走 JSON 提交 port（语义同 R004
+  // restoreRevision：before-restore 由协调器统一先落，commit 闭包串行提交）。
+  const revisionRestore = new RevisionRestoreCoordinator({
+    revisions: revisionRepository,
+    port: new JsonRevisionRestorePort(),
+  });
   instance = {
     assets,
     // 运行时能力矩阵（R005 阶段 2）：写死在容器内部而非 spread 合并，
@@ -159,6 +170,7 @@ export function createBrowserAppServices(): AppServices {
     secretStore,
     aiConfigService,
     storageHealth,
+    revisionRestore,
     commands,
     queries,
     createAIProvider: createOpenAICompatibleProvider,

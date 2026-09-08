@@ -18,7 +18,6 @@ import {
 import { useAppServices } from "../state/AppServicesProvider";
 import { getAISettings, validateAIConfig } from "../domain/ai";
 import { AI_API_KEY_SECRET } from "../application/services/SecretStore";
-import { revisionContentBytes } from "../domain/revisions";
 import {
   STORAGE_WARN_RATIO,
   type StorageEstimateInfo,
@@ -128,10 +127,9 @@ export function SettingsPanel() {
         if (cancelled) return;
         setRevisionUsage({
           count: list.length,
-          bytes: list.reduce(
-            (sum, r) => sum + revisionContentBytes(r.contentJson),
-            0,
-          ),
+          // R012 Stage 0：bytes 直接取摘要字段（Web 为 contentJson 序列化
+          // 字节，与既有 revisionContentBytes 口径一致）。
+          bytes: list.reduce((sum, r) => sum + r.bytes, 0),
         });
       })
       .catch(() => {

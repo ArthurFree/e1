@@ -32,6 +32,8 @@ export type MockDesktopApiOverrides = {
   secret?: Partial<E1DesktopAPI["secret"]>;
   search?: Partial<E1DesktopAPI["search"]>;
   links?: Partial<E1DesktopAPI["links"]>;
+  /** R012 Stage 2：Desktop 版本历史组。 */
+  revisions?: Partial<E1DesktopAPI["revisions"]>;
   asset?: Partial<E1DesktopAPI["asset"]>;
   events?: Partial<E1DesktopAPI["events"]>;
   update?: Partial<E1DesktopAPI["update"]>;
@@ -223,6 +225,17 @@ export function createMockDesktopApi(
     })),
   };
 
+  /** R012 Stage 2：版本历史组（默认空历史：list 空、get/capture null、其余空操作）。 */
+  const revisions: E1DesktopAPI["revisions"] = {
+    list: vi.fn(async () => ({ summaries: [] })),
+    get: vi.fn(async () => null),
+    capture: vi.fn(async () => null),
+    restore: vi.fn(async () => ({ versionToken: DEFAULT_TOKEN, updatedAt: 0 })),
+    prune: vi.fn(async () => ({ pruned: 0 })),
+    relocate: vi.fn(async () => ({ relocated: 0 })),
+    purgeSeries: vi.fn(async () => ({ purged: false })),
+  };
+
   const asset: E1DesktopAPI["asset"] = {
     pick: vi.fn(async () => null),
     import: vi.fn(async (input) => ({
@@ -271,6 +284,7 @@ export function createMockDesktopApi(
     secret: mergeGroup(secret, overrides.secret),
     search: mergeGroup(search, overrides.search),
     links: mergeGroup(links, overrides.links),
+    revisions: mergeGroup(revisions, overrides.revisions),
     asset: mergeGroup(asset, overrides.asset),
     events: mergeGroup(events, overrides.events),
     update: mergeGroup(update, overrides.update),

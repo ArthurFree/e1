@@ -18,6 +18,7 @@ import type {
   PageTag,
   Preferences,
   RevisionReason,
+  RevisionSummary,
   Tag,
   Workspace,
 } from "./types";
@@ -137,20 +138,34 @@ export interface DocumentWriteRepository {
   replaceContent(input: ReplaceDocumentContentInput): Promise<DocumentContent>;
 }
 
-/** 本地版本历史仓储（策略常量见 revisions.ts）。 */
+/**
+ * 本地版本历史仓储（策略常量见 revisions.ts）。
+ * R012 Stage 0：从「全量 DocumentRevision 列表」演进为 summary + lazy get——
+ * 列表只读摘要（RevisionSummary），选中版本再经 get 取完整内容，
+ * 避免打开面板时读取并解析全部历史版本（需求文档 §20）。
+ */
 export interface RevisionRepository {
-  /** 按创建时间倒序；损坏记录跳过。 */
-  listByPage(pageId: string): Promise<DocumentRevision[]>;
-  /** 追加版本；与最新版本内容一致时不重复创建，返回 null。 */
+  /** 摘要列表，按创建时间倒序；损坏记录跳过。 */
+  listByPage(pageId: string): Promise<RevisionSummary[]>;
+  /** 按 id 取完整版本；不存在、pageId 不匹配或记录损坏时返回 undefined。 */
+  get(
+    pageId: string,
+    revisionId: string,
+  ): Promise<DocumentRevision | undefined>;
+  /**
+   * 追加版本；与最新版本内容一致时不重复创建，返回 null。
+   * 返回新版本的摘要（Web/内存实现），或 null（去重命中 / Desktop no-op stub）。
+   */
   add(
     pageId: string,
     contentJson: unknown,
     textSnapshot: string,
     reason: RevisionReason,
-  ): Promise<DocumentRevision | null>;
+  ): Promise<RevisionSummary | null>;
   /**
    * 自动版本（interval）超出上限时清理最旧的，手动/恢复前版本不受影响。
-   * maxBytes（R004 阶段 6）：数量上限之外的总字节预算，省略时不按字节裁剪。
+   * maxBytes（R004 阶段 6）：数量上限之外的总字节预算（以摘要 bytes 计量），
+   * 省略时不按字节裁剪。
    */
   pruneInterval(pageId: string, keep: number, maxBytes?: number): Promise<void>;
 }
@@ -183,13 +198,12 @@ export function resolveAttachmentSource(
 }
 
 /** Web / 内存存储只接受字节来源；authorized-ref 必须由 Desktop AssetStore 消费。 */
-export function requireAttachmentBytes(input: CreateAttachmentInput): Uint8Array {
+export function requireAttachmentBytes(
+  input: CreateAttachmentInput,
+): Uint8Array {
   const source = resolveAttachmentSource(input);
   if (source.kind !== "bytes") {
-    throw new DomainError(
-      "INVALID_INPUT",
-      "当前存储只接受字节来源的附件。",
-    );
+    throw new DomainError("INVALID_INPUT", "当前存储只接受字节来源的附件。");
   }
   return source.data;
 }

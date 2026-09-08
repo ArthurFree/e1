@@ -365,14 +365,16 @@ export class DocumentSaveCoordinator {
         );
         if (created) {
           this.lastIntervalAt = savedAt;
-          if (this.isCurrent(snapshot)) {
-            // 数量上限 + 单文档自动版本总字节预算双重裁剪（R004 阶段 6）。
-            await this.deps.revisions.pruneInterval(
-              snapshot.pageId,
-              INTERVAL_REVISION_KEEP,
-              INTERVAL_REVISION_MAX_BYTES,
-            );
-          }
+        }
+        if (this.isCurrent(snapshot)) {
+          // 数量上限 + 单文档自动版本总字节预算双重裁剪（R004 阶段 6）。
+          // add 去重命中（返回 null）时同样执行（R012 §34）：去重只表示
+          // 本次无需新增快照，不代表存量未超上限；prune 幂等，重复调用无害。
+          await this.deps.revisions.pruneInterval(
+            snapshot.pageId,
+            INTERVAL_REVISION_KEEP,
+            INTERVAL_REVISION_MAX_BYTES,
+          );
         }
       }
     } catch (err) {

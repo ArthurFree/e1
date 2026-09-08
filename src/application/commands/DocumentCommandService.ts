@@ -7,6 +7,8 @@
  *   （其内部已负责乐观锁、搜索索引同步与 content-saved 广播）。
  *   R005 批次 2 起全部调用方（DocumentEditor 版本恢复、MainArea 空白副本）
  *   均经本服务访问，AppServices 不再暴露 documentCommit 字段；
+ * - createManualRevision（R012 Stage 3，需求 §22）：手动版本捕获入口，
+ *   绕过 interval 节流，失败抛 DomainError（不走 maintenance warning 降级）；
  * - relocateBrokenLink（R010 Stage 6 §14）：失效链接重新定位——打开源文档
  *  （经 DocumentQueryService）、重写命中链接、经同一提交通道落盘。
  *
@@ -15,11 +17,13 @@
 import type {
   CreateDocumentWithContentInput,
   ReplaceDocumentContentInput,
+  RevisionRepository,
 } from "../../domain/repositories";
 import type {
   ContentVersionToken,
   DocumentContent,
   Page,
+  RevisionSummary,
 } from "../../domain/types";
 import { DomainError } from "../../domain/errors";
 import { jsonToText } from "../../editor/markdown";
@@ -56,6 +60,12 @@ export class DocumentCommandService {
        * 读取源文档正文与路径上下文。与 queries.document 共享同一实例。
        */
       documentQueries: DocumentQueryService;
+      /**
+       * 版本历史仓储（R012 Stage 3）：手动版本捕获入口。
+       * Desktop 实现（DesktopRevisionRepository）的 add 会忽略传入的
+       * contentJson/textSnapshot，由 Main 重读磁盘 capture（REV-02）。
+       */
+      revisions: RevisionRepository;
       /** 变更广播频道（R004 §7.2；R005 阶段 8 §8.3 ChangeChannel port）；可选，缺省不广播。 */
       syncChannel?: ChangeChannel;
     },
@@ -97,6 +107,48 @@ export class DocumentCommandService {
   /** 版本恢复（INV-06 串行化编排；委托 DocumentCommitService）。 */
   restoreRevision(input: RestoreRevisionCommandInput): Promise<void> {
     return this.deps.documentCommit.restoreRevision(input);
+  }
+
+  /**
+   * 手动创建版本快照（R012 Stage 3，需求 §22「手动版本」）。
+   *
+   * 契约：
+   * - **调用方负责先 flush 未完成保存且确认保存成功**——本方法不触发也不
+   *   等待正文落盘；flush 发生 conflict / lossy / IO error 时不得调用
+   *  （否则会产生与编辑器状态不一致的手动版本）。Stage 5 的 VersionPanel
+   *   「创建版本」按钮按 flush → 成功后调本方法 的顺序接线；
+   * - contentJson/textSnapshot 为调用方传入的当前编辑器状态；Desktop 实现
+   *   会忽略它们、以磁盘 raw Markdown body 为准（REV-02），Web/内存实现
+   *   按传入内容落快照；
+   * - 绕过 interval 节流（不经 shouldCreateIntervalRevision）：手动版本
+   *   不受 5 分钟间隔限制，也不进入自动裁剪范围（§26）；
+   * - **失败必须让调用方感知**：已映射的 DomainError 原样透传，未识别错误
+   *   统一包装为 DomainError("REVISION_CAPTURE_FAILED")——不走
+   *   SaveCoordinator 的 maintenance warning 降级（§43 手动 Snapshot 失败模型）。
+   *
+   * @returns 新快照摘要；与最新快照内容一致去重命中时返回 null（非失败，
+   *   UI 可据此提示「内容与当前版本一致」）。
+   */
+  async createManualRevision(
+    pageId: string,
+    contentJson: unknown,
+    textSnapshot: string,
+  ): Promise<RevisionSummary | null> {
+    try {
+      return await this.deps.revisions.add(
+        pageId,
+        contentJson,
+        textSnapshot,
+        "manual",
+      );
+    } catch (err) {
+      if (err instanceof DomainError) throw err;
+      throw new DomainError(
+        "REVISION_CAPTURE_FAILED",
+        "创建版本失败，请稍后重试。",
+        { cause: err instanceof Error ? err.message : String(err) },
+      );
+    }
   }
 
   /**

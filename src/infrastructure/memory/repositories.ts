@@ -42,6 +42,7 @@ import type {
   Page,
   PageTag,
   Preferences,
+  RevisionSummary,
   Tag,
   TrashRecord,
   Workspace,
@@ -50,6 +51,7 @@ import {
   DEFAULT_PREFERENCES,
   INITIAL_CONTENT_VERSION_TOKEN,
 } from "../../domain/types";
+import { REVISION_TEXT_PREVIEW_MAX_CHARS } from "../../../shared/revisions/rawMarkdownBody";
 import { createId } from "../id";
 
 const MAX_PAGE_TITLE_LENGTH = 200;
@@ -529,14 +531,32 @@ export function createInMemoryRepositories(
     },
   };
 
+  // R012 Stage 0（summary + lazy get）：与 IndexedDB 实现同一摘要口径。
+  const toRevisionSummary = (r: DocumentRevision): RevisionSummary => ({
+    id: r.id,
+    pageId: r.pageId,
+    createdAt: r.createdAt,
+    reason: r.reason,
+    bytes: revisionContentBytes(r.contentJson),
+    textPreview: r.textSnapshot.slice(0, REVISION_TEXT_PREVIEW_MAX_CHARS),
+  });
+
   const revision: RevisionRepository = {
     async listByPage(pageId) {
       return [...store.revisions.values()]
         .filter((r) => r.pageId === pageId)
-        .sort((a, b) => b.createdAt - a.createdAt);
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .map(toRevisionSummary);
+    },
+    async get(pageId, revisionId) {
+      const record = store.revisions.get(revisionId);
+      return record && record.pageId === pageId ? record : undefined;
     },
     async add(pageId, contentJson, textSnapshot, reason) {
-      const latest = (await revision.listByPage(pageId))[0];
+      const latestSummary = (await revision.listByPage(pageId))[0];
+      const latest = latestSummary
+        ? await revision.get(pageId, latestSummary.id)
+        : undefined;
       if (
         latest &&
         JSON.stringify(latest.contentJson ?? null) ===
@@ -553,18 +573,16 @@ export function createInMemoryRepositories(
         reason,
       };
       store.revisions.set(rev.id, rev);
-      return rev;
+      return toRevisionSummary(rev);
     },
     async pruneInterval(pageId, keep, maxBytes) {
       const interval = (await revision.listByPage(pageId)).filter(
         (r) => r.reason === "interval",
       );
-      // 与 IndexedDB 实现同规则：数量 + 总字节双重预算（R004 阶段 6）。
+      // 与 IndexedDB 实现同规则：数量 + 总字节双重预算（R004 阶段 6），
+      // bytes 直接取摘要字段。
       const excess = selectRevisionsToPrune(
-        interval.map((r) => ({
-          ...r,
-          bytes: revisionContentBytes(r.contentJson),
-        })),
+        interval,
         keep,
         maxBytes ?? Number.POSITIVE_INFINITY,
       );

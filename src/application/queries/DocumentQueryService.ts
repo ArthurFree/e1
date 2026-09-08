@@ -2,7 +2,8 @@
  * 文档查询服务（R005 批次 1）：正文与版本的只读查询入口。
  *
  * 批次 2 起承接全部组件侧直查：getContent（DocumentEditor/MainArea）、
- * listRevisions（VersionPanel/SettingsPanel）、listAllContents
+ * listRevisions/getRevision（VersionPanel/SettingsPanel；R012 Stage 0 起
+ * 为 summary + lazy get）、listAllContents
  * （WorkspaceHome 总字数统计需要跨知识库正文全集）。
  * R006-C3（FR-17/18）：openDocument 为文档打开主入口——返回正文 +
  * 访问级别（editable/read-only）+ Markdown 兼容性 + 来源信息；
@@ -19,6 +20,7 @@ import type {
   ContentVersionToken,
   DocumentContent,
   DocumentRevision,
+  RevisionSummary,
 } from "../../domain/types";
 import type { UnsupportedMarkdownFeature } from "../../editor/markdown/types";
 import {
@@ -113,9 +115,20 @@ export class DocumentQueryService {
     };
   }
 
-  /** 按创建时间倒序列出页面版本（损坏记录由仓储跳过）。 */
-  listRevisions(pageId: string): Promise<DocumentRevision[]> {
+  /**
+   * 版本摘要列表，按创建时间倒序（R012 Stage 0：summary + lazy get，
+   * 损坏记录由仓储跳过）。完整内容经 getRevision 按需取回。
+   */
+  listRevisions(pageId: string): Promise<RevisionSummary[]> {
     return this.deps.revisions.listByPage(pageId);
+  }
+
+  /** 按 id 取完整版本（预览/恢复入口）；不存在或损坏时返回 undefined。 */
+  getRevision(
+    pageId: string,
+    revisionId: string,
+  ): Promise<DocumentRevision | undefined> {
+    return this.deps.revisions.get(pageId, revisionId);
   }
 
   /** 跨知识库全部正文（知识库首页统计等全局视图专用）。 */

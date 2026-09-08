@@ -7,7 +7,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DomainError, isDomainError } from "../../domain/errors";
 import type { RevisionRepository } from "../../domain/repositories";
-import type { DocumentRevision } from "../../domain/types";
+import type { RevisionReason, RevisionSummary } from "../../domain/types";
+import {
+  INTERVAL_REVISION_KEEP,
+  INTERVAL_REVISION_MAX_BYTES,
+  INTERVAL_REVISION_MS,
+} from "../../domain/revisions";
 import { createDeferred, sleep, type Deferred } from "../../test/fixtures";
 import type { DocumentContentCommitter } from "./DocumentCommitService";
 import {
@@ -39,7 +44,10 @@ function makeStubs() {
     async listByPage() {
       return [];
     },
-    async add(_pageId, _json, text): Promise<DocumentRevision | null> {
+    async get() {
+      return undefined;
+    },
+    async add(_pageId, _json, text): Promise<RevisionSummary | null> {
       revisionAdds.push(text);
       return null; // 不创建版本，避免干扰断言；节流逻辑由集成测试覆盖。
     },
@@ -254,7 +262,7 @@ describe("DocumentSaveCoordinator 保存后半程竞态（R004）", () => {
   interface PostCommitStubs {
     deps: ConstructorParameters<typeof DocumentSaveCoordinator>[1];
     saveGates: Deferred<void>[];
-    revisionGates: Deferred<DocumentRevision | null>[];
+    revisionGates: Deferred<RevisionSummary | null>[];
     orphanGates: Deferred<number>[];
     orphanCalls: {
       referencedIds: string[];
@@ -268,7 +276,7 @@ describe("DocumentSaveCoordinator 保存后半程竞态（R004）", () => {
 
   function makePostCommitStubs(): PostCommitStubs {
     const saveGates: Deferred<void>[] = [];
-    const revisionGates: Deferred<DocumentRevision | null>[] = [];
+    const revisionGates: Deferred<RevisionSummary | null>[] = [];
     const orphanGates: Deferred<number>[] = [];
     const orphanCalls: PostCommitStubs["orphanCalls"] = [];
     const recoveryWrites: RecoveryRecord[] = [];
@@ -289,8 +297,11 @@ describe("DocumentSaveCoordinator 保存后半程竞态（R004）", () => {
       async listByPage() {
         return [];
       },
-      async add(): Promise<DocumentRevision | null> {
-        const gate = createDeferred<DocumentRevision | null>();
+      async get() {
+        return undefined;
+      },
+      async add(): Promise<RevisionSummary | null> {
+        const gate = createDeferred<RevisionSummary | null>();
         revisionGates.push(gate);
         return gate.promise;
       },
@@ -537,6 +548,9 @@ describe("DocumentSaveCoordinator 乐观并发冲突", () => {
           async listByPage() {
             return [];
           },
+          async get() {
+            return undefined;
+          },
           async add() {
             return null;
           },
@@ -599,5 +613,217 @@ describe("DocumentSaveCoordinator 乐观并发冲突", () => {
     // saved 在维护段之后发布：等队列排空再断言最终状态。
     await coordinator.flush();
     expect(states[states.length - 1].status).toBe("saved");
+  });
+});
+
+
+/**
+ * R012 Stage 3（需求 §22/§34）：interval 自动版本捕获在保存维护链路中的
+ * 行为锁定——首次保存即建、5 分钟节流、去重命中（add → null）仍执行
+ * prune、capture 失败不污染正文保存状态（onMaintenanceError 降级）。
+ * 用可控时钟（commit 返回的 savedAt）与可配置版本历史精确驱动门控。
+ */
+describe("DocumentSaveCoordinator interval 自动版本（R012 Stage 3）", () => {
+  const T0 = 1_700_000_000_000;
+
+  interface IntervalStubs {
+    deps: ConstructorParameters<typeof DocumentSaveCoordinator>[1];
+    adds: { pageId: string; text: string; reason: RevisionReason }[];
+    prunes: { pageId: string; keep: number; maxBytes?: number }[];
+    orphanCalls: string[];
+    recoveryClears: string[];
+    maintenanceErrors: { stage: string; error: unknown }[];
+    /** 推进 commit 返回的 savedAt（保存时间）。 */
+    setNow(next: number): void;
+  }
+
+  function makeSummary(createdAt: number, reason: RevisionReason): RevisionSummary {
+    return {
+      id: `r-${createdAt}-${reason}`,
+      pageId: "page-1",
+      createdAt,
+      reason,
+      bytes: 16,
+      textPreview: "预览",
+    };
+  }
+
+  function makeIntervalStubs(options?: {
+    /** 构造时 listByPage 返回的历史（用于 lastIntervalAt 回填）。 */
+    history?: RevisionSummary[];
+    /** add 的返回值；缺省 null（去重命中）。 */
+    addResult?: RevisionSummary | null;
+    /** add 抛错（模拟 Desktop capture IPC 失败）。 */
+    failAdd?: boolean;
+  }): IntervalStubs {
+    let now = T0;
+    const adds: IntervalStubs["adds"] = [];
+    const prunes: IntervalStubs["prunes"] = [];
+    const orphanCalls: string[] = [];
+    const recoveryClears: string[] = [];
+    const maintenanceErrors: IntervalStubs["maintenanceErrors"] = [];
+
+    const committer: DocumentContentCommitter = {
+      async commit(_pageId, _json, _text, expectedVersion) {
+        return { savedAt: now, version: `${expectedVersion}+` };
+      },
+    };
+    const revisions: RevisionRepository = {
+      async listByPage() {
+        return options?.history ?? [];
+      },
+      async get() {
+        return undefined;
+      },
+      async add(pageId, _json, text, reason) {
+        adds.push({ pageId, text, reason });
+        if (options?.failAdd) throw new Error("capture IPC 失败");
+        return options?.addResult ?? null;
+      },
+      async pruneInterval(pageId, keep, maxBytes) {
+        prunes.push({ pageId, keep, maxBytes });
+      },
+    };
+    return {
+      deps: {
+        committer,
+        revisions,
+        assets: {
+          async removeOrphans(pageId) {
+            orphanCalls.push(pageId);
+            return 0;
+          },
+        },
+        recovery: {
+          write() {},
+          clear(pageId) {
+            recoveryClears.push(pageId);
+          },
+        },
+        onMaintenanceError(stage, error) {
+          maintenanceErrors.push({ stage, error });
+        },
+      },
+      adds,
+      prunes,
+      orphanCalls,
+      recoveryClears,
+      maintenanceErrors,
+      setNow(next) {
+        now = next;
+      },
+    };
+  }
+
+  /** 编辑并入队保存，等待队列排空（含维护段执行完毕）。 */
+  async function saveOnce(
+    coordinator: DocumentSaveCoordinator,
+    text: string,
+  ): Promise<void> {
+    coordinator.noteEdit();
+    const save = coordinator.enqueue({ contentJson: DOC, textSnapshot: text });
+    await save;
+    await coordinator.flush();
+  }
+
+  it("首次保存（无历史）创建 interval 快照，并按 100 个 / 5MiB 预算裁剪", async () => {
+    const stubs = makeIntervalStubs({
+      addResult: makeSummary(T0, "interval"),
+    });
+    const coordinator = new DocumentSaveCoordinator("page-1", stubs.deps);
+
+    await saveOnce(coordinator, "首版内容");
+
+    expect(stubs.adds).toEqual([
+      { pageId: "page-1", text: "首版内容", reason: "interval" },
+    ]);
+    expect(stubs.prunes).toEqual([
+      {
+        pageId: "page-1",
+        keep: INTERVAL_REVISION_KEEP,
+        maxBytes: INTERVAL_REVISION_MAX_BYTES,
+      },
+    ]);
+    expect(stubs.maintenanceErrors).toEqual([]);
+    expect(coordinator.getState().status).toBe("saved");
+  });
+
+  it("距上次 interval 不足 5 分钟：不创建也不裁剪", async () => {
+    const stubs = makeIntervalStubs({
+      history: [makeSummary(T0 - INTERVAL_REVISION_MS + 1000, "interval")],
+    });
+    const coordinator = new DocumentSaveCoordinator("page-1", stubs.deps);
+
+    await saveOnce(coordinator, "内容");
+
+    expect(stubs.adds).toEqual([]);
+    expect(stubs.prunes).toEqual([]);
+    expect(coordinator.getState().status).toBe("saved");
+  });
+
+  it("距上次 interval 达到 5 分钟：创建新快照", async () => {
+    const stubs = makeIntervalStubs({
+      history: [makeSummary(T0 - INTERVAL_REVISION_MS, "interval")],
+      addResult: makeSummary(T0, "interval"),
+    });
+    const coordinator = new DocumentSaveCoordinator("page-1", stubs.deps);
+
+    await saveOnce(coordinator, "内容");
+
+    expect(stubs.adds).toHaveLength(1);
+    expect(stubs.adds[0].reason).toBe("interval");
+  });
+
+  it("interval 创建成功后回填节流时间：5 分钟内的后续保存不再创建", async () => {
+    const stubs = makeIntervalStubs({
+      addResult: makeSummary(T0, "interval"),
+    });
+    const coordinator = new DocumentSaveCoordinator("page-1", stubs.deps);
+
+    await saveOnce(coordinator, "第一版");
+    expect(stubs.adds).toHaveLength(1);
+
+    // 1 分钟后再次保存：lastIntervalAt 已回填为上次保存时间，不再触发。
+    stubs.setNow(T0 + 60_000);
+    await saveOnce(coordinator, "第二版");
+    expect(stubs.adds).toHaveLength(1);
+    expect(stubs.prunes).toHaveLength(1);
+  });
+
+  it("add 去重命中（返回 null）仍执行 prune 且不报错", async () => {
+    const stubs = makeIntervalStubs({ addResult: null });
+    const coordinator = new DocumentSaveCoordinator("page-1", stubs.deps);
+
+    await saveOnce(coordinator, "与上一版相同的内容");
+
+    expect(stubs.adds).toHaveLength(1);
+    expect(stubs.prunes).toEqual([
+      {
+        pageId: "page-1",
+        keep: INTERVAL_REVISION_KEEP,
+        maxBytes: INTERVAL_REVISION_MAX_BYTES,
+      },
+    ]);
+    expect(stubs.maintenanceErrors).toEqual([]);
+    expect(coordinator.getState().status).toBe("saved");
+  });
+
+  it("capture 失败：正文仍为 saved，经 onMaintenanceError('revision') 上报，后续维护照常", async () => {
+    const stubs = makeIntervalStubs({ failAdd: true });
+    const coordinator = new DocumentSaveCoordinator("page-1", stubs.deps);
+
+    // 保存 Promise 不因维护失败拒绝。
+    await saveOnce(coordinator, "内容");
+
+    expect(coordinator.getState().status).toBe("saved");
+    expect(coordinator.getState().errorKind).toBeNull();
+    expect(stubs.maintenanceErrors).toHaveLength(1);
+    expect(stubs.maintenanceErrors[0].stage).toBe("revision");
+    expect(stubs.maintenanceErrors[0].error).toBeInstanceOf(Error);
+    // revision 步骤失败不阻断后续维护：附件清理与恢复缓冲清理照常执行。
+    expect(stubs.orphanCalls).toEqual(["page-1"]);
+    expect(stubs.recoveryClears).toEqual(["page-1"]);
+    // capture 失败不产生快照，无需裁剪。
+    expect(stubs.prunes).toEqual([]);
   });
 });

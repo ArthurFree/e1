@@ -60,6 +60,8 @@ import { DesktopSearchIndex } from "./DesktopSearchIndex";
 import { DesktopSearchIndexReconciler } from "./DesktopSearchIndexReconciler";
 import { DesktopLinkIndex } from "./DesktopLinkIndex";
 import { DesktopLinkIndexReconciler } from "./DesktopLinkIndexReconciler";
+import { DesktopRevisionRestoreService } from "./DesktopRevisionRestoreService";
+import { RevisionRestoreCoordinator } from "../../application/services/RevisionRestoreCoordinator";
 import { DesktopFileOperationService } from "./DesktopFileOperationService";
 import { DesktopExternalVaultChangeService } from "./DesktopExternalVaultChangeService";
 import { createInMemoryDocumentVersionChannel } from "../../application/services/DocumentVersionChannel";
@@ -75,7 +77,7 @@ import {
   DesktopVaultScanCache,
   DesktopWorkspaceRepository,
 } from "./repositories";
-import { DesktopRevisionRepository } from "./stubRepositories";
+import { DesktopRevisionRepository } from "./DesktopRevisionRepository";
 import { DesktopPreferencesRepository } from "./preferencesRepository";
 import { DesktopTitleSearchIndex } from "./DesktopTitleSearchIndex";
 
@@ -142,7 +144,9 @@ export function createDesktopRuntime(
     assets,
   );
   const tagRepository = new DesktopTagRepository(scans, noteMetadata);
-  const revisionRepository = new DesktopRevisionRepository();
+  // R012 Stage 2：版本历史换 IPC-backed 真实实现（原 no-op stub 删除；
+  // 文档 purge 的 series 清理与文件操作 relocate 接线在 Stage 6）。
+  const revisionRepository = new DesktopRevisionRepository(api, scans);
   const assetStore = new DesktopAssetStore(api, scans, assets);
   const documentWriteRepository = new DesktopDocumentWriteRepository(
     api,
@@ -177,6 +181,18 @@ export function createDesktopRuntime(
     scans,
     aliases,
     linkIndex,
+  });
+  // R012 Stage 4：Safe Restore——revision.restore IPC（Main raw body 合并
+  // 落盘）+ SourceCache/版本通道推进 + 双索引显式 reconcile。
+  const revisionRestore = new RevisionRestoreCoordinator({
+    revisions: revisionRepository,
+    port: new DesktopRevisionRestoreService({
+      api,
+      sources,
+      versionChannel: documentVersionChannel,
+      linkIndex,
+      fullTextSearch,
+    }),
   });
   // R011：dirty / pending-save 页面集合——plan 时解析为 relativePath
   // 并注入 FILE_OPERATION_BLOCKED_DIRTY（FILEOP-09）。
@@ -259,6 +275,7 @@ export function createDesktopRuntime(
     document: new DocumentCommandService({
       documentCommit,
       documentQueries,
+      revisions: revisionRepository,
       syncChannel,
     }),
   };
@@ -366,6 +383,8 @@ export function createDesktopRuntime(
     linkIndex,
     // R011：路径变更文件操作（plan/execute + recovery）。
     fileOperations,
+    // R012 Stage 4：Safe Restore 协调器（revision.restore IPC 链路）。
+    revisionRestore,
     // 机密存储运行状态（R008 Stage 1，R8-02）：secure-persistent 才持久，
     // 其余模式设置页提示「本次会话使用」；缺省未探测按 unavailable。
     secretStorageStatus: options.secretStatus ?? {

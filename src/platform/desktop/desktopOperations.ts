@@ -1,7 +1,10 @@
 /**
- * R007 / R011：Desktop 操作支持矩阵。
+ * R007 / R011 / R012：Desktop 操作支持矩阵。
  * R011 完成后：workspace.rename / document.renameFile / group.rename+move
  * 全部翻 true（测绿后开启）。
+ * R012 Stage 6（需求 §29）：S2–S5 的 list/get/preview/capture/restore/
+ * retention 全部测绿后，revision.read/write 翻 true（版本历史入口
+ * 与创建/恢复能力在 Desktop 开放）。
  */
 import type { RuntimeOperations } from "../../runtime/RuntimeOperations";
 
@@ -34,7 +37,7 @@ export const desktopOperations: RuntimeOperations = {
     write: true,
   },
   revision: {
-    read: false,
-    write: false,
+    read: true,
+    write: true,
   },
 };

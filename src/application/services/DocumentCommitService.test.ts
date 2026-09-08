@@ -4,7 +4,7 @@
  * replaceContent 三条路径写入后立即可搜；索引同步失败不影响保存结果。
  * 使用内存仓储 + 真实 BrowserMemorySearchIndex（Web 内存实现）。
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createInMemoryRepositories } from "../../infrastructure/memory/repositories";
 import { BrowserMemorySearchIndex } from "../../platform/web/search/BrowserMemorySearchIndex";
 import type { SearchIndexPort } from "./SearchIndexPort";
@@ -197,8 +197,83 @@ describe("DocumentCommitService", () => {
     const revisions = await repos.revision.listByPage(page.id);
     expect(revisions).toHaveLength(1);
     expect(revisions[0].reason).toBe("before-restore");
-    expect(revisions[0].textSnapshot).toBe("当前内容");
+    expect(revisions[0].textPreview).toBe("当前内容");
     // 目标版本经调用方提交通道（保存协调器）串行落盘。
     expect(commits).toEqual([{ json: DOC_A, text: "历史内容" }]);
+  });
+
+  it("restoreRevision：before-restore 先于恢复提交，且不受 interval 节流（R012 §34）", async () => {
+    const { repos, service } = makeService();
+    const ws = await repos.workspace.create("知识库");
+    const page = await repos.page.create({
+      workspaceId: ws.id,
+      parentId: null,
+      kind: "document",
+      title: "文档",
+    });
+    // 记录 add / commit 的调用顺序。
+    const order: string[] = [];
+    const originalAdd = repos.revision.add.bind(repos.revision);
+    const addSpy = vi
+      .spyOn(repos.revision, "add")
+      .mockImplementation(async (...args) => {
+        order.push("add");
+        return originalAdd(...args);
+      });
+
+    // 连续两次恢复（间隔远小于 5 分钟）：before-restore 不走 interval 门控，
+    // 每次都创建快照（Desktop 下同——capture 由 Main 读盘，绕过 5 分钟节流）。
+    // 注意内容需不同：仓储按内容与最新快照去重（add → null）。
+    const contents = [DOC_A, { type: "doc", content: [] }];
+    for (const [index, text] of ["恢复前内容一", "恢复前内容二"].entries()) {
+      await service.restoreRevision({
+        pageId: page.id,
+        current: { contentJson: contents[index], textSnapshot: text },
+        target: { contentJson: DOC_A, textSnapshot: "历史内容" },
+        commit: () => {
+          order.push("commit");
+          return Promise.resolve();
+        },
+      });
+    }
+
+    expect(order).toEqual(["add", "commit", "add", "commit"]);
+    const revisions = await repos.revision.listByPage(page.id);
+    expect(revisions.map((r) => r.reason)).toEqual([
+      "before-restore",
+      "before-restore",
+    ]);
+    addSpy.mockRestore();
+  });
+
+  it("restoreRevision：before-restore 快照失败时不落盘目标内容（安全网优先）", async () => {
+    const { repos, service } = makeService();
+    const ws = await repos.workspace.create("知识库");
+    const page = await repos.page.create({
+      workspaceId: ws.id,
+      parentId: null,
+      kind: "document",
+      title: "文档",
+    });
+    // Desktop 下 before-restore 经 IPC capture，失败（如 VAULT_READ_ONLY）
+    // 必须中止恢复——不丢当前内容的安全网没搭好就不允许覆盖。
+    const addSpy = vi
+      .spyOn(repos.revision, "add")
+      .mockRejectedValue(new Error("capture IPC 失败"));
+    const commits: unknown[] = [];
+
+    await expect(
+      service.restoreRevision({
+        pageId: page.id,
+        current: { contentJson: DOC_A, textSnapshot: "当前内容" },
+        target: { contentJson: DOC_A, textSnapshot: "历史内容" },
+        commit: () => {
+          commits.push(1);
+          return Promise.resolve();
+        },
+      }),
+    ).rejects.toThrow("capture IPC 失败");
+    expect(commits).toEqual([]);
+    addSpy.mockRestore();
   });
 });

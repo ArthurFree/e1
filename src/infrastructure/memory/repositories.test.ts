@@ -200,6 +200,26 @@ describe("内存仓储", () => {
     ).toHaveLength(2);
   });
 
+  it("版本摘要与 lazy get（R012 Stage 0）", async () => {
+    const added = await repos.revision.add(
+      "p1",
+      { type: "doc", content: [] },
+      "摘要内容",
+      "interval",
+    );
+    expect(added).not.toBeNull();
+    expect(added!.textPreview).toBe("摘要内容");
+    expect(added!.bytes).toBeGreaterThan(0);
+
+    const list = await repos.revision.listByPage("p1");
+    expect(list).toEqual([added]);
+    // 完整内容经 get 按需取回；pageId 不匹配返回 undefined。
+    const full = await repos.revision.get("p1", added!.id);
+    expect(full?.textSnapshot).toBe("摘要内容");
+    expect(await repos.revision.get("p2", added!.id)).toBeUndefined();
+    expect(await repos.revision.get("p1", "missing")).toBeUndefined();
+  });
+
   it("interval 清理同时按总字节预算裁剪（R004 阶段 6）", async () => {
     // 每条约 30+ 字节（{"pad":"xxxx…(100)"} 约 112 字节）；预算 250 保留最新两条。
     const pad = "x".repeat(100);

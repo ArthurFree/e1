@@ -25,7 +25,7 @@ import {
 } from "../../platform/web/persistence/repositories";
 import { insertAttachmentFile } from "../../editor/attachment";
 import { createDeferred, sleep, type Deferred } from "../../test/fixtures";
-import type { DocumentRevision } from "../../domain/types";
+import type { RevisionSummary } from "../../domain/types";
 import { DocumentEditor, type SaveState } from "./DocumentEditor";
 
 let host: {
@@ -59,7 +59,7 @@ function lastStatus() {
 
 describe("DocumentEditor 保存后半程竞态（R004）", () => {
   let saveGates: Deferred<void>[];
-  let revisionGates: Deferred<DocumentRevision | null>[];
+  let revisionGates: Deferred<RevisionSummary | null>[];
 
   beforeEach(async () => {
     cleanup();
@@ -88,7 +88,7 @@ describe("DocumentEditor 保存后半程竞态（R004）", () => {
     const realAdd = revisionRepository.add.bind(revisionRepository);
     vi.spyOn(revisionRepository, "add").mockImplementation(
       (pageId, json, text, reason) => {
-        const gate = createDeferred<DocumentRevision | null>();
+        const gate = createDeferred<RevisionSummary | null>();
         revisionGates.push(gate);
         return gate.promise.then((created) =>
           created === null ? realAdd(pageId, json, text, reason) : created,

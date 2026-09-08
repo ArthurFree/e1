@@ -24,6 +24,13 @@ import {
   parseRestoreTrashInput,
   parseRevealAssetInput,
   parseRevealNoteInput,
+  parseRevisionCaptureInput,
+  parseRevisionGetInput,
+  parseRevisionListInput,
+  parseRevisionPruneInput,
+  parseRevisionPurgeSeriesInput,
+  parseRevisionRelocateInput,
+  parseRevisionRestoreInput,
   parseSaveNoteInput,
   parseSecretNameRequest,
   parseSecretSetInput,
@@ -689,5 +696,184 @@ describe("R007 阶段 4：文件操作入参校验", () => {
         expectFailure(() => parseSecretSetInput(payload), "INVALID_INPUT");
       }
     });
+  });
+});
+
+/* --------------------------- R012 Stage 2：revision --------------------------- */
+
+describe("revision 组校验器（R012 Stage 2，§21/§44 安全边界）", () => {
+  const locator = { vaultId: "v1", relativePath: "学习/甲.md" };
+
+  it("revision.list：合法定位通过；路径逃逸/绝对路径 → PATH_ESCAPE", () => {
+    expect(parseRevisionListInput(locator)).toEqual(locator);
+    expect(
+      parseRevisionListInput({ ...locator, stableNoteId: "01JABC" }),
+    ).toEqual({ ...locator, stableNoteId: "01JABC" });
+    expect(
+      parseRevisionListInput({ ...locator, stableNoteId: null }),
+    ).toEqual({ ...locator, stableNoteId: null });
+
+    for (const payload of [
+      { ...locator, relativePath: "../x.md" },
+      { ...locator, relativePath: "/etc/passwd" },
+      { ...locator, relativePath: "C:\\x.md" },
+      { ...locator, relativePath: "a//b.md" },
+    ]) {
+      expectFailure(() => parseRevisionListInput(payload), "PATH_ESCAPE");
+    }
+    // absolutePath 不在契约内：多余键不影响校验，但缺 vaultId/相对路径非法。
+    for (const payload of [null, "v1", {}, { relativePath: "a.md" }]) {
+      expectFailure(() => parseRevisionListInput(payload), "INVALID_INPUT");
+    }
+  });
+
+  it("revision.get：revisionId 形态校验（store 同口径正则）", () => {
+    expect(
+      parseRevisionGetInput({ ...locator, revisionId: "01JABC-XYZ_1" }),
+    ).toEqual({ ...locator, revisionId: "01JABC-XYZ_1" });
+    for (const payload of [
+      { ...locator, revisionId: "../escape" },
+      { ...locator, revisionId: "a/b" },
+      { ...locator, revisionId: "a.b" },
+      { ...locator, revisionId: "" },
+      { ...locator, revisionId: "x".repeat(201) },
+      { ...locator },
+    ]) {
+      expectFailure(() => parseRevisionGetInput(payload), "INVALID_INPUT");
+    }
+  });
+
+  it("revision.capture：reason 白名单；版本令牌可选；正文键不被消费", () => {
+    expect(
+      parseRevisionCaptureInput({ ...locator, reason: "manual" }),
+    ).toEqual({ ...locator, reason: "manual" });
+    const withTokens = parseRevisionCaptureInput({
+      ...locator,
+      reason: "interval",
+      sourceVersionToken: "sha256:a",
+      expectedVersionToken: "sha256:b",
+    });
+    expect(withTokens.expectedVersionToken).toBe("sha256:b");
+    // §44：Renderer 不传正文——contentJson/textSnapshot 键不进入解析结果。
+    const parsed = parseRevisionCaptureInput({
+      ...locator,
+      reason: "manual",
+      contentJson: { type: "doc" },
+      textSnapshot: "ignored",
+    } as Record<string, unknown>);
+    expect("contentJson" in parsed).toBe(false);
+    expect("textSnapshot" in parsed).toBe(false);
+
+    for (const payload of [
+      { ...locator },
+      { ...locator, reason: "auto" },
+      { ...locator, reason: 42 },
+      { ...locator, reason: "manual", expectedVersionToken: 1 },
+    ]) {
+      expectFailure(() => parseRevisionCaptureInput(payload), "INVALID_INPUT");
+    }
+  });
+
+  it("revision.restore：schema 先行冻结（revisionId + expectedVersionToken 必填）", () => {
+    expect(
+      parseRevisionRestoreInput({
+        ...locator,
+        revisionId: "r1",
+        expectedVersionToken: "sha256:x",
+      }),
+    ).toEqual({
+      ...locator,
+      revisionId: "r1",
+      expectedVersionToken: "sha256:x",
+    });
+    for (const payload of [
+      { ...locator, expectedVersionToken: "sha256:x" },
+      { ...locator, revisionId: "r1" },
+      { ...locator, revisionId: "r1", expectedVersionToken: "" },
+      { ...locator, revisionId: "../x", expectedVersionToken: "sha256:x" },
+    ]) {
+      expectFailure(() => parseRevisionRestoreInput(payload), "INVALID_INPUT");
+    }
+  });
+
+  it("revision.prune：keep/maxBytes 可选正整数", () => {
+    expect(parseRevisionPruneInput(locator)).toEqual(locator);
+    expect(
+      parseRevisionPruneInput({ ...locator, keep: 50, maxBytes: 1024 }),
+    ).toEqual({ ...locator, keep: 50, maxBytes: 1024 });
+    for (const payload of [
+      { ...locator, keep: 0 },
+      { ...locator, keep: -1 },
+      { ...locator, keep: 1.5 },
+      { ...locator, maxBytes: "5MiB" },
+    ]) {
+      expectFailure(() => parseRevisionPruneInput(payload), "INVALID_INPUT");
+    }
+  });
+
+  it("revision.relocate：from/to 双路径 + 可选 stableNoteId/prefix；逃逸拒绝", () => {
+    expect(
+      parseRevisionRelocateInput({
+        vaultId: "v1",
+        fromRelativePath: "a.md",
+        toRelativePath: "b.md",
+      }),
+    ).toEqual({
+      vaultId: "v1",
+      fromRelativePath: "a.md",
+      toRelativePath: "b.md",
+    });
+    expect(
+      parseRevisionRelocateInput({
+        vaultId: "v1",
+        stableNoteId: "01JABC",
+        fromRelativePath: "旧组",
+        toRelativePath: "新组",
+        prefix: true,
+      }).prefix,
+    ).toBe(true);
+    for (const payload of [
+      { vaultId: "v1", fromRelativePath: "a.md" },
+      { vaultId: "v1", fromRelativePath: "a.md", toRelativePath: "b.md", prefix: 1 },
+    ]) {
+      expectFailure(() => parseRevisionRelocateInput(payload), "INVALID_INPUT");
+    }
+    for (const payload of [
+      { vaultId: "v1", fromRelativePath: "../a.md", toRelativePath: "b.md" },
+      { vaultId: "v1", fromRelativePath: "a.md", toRelativePath: "/b.md" },
+    ]) {
+      expectFailure(() => parseRevisionRelocateInput(payload), "PATH_ESCAPE");
+    }
+  });
+
+  it("revision.purgeSeries：三种定位至少其一；seriesId 形态校验", () => {
+    expect(parseRevisionPurgeSeriesInput({ vaultId: "v1", seriesId: "sn_01A" }))
+      .toEqual({ vaultId: "v1", seriesId: "sn_01A" });
+    expect(
+      parseRevisionPurgeSeriesInput({ vaultId: "v1", stableNoteId: "01A" }),
+    ).toEqual({ vaultId: "v1", stableNoteId: "01A" });
+    expect(
+      parseRevisionPurgeSeriesInput({ vaultId: "v1", relativePath: "甲.md" }),
+    ).toEqual({ vaultId: "v1", relativePath: "甲.md" });
+
+    for (const payload of [
+      { vaultId: "v1" },
+      { vaultId: "v1", seriesId: "../x" },
+      { vaultId: "v1", seriesId: "a/b" },
+      { vaultId: "v1", stableNoteId: "" },
+    ]) {
+      expectFailure(
+        () => parseRevisionPurgeSeriesInput(payload),
+        "INVALID_INPUT",
+      );
+    }
+    expectFailure(
+      () =>
+        parseRevisionPurgeSeriesInput({
+          vaultId: "v1",
+          relativePath: "../甲.md",
+        }),
+      "PATH_ESCAPE",
+    );
   });
 });

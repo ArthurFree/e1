@@ -84,6 +84,9 @@
 | LinkIndex 派生索引与共库（R010 Stage 2–4） | LinkIndex Port 复刻 R008 SearchIndex 管线（契约双实现 + reconciler + degraded 30s 防抖重建）；SQLite 与搜索共库单连接（`VaultIndexConnection`/`DesktopVaultIndexManager`，独立 meta key `link_schema_version`），损坏文件级 `.corrupt` 备份重建；双提取器（Tiptap JSON / Markdown 文本）共用 `shared/links` 语义核心，契约测试锁定一致；broken 是落库时的解析结果而非独立状态机 | 两个 DatabaseSync 指向同一文件有 SQLITE_BUSY 写冲突风险；派生数据可全量重建，损坏自愈无需迁移；链接索引失败绝不阻断正文保存 |
 | 链接能力 Web 门控（R010） | `AppServices.linkIndex` 为可选字段，仅 Desktop 装配；Backlinks/失效链接 UI 以存在性门控（沿用 `fullTextSearch` 先例，不加 RuntimeCapabilities 字段）；共享编辑器层（internalLink 节点、序列化、点击导航）双端一致 | R010 价值在 Desktop 本地 Vault；Web 端 JSON 存储的链接语义不变，避免为单一端需求膨胀能力矩阵 |
 | Desktop 文件操作 v2（R011） | 路径变更统一走 `FileOperationService`（plan → Preflight → journaled execute）；Markdown 目的地源码级改写；Workspace Rename 只改 `vault.json` name；Web `document.renameFile=false`；操作开关测绿后翻 true；成功后显式 reconcile 索引 | 裸 `fs.rename` 会断相对链接且自写抑制吞掉 watcher；物理根目录改名延期 R014 |
+| Desktop 版本历史存储（R012） | 快照存 `<Vault>/.e1/revisions/`（series + manifest + body.md，临时目录 + rename 原子就位），随 vault 移动、不依赖 userData 与 SQLite；raw Markdown body 为 Desktop 权威快照（REV-02），restore 不经「JSON → MarkdownCodec.serialize」写回 | 生命周期与 `.e1/trash`/`.e1/operations` 一致；revision 是不可重建用户数据（REV-04），SQLite 只存可重建索引；raw body 快照保证恢复不重新格式化历史 Markdown |
+| Desktop 版本恢复语义（R012） | 恢复只换正文 body、保留当前 Frontmatter（title/tags/id/未知字段不动，仅 `updated` 推进，REV-01/03）；Main 乐观锁复核 + AtomicFileWriter 落盘，Renderer 侧 SourceCache/DocumentVersionChannel 推进 + 双索引显式 reconcile；协调器统一先建 before-restore 快照 | 整篇覆盖会丢当前元数据与稳定 id；旧 autosave 拿旧令牌覆盖 restore 曾是真风险；派生索引失败仅降级不回滚正文 |
+| RevisionRepository 接口演进（R012 Stage 0） | 全量列表升级为 summary + lazy get（`listByPage` 摘要 / `get` 单条完整），Web/内存实现同步适配且产品语义不变；capture 在仓储层无条件执行，operation flags 只门控 UI 入口 | 打开面板不应读取解析上百个完整版本；stub 期 UI 已由 flags 隐藏，真实实现落地后即可开放入口 |
 
 重大架构决策另有 ADR 详述（背景/替代方案），见 [adr/](./adr/)。
 

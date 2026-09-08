@@ -109,6 +109,7 @@ function makeContext(
       content,
       revisions: repos.revision,
     }),
+    revisions: repos.revision,
   });
   return { commands, commit, repos, paths };
 }
@@ -329,6 +330,7 @@ describe("relocateBrokenLink", () => {
         content: readonlyContent,
         revisions: ctx.repos.revision,
       }),
+      revisions: ctx.repos.revision,
     });
     await expect(
       commands.relocateBrokenLink({

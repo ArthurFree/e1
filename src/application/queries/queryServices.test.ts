@@ -25,7 +25,7 @@ import {
   DesktopContentRepository,
   DesktopVaultScanCache,
 } from "../../platform/desktop/repositories";
-import { DesktopRevisionRepository } from "../../platform/desktop/stubRepositories";
+import { DesktopRevisionRepository } from "../../platform/desktop/DesktopRevisionRepository";
 import { createMockDesktopApi } from "../../test/createMockDesktopApi";
 import { WorkspaceSessionService } from "../services/WorkspaceSessionService";
 import { WorkspaceQueryService } from "./WorkspaceQueryService";
@@ -263,7 +263,8 @@ describe("DocumentQueryService.openDocument（§41.6 三形态）", () => {
     const cache = new DesktopVaultScanCache(api);
     const service = new DocumentQueryService({
       content: new DesktopContentRepository(api, cache),
-      revisions: new DesktopRevisionRepository(),
+      // R012 Stage 2：真实 IPC-backed 实现（本用例不触碰版本通道）。
+      revisions: new DesktopRevisionRepository(api, cache),
     });
     await cache.scan(vaultId);
     return service;

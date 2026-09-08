@@ -11,6 +11,8 @@
 // openReleasePage）与 events.subscribeUpdateStatus（更新状态推送）。
 // R010 Stage 3：新增 links 组——派生链接索引（outgoing/backlinks/broken/
 // rebuild/upsert/remove/relocate/status，与搜索共库单连接）。
+// R012 Stage 2：新增 revisions 组——Desktop 版本历史（list/get/capture/
+// restore/prune/relocate/purgeSeries；restore 暂 NOT_IMPLEMENTED）。
 // sandbox 预加载只支持 CJS（构建产物 dist-electron/preload.cjs）。
 //
 // 错误传递策略（与 src/platform/desktop/desktopApi.ts 注释共同锁定）：
@@ -76,6 +78,20 @@ import {
   type RestoreTrashResult,
   type RevealAssetInput,
   type RevealNoteInput,
+  type RevisionCaptureInput,
+  type RevisionCaptureResult,
+  type RevisionGetInput,
+  type RevisionGetResult,
+  type RevisionListInput,
+  type RevisionListResult,
+  type RevisionPruneInput,
+  type RevisionPruneResult,
+  type RevisionPurgeSeriesInput,
+  type RevisionPurgeSeriesResult,
+  type RevisionRelocateInput,
+  type RevisionRelocateResult,
+  type RevisionRestoreInput,
+  type RevisionRestoreResult,
   type SaveNoteInput,
   type SaveNoteResult,
   type SearchIndexStatus,
@@ -231,6 +247,25 @@ const api: E1DesktopAPI = {
       ),
     status: (input: LinkVaultInput) =>
       invoke<SearchIndexStatus>(IPC_CHANNELS.linkStatus, input),
+  },
+  revisions: {
+    list: (input: RevisionListInput) =>
+      invoke<RevisionListResult>(IPC_CHANNELS.revisionList, input),
+    get: (input: RevisionGetInput) =>
+      invoke<RevisionGetResult | null>(IPC_CHANNELS.revisionGet, input),
+    capture: (input: RevisionCaptureInput) =>
+      invoke<RevisionCaptureResult>(IPC_CHANNELS.revisionCapture, input),
+    restore: (input: RevisionRestoreInput) =>
+      invoke<RevisionRestoreResult>(IPC_CHANNELS.revisionRestore, input),
+    prune: (input: RevisionPruneInput) =>
+      invoke<RevisionPruneResult>(IPC_CHANNELS.revisionPrune, input),
+    relocate: (input: RevisionRelocateInput) =>
+      invoke<RevisionRelocateResult>(IPC_CHANNELS.revisionRelocate, input),
+    purgeSeries: (input: RevisionPurgeSeriesInput) =>
+      invoke<RevisionPurgeSeriesResult>(
+        IPC_CHANNELS.revisionPurgeSeries,
+        input,
+      ),
   },
   asset: {
     pick: (input?: AssetPickRequest) =>

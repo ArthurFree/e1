@@ -183,12 +183,14 @@ describe("MainArea Desktop 打开链路（R006-C3 §42）", () => {
       screen.getByRole("button", { name: "允许本次编辑" }),
     ).toBeInTheDocument();
     // 只读禁止项（§29.2）：不可输入、无常驻格式工具栏；
-    // 版本历史入口按 operations.revision.read=false 整体隐藏（R007 §8，
-    // Desktop 版本历史为空实现，不显示入口让用户误以为有版本功能）。
+    // R012 Stage 6：Desktop revision.read 已翻 true，版本历史入口出现，
+    // 但只读文档下禁用（EditorShell access === "read-only" 门控）。
     expect(editorEl()?.getAttribute("contenteditable")).toBe("false");
     expect(document.querySelector(".format-toolbar")).toBeNull();
     expect(coordinatorSpy).not.toHaveBeenCalled();
-    expect(screen.queryByRole("button", { name: "版本历史" })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "版本历史" }),
+    ).toBeDisabled();
   });
 
   it("查看详情 → unsupported 明细弹层，Escape 可关（FR-20 §28.1）", async () => {
@@ -311,6 +313,43 @@ describe("MainArea Desktop 打开链路（R006-C3 §42）", () => {
     );
     // 扫描后文档仍在目录概览中（树经 refreshCurrentWorkspace 刷新）。
     expect(screen.getByText("React 笔记")).toBeInTheDocument();
+  });
+});
+
+describe("EditorShell「版本历史」入口（R012 Stage 6 §29）", () => {
+  beforeEach(() => {
+    cleanup();
+    localStorage.clear();
+  });
+
+  it("Desktop revision.read/write 翻 true：入口出现，点击打开版本历史面板", async () => {
+    const api = makeApi({});
+    renderDesktopApp(api);
+    await waitForEditorText("这是正文内容");
+    const button = screen.getByRole("button", { name: "版本历史" });
+    expect(button).toBeEnabled();
+    await act(async () => {
+      button.click();
+    });
+    // 面板打开：lazy list 走 revision.list（mock 默认空历史 → 空态文案）。
+    expect(
+      await screen.findByRole("dialog", { name: "版本历史" }),
+    ).toBeInTheDocument();
+    expect(await screen.findByText("暂无历史版本")).toBeInTheDocument();
+    expect(api.revisions.list).toHaveBeenCalledWith({
+      vaultId: "v1",
+      relativePath: "学习/React.md",
+      stableNoteId: "01JABC",
+    });
+    // revision.write=true：「创建版本」入口出现（revisionRestore 已装配）。
+    expect(
+      screen.getByRole("button", { name: "创建版本" }),
+    ).toBeInTheDocument();
+    // 再次点击顶栏入口关闭面板。
+    await act(async () => {
+      button.click();
+    });
+    expect(screen.queryByRole("dialog", { name: "版本历史" })).toBeNull();
   });
 });
 

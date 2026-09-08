@@ -98,6 +98,27 @@ export interface DocumentRevision {
 }
 
 /**
+ * 版本列表摘要（R012 Stage 0，RevisionRepository 演进：summary + lazy get）：
+ * listByPage 只返回摘要，避免打开版本面板时读取并解析全部完整版本；
+ * 选中某个版本再经 get 取回完整 DocumentRevision。
+ *
+ * 字段语义随平台实现不同（见 docs/architecture/revision-history.md）：
+ * - bytes：Web/内存实现为 contentJson 序列化字节（revisionContentBytes），
+ *   供 interval 版本 5MiB 字节预算裁剪；Desktop 为 raw Markdown body 的
+ *   UTF-8 字节数（快照 manifest.bodyBytes）；
+ * - textPreview：Web/内存实现为 textSnapshot 截断；Desktop 为 raw body
+ *   的轻量文本摘要（shared/revisions/rawMarkdownBody）。
+ */
+export interface RevisionSummary {
+  id: string;
+  pageId: string;
+  createdAt: number;
+  reason: RevisionReason;
+  bytes: number;
+  textPreview: string;
+}
+
+/**
  * 附件元数据（R005 阶段 5）：领域实体只含元数据，不再携带 Blob。
  * 二进制以平台无关的 Uint8Array 经 BinaryAttachment 与 AssetStore port
  * 传递（见 repositories.ts）；Blob 只存在于 Web 适配边界（platform/web

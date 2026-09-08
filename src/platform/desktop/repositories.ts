@@ -53,6 +53,7 @@ import type {
 import { jsonToText } from "../../editor/markdown";
 import type { E1DesktopAPI, OpenedVault, ReadNoteResult } from "./desktopApi";
 import { DesktopIpcError } from "./desktopApi";
+import type { TrashEntry } from "../../../shared/ipc/contracts";
 import {
   stashPendingVaultSelection,
   takePendingVaultDecision,
@@ -696,6 +697,10 @@ export class DesktopPageRepository implements PageRepository {
         "回收站中找不到这条记录，它可能已经被恢复或清理。",
       );
     }
+    // R012 Stage 6（需求 §25）：purge 前先取条目身份（stableNoteId / 原
+    // 路径），供正文永久删除成功后清理 revision series；回收站查询失败
+    // 不阻断 purge（历史将按孤儿语义残留，见 purgeRevisionSeries 注释）。
+    const entry = await this.findTrashEntry(target.vaultId, target.operationId);
     try {
       await this.api.vault.purgeTrash({
         vaultId: target.vaultId,
@@ -704,17 +709,69 @@ export class DesktopPageRepository implements PageRepository {
     } catch (err) {
       mapFileOpError(err);
     }
+    await this.purgeRevisionSeries(target.vaultId, entry);
     this.scans.invalidate(target.vaultId);
   }
 
   /** 清空回收站（R007 阶段 4 §4.2，P0）：缺省 operationId 即整站物理清除。 */
   async purgeTrashed(workspaceId: string): Promise<void> {
+    // R012 Stage 6：先取回收站条目（整站 purge 后列表即空），供逐条清理
+    // revision series；查询失败不阻断 purge。
+    let entries: TrashEntry[] = [];
+    try {
+      entries = (await this.api.vault.listTrash({ vaultId: workspaceId }))
+        .entries;
+    } catch (err) {
+      console.warn("读取回收站失败，版本历史清理已跳过", err);
+    }
     try {
       await this.api.vault.purgeTrash({ vaultId: workspaceId });
     } catch (err) {
       mapFileOpError(err);
     }
+    for (const entry of entries) {
+      await this.purgeRevisionSeries(workspaceId, entry);
+    }
     this.scans.invalidate(workspaceId);
+  }
+
+  /** 按 operationId 查回收站条目（purge 前取身份）；查询失败返回 null。 */
+  private async findTrashEntry(
+    vaultId: string,
+    operationId: string,
+  ): Promise<TrashEntry | null> {
+    try {
+      const list = await this.api.vault.listTrash({ vaultId });
+      return (
+        list.entries.find((entry) => entry.operationId === operationId) ?? null
+      );
+    } catch (err) {
+      console.warn("读取回收站失败，版本历史清理已跳过", err);
+      return null;
+    }
+  }
+
+  /**
+   * R012 Stage 6（需求 §25）：正文永久删除后清理 revision series。
+   * 失败仅告警不阻断——此时正文已物理删除，历史残留为孤儿 series
+   *（与 §25 外部删除同语义：文件稍后带相同 stable id 回归时可重新关联）。
+   * 分组（目录）条目本身无 revision series（历史属于子文档，按其各自
+   * 路径定位），只处理 .md 文档条目。
+   */
+  private async purgeRevisionSeries(
+    vaultId: string,
+    entry: TrashEntry | null,
+  ): Promise<void> {
+    if (!entry || !/\.md$/i.test(entry.originalRelativePath)) return;
+    try {
+      await this.api.revisions.purgeSeries({
+        vaultId,
+        stableNoteId: entry.stableNoteId ?? null,
+        relativePath: entry.originalRelativePath,
+      });
+    } catch (err) {
+      console.warn("清理版本历史失败（正文已删除，历史按孤儿语义残留）", err);
+    }
   }
 }
 

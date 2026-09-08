@@ -26,6 +26,11 @@ Tiptap onUpdate → noteEdit()（generation+1）→ 800ms 防抖 enqueue
 
 注：损坏正文的「尝试恢复」与「应用恢复缓冲」本就走协调器（`DocumentEditor` 的 restoreRequestId effect）。附件写入经 `editor.storage.assetServices` 通道的 `AssetCommandService.importAsset`（R005 阶段 5，原 `attachmentRepository` 通道），为认可的注入方式。
 
+### 版本恢复写入路径
+
+- **Web（JsonRevisionRestorePort）**：`RevisionRestoreCoordinator` 编排（get → validate → before-restore）→ 历史 contentJson 白名单校验 → 调用方 commit 闭包经保存协调器串行提交（INV-06：旧防抖保存不可能覆盖恢复结果）。
+- **Desktop（R012 Stage 4，`DesktopRevisionRestoreService`）**：`revision.restore` IPC 是 Desktop 正文写入路径之一，但**不经 `DesktopMarkdownWriteService`、不经 MarkdownCodec 序列化**（REV-02：避免重新格式化历史 Markdown）——Main 侧复核磁盘版本令牌（乐观锁，不等 → DOCUMENT_CONFLICT 不写任何字节）→ 保留当前 Frontmatter（仅 `updated` 推进）拼回历史 raw body → 与正文保存共用 `AtomicFileWriter` 原子落盘（BOM 跟随磁盘现状）→ 登记 SelfWriteRegistry。Renderer 侧收口：SourceCache 令牌推进（与 `DesktopMarkdownWriteService.save` 同口径）+ `DocumentVersionChannel` 发布（打开中的协调器采纳新令牌，旧 autosave 不覆盖 restore）+ LinkIndex/SearchIndex 显式 reconcile（派生索引失败仅降级，不回滚正文），随后重新读盘重建编辑器。详见 `docs/architecture/revision-history.md`。
+
 ## 二、保存状态机
 
 ```text

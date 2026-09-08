@@ -30,6 +30,8 @@ export type {
   ReadNoteInput,
   ReadNoteResult,
   RecentVault,
+  RevisionGetResult,
+  RevisionSummaryDto,
   SaveNoteInput,
   SaveNoteResult,
   SearchIndexStatus,

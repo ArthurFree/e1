@@ -8,6 +8,10 @@ import type { AppServices } from "../../application/AppServices";
 import type { AIProvider } from "../../domain/ai";
 import { increment } from "../../application/devDiagnostics";
 import { DocumentCommitService } from "../../application/services/DocumentCommitService";
+import {
+  JsonRevisionRestorePort,
+  RevisionRestoreCoordinator,
+} from "../../application/services/RevisionRestoreCoordinator";
 import { DocumentSaveCoordinator } from "../../application/services/SaveCoordinator";
 import { WorkspaceSessionService } from "../../application/services/WorkspaceSessionService";
 import { PreferencesService } from "../../application/services/PreferencesService";
@@ -142,6 +146,11 @@ export function createInMemoryAppServices(
     syncChannel,
     // 文档版本推进通道（R007 阶段 1）：内存 pub/sub，测试容器同形状。
     documentVersionChannel: createInMemoryDocumentVersionChannel(),
+    // R012 Stage 4：Safe Restore 协调器（内存走 JSON 提交 port，同 Web）。
+    revisionRestore: new RevisionRestoreCoordinator({
+      revisions: repos.revision,
+      port: new JsonRevisionRestorePort(),
+    }),
     recoveryStore,
     secretStore,
     aiConfigService,
@@ -174,6 +183,7 @@ export function createInMemoryAppServices(
       document: new DocumentCommandService({
         documentCommit,
         documentQueries,
+        revisions: repos.revision,
         syncChannel,
       }),
     },

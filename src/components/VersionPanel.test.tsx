@@ -62,6 +62,24 @@ function createController(
         },
       });
     },
+    // R012 Stage 4：与 DocumentEditor 同语义——经 RevisionRestoreCoordinator
+    //（before-restore + 平台 port），Web 内存容器为 JSON 提交 port。
+    restoreRevision: async (revisionId) => {
+      const revisionRestore = services.revisionRestore;
+      if (!revisionRestore) throw new Error("revisionRestore 未装配");
+      await revisionRestore.restoreRevision({
+        pageId: PAGE_ID,
+        revisionId,
+        current: {
+          contentJson: editor.getJSON(),
+          textSnapshot: editor.getText(),
+        },
+        commit: (contentJson, textSnapshot) => {
+          editor.commands.setContent(contentJson as never);
+          return coordinator.enqueue({ contentJson, textSnapshot });
+        },
+      });
+    },
   };
 }
 
@@ -162,7 +180,7 @@ describe("VersionPanel", () => {
     const revisions = await revisionRepository.listByPage(PAGE_ID);
     expect(revisions.some((r) => r.reason === "before-restore")).toBe(true);
     expect(
-      revisions.find((r) => r.reason === "before-restore")?.textSnapshot,
+      revisions.find((r) => r.reason === "before-restore")?.textPreview,
     ).toContain("当前内容");
     // 恢复结果经协调器串行落盘（等待队列排空后断言）
     const controller = createController(editor, services);
@@ -200,6 +218,101 @@ describe("VersionPanel", () => {
     const revisions = await revisionRepository.listByPage(PAGE_ID);
     expect(revisions.every((r) => r.reason !== "before-restore")).toBe(true);
     expect(await contentRepository.get(PAGE_ID)).toBeUndefined();
+    editor.destroy();
+  });
+
+  // R012 Stage 5（需求 §28）：创建版本入口按 operations.revision.write 门控。
+  it("revision.write=false 时不显示「创建版本」入口", async () => {
+    const services = createBrowserAppServices();
+    // webOperations 为模块级单例，改完必须还原，避免泄漏到后续用例。
+    services.operations.revision.write = false;
+    const editor = createEditor("当前内容");
+    try {
+      render(
+        <AppServicesProvider services={services}>
+          <VersionPanel
+            pageId={PAGE_ID}
+            controller={createController(editor, services)}
+            onClose={() => undefined}
+          />
+        </AppServicesProvider>,
+      );
+      expect(await screen.findByText(/暂无历史版本/)).toBeInTheDocument();
+      expect(screen.queryByText("创建版本")).not.toBeInTheDocument();
+    } finally {
+      services.operations.revision.write = true;
+      editor.destroy();
+    }
+  });
+
+  it("创建版本：列表新增手动条目并显示大小；内容一致时去重提示", async () => {
+    const services = createBrowserAppServices();
+    const editor = createEditor("当前内容");
+    render(
+      <AppServicesProvider services={services}>
+        <VersionPanel
+          pageId={PAGE_ID}
+          controller={createController(editor, services)}
+          onClose={() => undefined}
+        />
+      </AppServicesProvider>,
+    );
+    expect(await screen.findByText(/暂无历史版本/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("创建版本"));
+    // 新增 manual 条目（摘要含「当前内容」），并展示大小。
+    expect(await screen.findByText("手动")).toBeInTheDocument();
+    expect(screen.getByText(/\d+ B/)).toBeInTheDocument();
+    const revisions = await revisionRepository.listByPage(PAGE_ID);
+    expect(revisions).toHaveLength(1);
+    expect(revisions[0].reason).toBe("manual");
+
+    // 再次点击：与最新版本内容一致 → 去重命中提示，不产生新版本。
+    fireEvent.click(screen.getByText("创建版本"));
+    expect(await screen.findByText(/内容与当前版本一致/)).toBeInTheDocument();
+    expect(await revisionRepository.listByPage(PAGE_ID)).toHaveLength(1);
+    editor.destroy();
+  });
+
+  it("与当前版本比较：渲染行级 diff，再点切回纯文本预览", async () => {
+    await revisionRepository.add(
+      PAGE_ID,
+      { type: "doc", content: [] },
+      "旧版本内容",
+      "interval",
+    );
+    const services = createBrowserAppServices();
+    const editor = createEditor("当前内容");
+    const { container } = render(
+      <AppServicesProvider services={services}>
+        <VersionPanel
+          pageId={PAGE_ID}
+          controller={createController(editor, services)}
+          onClose={() => undefined}
+        />
+      </AppServicesProvider>,
+    );
+
+    fireEvent.click(await screen.findByText(/旧版本内容/));
+    fireEvent.click(await screen.findByText("与当前版本比较"));
+
+    // 行级 diff：历史行 removed，当前行 added。
+    await waitFor(() => {
+      expect(
+        container.querySelector(".revision-diff__line--removed"),
+      ).toHaveTextContent("旧版本内容");
+      expect(
+        container.querySelector(".revision-diff__line--added"),
+      ).toHaveTextContent("当前内容");
+    });
+
+    // 再点切回纯文本预览。
+    fireEvent.click(screen.getByText("查看版本内容"));
+    expect(await screen.findByText("与当前版本比较")).toBeInTheDocument();
+    expect(container.querySelector(".revision-diff")).toBeNull();
+    expect(container.querySelector(".version-panel__text")).toHaveTextContent(
+      "旧版本内容",
+    );
     editor.destroy();
   });
 });

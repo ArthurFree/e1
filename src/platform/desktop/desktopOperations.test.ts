@@ -32,7 +32,7 @@ describe("RuntimeOperations 装配矩阵（R007 §9 / R011 Stage 0）", () => {
     expectAllBoolean(webOperations.revision, true);
   });
 
-  it("Desktop：R011 路径操作已开启（revision 仍 false）", () => {
+  it("Desktop：R011 路径操作 + R012 版本历史均已开启（全 true）", () => {
     expect(desktopOperations).toEqual({
       workspace: { rename: true, favorite: true },
       page: {
@@ -53,7 +53,8 @@ describe("RuntimeOperations 装配矩阵（R007 §9 / R011 Stage 0）", () => {
         trash: { restore: true, purge: true },
       },
       tag: { write: true },
-      revision: { read: false, write: false },
+      // R012 Stage 6（需求 §29）：S2–S5 测绿后翻转。
+      revision: { read: true, write: true },
     });
   });
 

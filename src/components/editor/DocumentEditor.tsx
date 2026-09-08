@@ -25,6 +25,8 @@ import type {
 } from "../../application/services/SaveCoordinator";
 import type { DocumentAccess } from "../../application/queries/DocumentQueryService";
 import type { DocumentEditorController } from "../../application/services/DocumentEditorController";
+import { DomainError } from "../../domain/errors";
+import { parseDocumentContent } from "../../domain/validation/documentContent";
 import { BubbleToolbar } from "./BubbleToolbar";
 import { BlockHandle } from "./BlockHandle";
 import { TableToolbar } from "./TableToolbar";
@@ -334,6 +336,49 @@ export function DocumentEditor({
             return coordinator.enqueue({ contentJson, textSnapshot });
           },
         });
+      },
+      // R012 Stage 4（需求 §23）：Safe Restore——平台差异收口在
+      // AppServices.revisionRestore（Web=JSON 串行提交；Desktop=Main
+      // raw body 合并落盘 + 乐观锁）。before-restore 快照由协调器统一先落。
+      restoreRevision: async (revisionId) => {
+        const revisionRestore = services.revisionRestore;
+        if (!revisionRestore) {
+          throw new DomainError(
+            "NOT_IMPLEMENTED",
+            "当前运行时未装配版本恢复服务。",
+          );
+        }
+        flush();
+        const coordinator = getCoordinator(pageId);
+        await coordinator.flush();
+        const current = {
+          contentJson: editor.getJSON(),
+          textSnapshot: editor.getText(),
+        };
+        const outcome = await revisionRestore.restoreRevision({
+          pageId,
+          revisionId,
+          current,
+          commit: (contentJson, textSnapshot) => {
+            restoreSuppressRef.current = true;
+            editor.commands.setContent(contentJson as never);
+            coordinator.noteEdit();
+            return coordinator.enqueue({ contentJson, textSnapshot });
+          },
+        });
+        if (outcome.reloadedExternally) {
+          // Desktop：磁盘已被 Main 恢复写入（协调器令牌已经版本通道推进），
+          // 重新读盘重建编辑器内容；restoreSuppress 抑制本次 setContent
+          // 的防抖保存——磁盘即真相，无需回写。
+          const latest = await services.queries.document.getContent(pageId);
+          if (latest) {
+            const parsed = parseDocumentContent(latest.contentJson);
+            if (parsed.ok) {
+              restoreSuppressRef.current = true;
+              editor.commands.setContent(parsed.value as never);
+            }
+          }
+        }
       },
     };
     onControllerReady(controller);

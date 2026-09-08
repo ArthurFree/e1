@@ -34,6 +34,14 @@ import type {
   RestoreTrashInput,
   RevealAssetInput,
   RevealNoteInput,
+  RevisionCaptureInput,
+  RevisionGetInput,
+  RevisionListInput,
+  RevisionNoteLocator,
+  RevisionPruneInput,
+  RevisionPurgeSeriesInput,
+  RevisionRelocateInput,
+  RevisionRestoreInput,
   SaveNoteInput,
   SearchQueryInput,
   SearchRebuildInput,
@@ -717,6 +725,192 @@ export function parseLinkAnalyzeRelocationInput(
     };
   });
   return { vaultId, pathMoves };
+}
+
+/* ---------------------------- R012 Stage 2：revision ---------------------------- */
+
+/** revision reason 合法集（与 shared/revisions/types 的 DesktopRevisionReason 同集）。 */
+const REVISION_REASONS = new Set(["interval", "manual", "before-restore"]);
+
+/**
+ * seriesId / revisionId 的合法形态（与 DesktopRevisionStore 的
+ * assertSafeRevisionId 同口径）：字母数字 + `_`/`-`，无分隔符/点，
+ * 天然不可做路径逃逸。
+ */
+const REVISION_ID = /^[A-Za-z0-9_-]{1,200}$/;
+
+function parseRevisionId(value: unknown, field: string): string {
+  if (typeof value !== "string" || !REVISION_ID.test(value)) {
+    invalid(`字段 ${field} 不是合法的 revision 标识`);
+  }
+  return value;
+}
+
+/** 可选 stableNoteId：非空字符串或 null；undefined 视为未提供。 */
+function parseOptionalStableNoteId(
+  record: Record<string, unknown>,
+): string | null | undefined {
+  const value = record.stableNoteId;
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value !== "string" || value.trim() === "") {
+    invalid("字段 stableNoteId 必须为非空字符串或 null");
+  }
+  return value;
+}
+
+/** revision 组的文档身份定位（vaultId + relativePath + 可选 stableNoteId）。 */
+function parseRevisionNoteLocator(
+  payload: unknown,
+  channel: string,
+): RevisionNoteLocator {
+  if (!isRecord(payload)) invalid(`${channel} 入参必须为对象`);
+  const stableNoteId = parseOptionalStableNoteId(payload);
+  return {
+    vaultId: requireString(payload, "vaultId", { nonEmpty: true }),
+    relativePath: assertRelativePath(
+      requireString(payload, "relativePath", { nonEmpty: true }),
+    ),
+    ...(stableNoteId !== undefined ? { stableNoteId } : {}),
+  };
+}
+
+/** revision.list 入参校验（纯定位）。 */
+export function parseRevisionListInput(payload: unknown): RevisionListInput {
+  return parseRevisionNoteLocator(payload, "revision.list");
+}
+
+/** revision.get 入参校验（定位 + revisionId）。 */
+export function parseRevisionGetInput(payload: unknown): RevisionGetInput {
+  return {
+    ...parseRevisionNoteLocator(payload, "revision.get"),
+    revisionId: parseRevisionId(
+      (payload as Record<string, unknown>).revisionId,
+      "revisionId",
+    ),
+  };
+}
+
+/** revision.capture 入参校验（定位 + reason + 可选版本令牌）。 */
+export function parseRevisionCaptureInput(
+  payload: unknown,
+): RevisionCaptureInput {
+  const locator = parseRevisionNoteLocator(payload, "revision.capture");
+  const record = payload as Record<string, unknown>;
+  const reason = record.reason;
+  if (typeof reason !== "string" || !REVISION_REASONS.has(reason)) {
+    invalid("字段 reason 必须为 interval / manual / before-restore 之一");
+  }
+  const input: RevisionCaptureInput = {
+    ...locator,
+    reason: reason as RevisionCaptureInput["reason"],
+  };
+  if (record.sourceVersionToken !== undefined) {
+    input.sourceVersionToken = requireString(record, "sourceVersionToken");
+  }
+  if (record.expectedVersionToken !== undefined) {
+    input.expectedVersionToken = requireString(record, "expectedVersionToken");
+  }
+  return input;
+}
+
+/** revision.restore 入参校验（schema 先行冻结；handler Stage 4 实现）。 */
+export function parseRevisionRestoreInput(
+  payload: unknown,
+): RevisionRestoreInput {
+  const locator = parseRevisionNoteLocator(payload, "revision.restore");
+  const record = payload as Record<string, unknown>;
+  return {
+    ...locator,
+    revisionId: parseRevisionId(record.revisionId, "revisionId"),
+    expectedVersionToken: requireString(record, "expectedVersionToken", {
+      nonEmpty: true,
+    }),
+  };
+}
+
+/** 可选正整数（keep / maxBytes）。 */
+function parseOptionalPositiveInt(
+  record: Record<string, unknown>,
+  field: "keep" | "maxBytes",
+): number | undefined {
+  const value = record[field];
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+    invalid(`字段 ${field} 必须为正整数`);
+  }
+  return value;
+}
+
+/** revision.prune 入参校验（定位 + 可选 keep/maxBytes）。 */
+export function parseRevisionPruneInput(payload: unknown): RevisionPruneInput {
+  const locator = parseRevisionNoteLocator(payload, "revision.prune");
+  const record = payload as Record<string, unknown>;
+  const keep = parseOptionalPositiveInt(record, "keep");
+  const maxBytes = parseOptionalPositiveInt(record, "maxBytes");
+  return {
+    ...locator,
+    ...(keep !== undefined ? { keep } : {}),
+    ...(maxBytes !== undefined ? { maxBytes } : {}),
+  };
+}
+
+/**
+ * revision.relocate 入参校验（§24）：from/to 双路径 + 可选 stableNoteId；
+ * prefix=true 为分组批量语义。
+ */
+export function parseRevisionRelocateInput(
+  payload: unknown,
+): RevisionRelocateInput {
+  if (!isRecord(payload)) invalid("revision.relocate 入参必须为对象");
+  const stableNoteId = parseOptionalStableNoteId(payload);
+  const prefix = payload.prefix;
+  if (prefix !== undefined && typeof prefix !== "boolean") {
+    invalid("字段 prefix 必须为布尔值");
+  }
+  return {
+    vaultId: requireString(payload, "vaultId", { nonEmpty: true }),
+    ...(stableNoteId !== undefined ? { stableNoteId } : {}),
+    fromRelativePath: assertRelativePath(
+      requireString(payload, "fromRelativePath", { nonEmpty: true }),
+      "fromRelativePath",
+    ),
+    toRelativePath: assertRelativePath(
+      requireString(payload, "toRelativePath", { nonEmpty: true }),
+      "toRelativePath",
+    ),
+    ...(prefix !== undefined ? { prefix } : {}),
+  };
+}
+
+/**
+ * revision.purgeSeries 入参校验：seriesId / stableNoteId / relativePath
+ * 至少其一（seriesId 直给优先）。
+ */
+export function parseRevisionPurgeSeriesInput(
+  payload: unknown,
+): RevisionPurgeSeriesInput {
+  if (!isRecord(payload)) invalid("revision.purgeSeries 入参必须为对象");
+  const vaultId = requireString(payload, "vaultId", { nonEmpty: true });
+  const input: RevisionPurgeSeriesInput = { vaultId };
+  if (payload.seriesId !== undefined) {
+    input.seriesId = parseRevisionId(payload.seriesId, "seriesId");
+  }
+  const stableNoteId = parseOptionalStableNoteId(payload);
+  if (stableNoteId !== undefined) input.stableNoteId = stableNoteId;
+  if (payload.relativePath !== undefined) {
+    input.relativePath = assertRelativePath(
+      requireString(payload, "relativePath", { nonEmpty: true }),
+    );
+  }
+  if (
+    input.seriesId === undefined &&
+    input.stableNoteId == null &&
+    input.relativePath === undefined
+  ) {
+    invalid("revision.purgeSeries 需要 seriesId / stableNoteId / relativePath 至少其一");
+  }
+  return input;
 }
 
 /**

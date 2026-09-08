@@ -28,6 +28,10 @@
 | R009 收口 / R010 | [R009 收口与 R010 规划：macOS 单平台路线](./R009-closeout-R010-macos-only-plan.md)          | 0.1      | 已采纳 | 2026-08-30 |
 | R010             | [内部链接、反向链接与链接完整性](./R010-internal-links-backlinks-link-integrity.md)         | 1.0      | 已完成 | 2026-08-31 |
 | R011             | [Desktop 文件操作 v2](./R011-desktop-file-operations-v2.md)                                  | 1.0      | 已完成 | 2026-09-03 |
+| R011.1           | [R011.1 收口修正](./R011.1-closeout-and-R012-desktop-revision-history.md)（Part A；Part B 为 R012 规划历史快照） | 0.3 | 待验收 | 2026-09-08 |
+| R012             | [Desktop Revision History](./R012-desktop-revision-history.md)                     | 1.0      | 待验收 | 2026-09-08 |
+
+> R011.1（journal v2 逐跳持久化、source-preserving 链接改写、CI/packaged 验收收口）已实施，待远端 CI 验证；R012（Desktop Revision History）已于 2026-09-08 从合并文档拆出为独立需求文档，Stage 0–6 实施完成（`.e1/revisions/` 快照存储、revision IPC 七通道、Safe Restore、VersionPanel+Diff、生命周期集成、operation matrix 翻 true），Stage 7 验收进行中（G44–G56 / P17–P20 / 性能已绿，latest remote CI 待推送后验证）。
 
 ## 单份需求的完成定义
 

@@ -18,4 +18,12 @@ export interface DocumentEditorController {
    * 目标内容必须先经白名单校验（调用方负责）。
    */
   restore(input: { contentJson: unknown; textSnapshot: string }): Promise<void>;
+  /**
+   * R012 Stage 4（需求 §23 Safe Restore）：按 revisionId 恢复历史版本。
+   * 平台差异经 AppServices.revisionRestore 协调器收口（Web=JSON 提交，
+   * Desktop=Main raw body 合并落盘后编辑器重新读盘）；调用方不判断平台。
+   * 抛 DomainError（REVISION_NOT_FOUND / CORRUPTED_DOCUMENT /
+   * DOCUMENT_CONFLICT 等），UI 按 code 分流提示。
+   */
+  restoreRevision(revisionId: string): Promise<void>;
 }

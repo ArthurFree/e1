@@ -100,6 +100,16 @@ describe("preload 暴露形状", () => {
       "status",
       "upsert",
     ]);
+    // R012 Stage 2：Desktop 版本历史组（restore 暂 NOT_IMPLEMENTED）。
+    expect(Object.keys(api.revisions).sort()).toEqual([
+      "capture",
+      "get",
+      "list",
+      "prune",
+      "purgeSeries",
+      "relocate",
+      "restore",
+    ]);
     expect(Object.keys(api.fileOperation).sort()).toEqual([
       "execute",
       "plan",

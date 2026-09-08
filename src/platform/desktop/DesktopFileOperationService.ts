@@ -162,6 +162,19 @@ export class DesktopFileOperationService implements FileOperationService {
       );
       if (linkIndex) await linkIndex.rebuild(plan.vaultId);
       if (fullTextSearch) await fullTextSearch.rebuild(plan.vaultId);
+      // R012 Stage 6（需求 §24）：分组 rename/move → revision series 前缀
+      // 批量搬迁（只更新 series 当前路径元数据，历史 snapshot 不动）。
+      // 失败仅告警降级：revision 是增强能力，不阻断已成功的文件操作。
+      try {
+        await this.deps.api.revisions.relocate({
+          vaultId: plan.vaultId,
+          fromRelativePath: plan.target.fromRelativePath,
+          toRelativePath: plan.target.toRelativePath,
+          prefix: true,
+        });
+      } catch (err) {
+        console.warn("revision prefix relocate 失败", err);
+      }
       return;
     }
 
@@ -186,6 +199,24 @@ export class DesktopFileOperationService implements FileOperationService {
         });
       } catch (err) {
         console.warn("search relocate 失败", err);
+      }
+      // R012 Stage 6（需求 §24）：文档 rename/move → revision series 当前
+      // 路径同步（历史 snapshot 不动）。noteKey 形如 "path:<rel>" 时为
+      // path-only 文档，stableNoteId 缺省、按 fromRelativePath 定位；
+      // 失败仅告警降级，不阻断文件操作结果。
+      try {
+        const stableNoteId =
+          move.noteKey && !move.noteKey.startsWith("path:")
+            ? move.noteKey
+            : undefined;
+        await this.deps.api.revisions.relocate({
+          vaultId: plan.vaultId,
+          stableNoteId,
+          fromRelativePath: move.fromRelativePath,
+          toRelativePath: move.toRelativePath,
+        });
+      } catch (err) {
+        console.warn("revision relocate 失败", err);
       }
     }
 

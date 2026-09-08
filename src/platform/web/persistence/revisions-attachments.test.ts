@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDB, resetDB, STORE_ATTACHMENTS, STORE_REVISIONS } from "./db";
+import { revisionContentBytes } from "../../../domain/revisions";
 import { sleep } from "../../../test/fixtures";
 import {
   assetStore,
@@ -44,7 +45,7 @@ describe("版本仓储", () => {
 
     const list = await revisionRepository.listByPage(doc.id);
     expect(list.map((r) => r.id)).toEqual(["r-new", "r-old"]);
-    expect(list[1].textSnapshot).toBe("一");
+    expect(list[1].textPreview).toBe("一");
 
     const added = await revisionRepository.add(
       doc.id,
@@ -187,6 +188,54 @@ describe("版本仓储", () => {
     const list = await revisionRepository.listByPage(doc.id);
     expect(list).toHaveLength(1);
     expect(list[0].reason).toBe("interval");
+  });
+
+  it("listByPage 返回摘要（bytes + textPreview），不携带完整内容（R012 Stage 0）", async () => {
+    const doc = await seedDoc();
+    const longText = "长".repeat(500);
+    const added = await revisionRepository.add(
+      doc.id,
+      { type: "doc", content: [] },
+      longText,
+      "manual",
+    );
+    expect(added).not.toBeNull();
+    // add 直接返回摘要。
+    expect(added!.bytes).toBeGreaterThan(0);
+    expect(added!.textPreview).toHaveLength(200);
+
+    const list = await revisionRepository.listByPage(doc.id);
+    expect(list).toHaveLength(1);
+    expect(list[0]).toEqual(added);
+    // 摘要不含 contentJson / textSnapshot 字段。
+    expect("contentJson" in list[0]).toBe(false);
+    expect("textSnapshot" in list[0]).toBe(false);
+    // bytes 口径：contentJson 序列化 UTF-8 字节（revisionContentBytes）。
+    expect(list[0].bytes).toBe(
+      revisionContentBytes({ type: "doc", content: [] }),
+    );
+  });
+
+  it("get 按 id 取回完整版本；pageId 不匹配或不存在返回 undefined", async () => {
+    const doc = await seedDoc();
+    const other = await seedDoc("另一篇");
+    const added = await revisionRepository.add(
+      doc.id,
+      { type: "doc", content: [{ type: "paragraph" }] },
+      "完整内容",
+      "interval",
+    );
+    expect(added).not.toBeNull();
+
+    const full = await revisionRepository.get(doc.id, added!.id);
+    expect(full?.textSnapshot).toBe("完整内容");
+    expect(full?.contentJson).toEqual({
+      type: "doc",
+      content: [{ type: "paragraph" }],
+    });
+    // 跨文档与不存在 id 均不可达。
+    expect(await revisionRepository.get(other.id, added!.id)).toBeUndefined();
+    expect(await revisionRepository.get(doc.id, "missing")).toBeUndefined();
   });
 });
 
