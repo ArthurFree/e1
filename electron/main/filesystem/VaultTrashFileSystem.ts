@@ -59,6 +59,8 @@ interface TrashMeta {
   deletedAt: string;
   originalRelativePath: string;
   stableNoteId?: string;
+  /** R014：跨库 Move 源；恢复会与目标库形成双 stable id。 */
+  crossVaultMovedToVaultId?: string;
 }
 
 function newOperationId(): string {
@@ -116,6 +118,12 @@ async function readTrashMeta(opDir: string): Promise<TrashMeta | null> {
     ) {
       meta.stableNoteId = record.stableNoteId;
     }
+    if (
+      typeof record.crossVaultMovedToVaultId === "string" &&
+      record.crossVaultMovedToVaultId.trim() !== ""
+    ) {
+      meta.crossVaultMovedToVaultId = record.crossVaultMovedToVaultId;
+    }
     return meta;
   } catch {
     return null;
@@ -151,6 +159,8 @@ async function readStableNoteId(
 export async function trashEntry(input: {
   vaultRoot: string;
   relativePath: string;
+  /** R014：跨库 Move 后源进回收站；恢复时拒绝以免双 stable id。 */
+  crossVaultMovedToVaultId?: string;
 }): Promise<{ operationId: string }> {
   const assetsDirectory = await resolveAssetsDirectory(input.vaultRoot);
   assertNotReservedPath(input.relativePath, assetsDirectory);
@@ -184,6 +194,9 @@ export async function trashEntry(input: {
     deletedAt: new Date().toISOString(),
     originalRelativePath: input.relativePath,
     ...(stableNoteId ? { stableNoteId } : {}),
+    ...(input.crossVaultMovedToVaultId
+      ? { crossVaultMovedToVaultId: input.crossVaultMovedToVaultId }
+      : {}),
   };
   await writeJsonAtomic(join(opDir, "meta.json"), meta);
   return { operationId };
@@ -238,6 +251,12 @@ export async function restoreTrashEntry(input: {
     throw new IpcFailure(
       "VAULT_TRASH_NOT_FOUND",
       `回收站中找不到该条目：${input.operationId}`,
+    );
+  }
+  if (meta.crossVaultMovedToVaultId) {
+    throw new IpcFailure(
+      "VAULT_TRANSFER_DUPLICATE_IDENTITY",
+      "该条目已迁移到其他知识库。直接恢复会形成两个相同稳定身份；请取消，或复制为新文档。",
     );
   }
 

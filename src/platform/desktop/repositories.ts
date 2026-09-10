@@ -111,8 +111,14 @@ function mapFileOpError(err: unknown): never {
       case "FILE_OPERATION_BLOCKED_DIRTY":
       case "FILE_OPERATION_RECOVERY_REQUIRED":
       case "FILE_OPERATION_PARTIAL_FAILURE":
+      case "VAULT_TRANSFER_STALE_PLAN":
+      case "VAULT_TRANSFER_BLOCKED_DIRTY":
+      case "VAULT_TRANSFER_PARTIAL_FAILURE":
+      case "VAULT_TRANSFER_DUPLICATE_IDENTITY":
+      case "VAULT_ID_MISMATCH":
         throw new DomainError(
-          err.code === "FILE_OPERATION_STALE_PLAN"
+          err.code === "FILE_OPERATION_STALE_PLAN" ||
+          err.code === "VAULT_TRANSFER_STALE_PLAN"
             ? "DOCUMENT_CONFLICT"
             : "INVALID_INPUT",
           err.message,

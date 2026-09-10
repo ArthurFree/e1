@@ -29,11 +29,15 @@ import { TrashPanel } from "../TrashPanel";
 import { SettingsPanel } from "../SettingsPanel";
 import { StartPreview } from "../StartPreview";
 import { VaultConfirmDialog } from "./VaultConfirmDialog";
+import { VaultTransferPreflightDialog } from "../VaultTransferPreflightDialog";
+import type { VaultTransferPlan } from "../../application/vaultTransfer/VaultTransferService";
+import { VAULT_TRANSFER_LABELS } from "../../../shared/vaultTransfer/types";
 import {
   IconBook,
   IconClock,
   IconFolderPlus,
   IconHome,
+  IconMove,
   IconPlus,
   IconSearch,
   IconSettings,
@@ -69,12 +73,59 @@ export function GlobalSidebar() {
   const [vaultConfirm, setVaultConfirm] = useState<{
     displayName: string;
   } | null>(null);
+  const [transferPlan, setTransferPlan] = useState<VaultTransferPlan | null>(
+    null,
+  );
+  const [transferBusy, setTransferBusy] = useState(false);
+  const [transferError, setTransferError] = useState<string | null>(null);
   // DUAL-01：只判断能力字段。localDirectory（R006 阶段 2，桌面端）下
   // 「新建知识库」入口替换为「打开本地知识库」——同一 createWorkspace
   // 命令通道；R006-C2.1 起 Desktop WorkspaceRepository.create 内含
   // 原生目录选择 + 授权令牌握手（vaultOpenConfirmation 模块），
   // 未初始化目录在此弹确认框（FR-03），不新增 Provider 命令。
   const canOpenLocalVault = services.capabilities.localDirectory;
+  const vaultTransfer = services.vaultTransfer;
+  const canRelocateMissing =
+    services.operations.workspace.relocate && vaultTransfer !== undefined;
+
+  const startRelocateMissing = (workspaceId: string) => {
+    if (!vaultTransfer) return;
+    void (async () => {
+      const token = await vaultTransfer.pickDirectory();
+      if (!token) return;
+      try {
+        const plan = await vaultTransfer.plan({
+          kind: "relocate-missing",
+          sourceVaultId: workspaceId,
+          selectionToken: token,
+        });
+        setTransferError(null);
+        setTransferPlan(plan);
+      } catch (err) {
+        services.assets.notify.notify(
+          err instanceof Error ? err.message : "重新定位失败，请重试。",
+        );
+      }
+    })();
+  };
+
+  const confirmTransfer = () => {
+    if (!vaultTransfer || !transferPlan) return;
+    setTransferBusy(true);
+    setTransferError(null);
+    void (async () => {
+      try {
+        await vaultTransfer.execute(transferPlan);
+        const vaultId = transferPlan.sourceVaultId;
+        setTransferPlan(null);
+        await switchWorkspace(vaultId);
+      } catch (err) {
+        setTransferError(err instanceof Error ? err.message : "执行失败");
+      } finally {
+        setTransferBusy(false);
+      }
+    })();
+  };
 
   const onOpenLocalVault = () => {
     // name 入参在桌面端被忽略（库名取 vault.json / 目录 basename）。
@@ -202,19 +253,31 @@ export function GlobalSidebar() {
           )}
         </div>
         {workspaces.map((ws) => (
-          <button
-            key={ws.id}
-            type="button"
-            className={`gsb__item gsb__ws${ws.id === workspace?.id ? " gsb__item--active" : ""}`}
-            aria-label={`知识库「${ws.name}」`}
-            aria-current={ws.id === workspace?.id ? "true" : undefined}
-            onClick={() => void switchWorkspace(ws.id)}
-          >
-            <span className="gsb__ws-icon" aria-hidden="true">
-              {ws.icon ?? <IconBook />}
-            </span>
-            <span className="gsb__label gsb__ws-name">{ws.name}</span>
-          </button>
+          <div key={ws.id} className="gsb__ws-row">
+            <button
+              type="button"
+              className={`gsb__item gsb__ws${ws.id === workspace?.id ? " gsb__item--active" : ""}`}
+              aria-label={`知识库「${ws.name}」`}
+              aria-current={ws.id === workspace?.id ? "true" : undefined}
+              onClick={() => void switchWorkspace(ws.id)}
+            >
+              <span className="gsb__ws-icon" aria-hidden="true">
+                {ws.icon ?? <IconBook />}
+              </span>
+              <span className="gsb__label gsb__ws-name">{ws.name}</span>
+            </button>
+            {ws.directoryAccessible === false && canRelocateMissing && (
+              <button
+                type="button"
+                className="gsb__ws-relocate"
+                aria-label={VAULT_TRANSFER_LABELS.relocateMissing}
+                title={VAULT_TRANSFER_LABELS.relocateMissing}
+                onClick={() => startRelocateMissing(ws.id)}
+              >
+                <IconMove size={14} />
+              </button>
+            )}
+          </div>
         ))}
       </div>
 
@@ -255,6 +318,18 @@ export function GlobalSidebar() {
           onInitialize={() => onVaultConfirmDecision(true)}
         />
       )}
+      <VaultTransferPreflightDialog
+        open={transferPlan !== null}
+        plan={transferPlan}
+        busy={transferBusy}
+        errorMessage={transferError}
+        onCancel={() => {
+          if (transferBusy) return;
+          setTransferPlan(null);
+          setTransferError(null);
+        }}
+        onConfirm={confirmTransfer}
+      />
     </nav>
   );
 }

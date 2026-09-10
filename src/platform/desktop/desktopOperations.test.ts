@@ -19,22 +19,37 @@ function expectAllBoolean(value: unknown, expected: boolean): void {
   }
 }
 
-describe("RuntimeOperations 装配矩阵（R007 §9 / R011 Stage 0）", () => {
-  it("Web：除 document.renameFile 外全 true（IndexedDB 无物理文件名）", () => {
+describe("RuntimeOperations 装配矩阵（R007 §9 / R011 Stage 0 / R014）", () => {
+  it("Web：renameFile 与跨库/搬迁为 false，其余 true", () => {
     expect(webOperations.page.document.renameFile).toBe(false);
-    const { renameFile: _ignored, ...restDocument } =
-      webOperations.page.document;
+    expect(webOperations.page.document.copyToVault).toBe(false);
+    expect(webOperations.page.document.moveToVault).toBe(false);
+    expect(webOperations.page.group.copyToVault).toBe(false);
+    expect(webOperations.page.group.moveToVault).toBe(false);
+    expect(webOperations.workspace.relocate).toBe(false);
+    const {
+      renameFile: _rf,
+      copyToVault: _cd,
+      moveToVault: _md,
+      ...restDocument
+    } = webOperations.page.document;
+    const {
+      copyToVault: _cg,
+      moveToVault: _mg,
+      ...restGroup
+    } = webOperations.page.group;
+    const { relocate: _rel, ...restWorkspace } = webOperations.workspace;
     expectAllBoolean(restDocument, true);
-    expectAllBoolean(webOperations.workspace, true);
-    expectAllBoolean(webOperations.page.group, true);
+    expectAllBoolean(restWorkspace, true);
+    expectAllBoolean(restGroup, true);
     expectAllBoolean(webOperations.page.trash, true);
     expectAllBoolean(webOperations.tag, true);
     expectAllBoolean(webOperations.revision, true);
   });
 
-  it("Desktop：R011 路径操作 + R012 版本历史均已开启（全 true）", () => {
+  it("Desktop：R011 路径操作 + R012 版本历史 + R014 跨库/搬迁均已开启", () => {
     expect(desktopOperations).toEqual({
-      workspace: { rename: true, favorite: true },
+      workspace: { rename: true, favorite: true, relocate: true },
       page: {
         document: {
           create: true,
@@ -43,17 +58,20 @@ describe("RuntimeOperations 装配矩阵（R007 §9 / R011 Stage 0）", () => {
           move: true,
           trash: true,
           favorite: true,
+          copyToVault: true,
+          moveToVault: true,
         },
         group: {
           create: true,
           rename: true,
           move: true,
           trash: true,
+          copyToVault: true,
+          moveToVault: true,
         },
         trash: { restore: true, purge: true },
       },
       tag: { write: true },
-      // R012 Stage 6（需求 §29）：S2–S5 测绿后翻转。
       revision: { read: true, write: true },
     });
   });

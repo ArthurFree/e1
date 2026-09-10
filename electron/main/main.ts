@@ -40,12 +40,24 @@ if (process.env.E1_USER_DATA_DIR) {
 // 没有文件管理器，真实调用会挂起超时。stub 把解析后的绝对路径逐行写入
 // userData/e2e-reveal-stub.log，E2E 据此断言 IPC 全链路。生产与开发不设该变量。
 function revealStubDeps(): RegisterIpcHandlersDeps {
-  if (process.env.E1_REVEAL_STUB !== "1") return {};
-  return {
-    shell: createRecordingShell(
+  const deps: RegisterIpcHandlersDeps = {};
+  if (process.env.E1_REVEAL_STUB === "1") {
+    deps.shell = createRecordingShell(
       join(app.getPath("userData"), "e2e-reveal-stub.log"),
-    ),
-  };
+    );
+  }
+  // R014 E2E：E1_SELECT_DIRECTORY 指向绝对路径时跳过原生目录对话框，
+  // 签发 selectionToken（Renderer 仍看不见路径）。
+  const selectDir = process.env.E1_SELECT_DIRECTORY;
+  if (selectDir) {
+    deps.openDialog = {
+      showOpenDialog: async () => ({
+        canceled: false,
+        filePaths: [selectDir],
+      }),
+    };
+  }
+  return deps;
 }
 
 // R007 阶段 3：watcher 句柄提升为模块级，before-quit 时关闭全部监听。

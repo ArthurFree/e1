@@ -88,6 +88,9 @@
 | Desktop 版本历史存储（R012） | 快照存 `<Vault>/.e1/revisions/`（series + manifest + body.md，临时目录 + rename 原子就位），随 vault 移动、不依赖 userData 与 SQLite；raw Markdown body 为 Desktop 权威快照（REV-02），restore 不经「JSON → MarkdownCodec.serialize」写回 | 生命周期与 `.e1/trash`/`.e1/operations` 一致；revision 是不可重建用户数据（REV-04），SQLite 只存可重建索引；raw body 快照保证恢复不重新格式化历史 Markdown |
 | Desktop 版本恢复语义（R012） | 恢复只换正文 body、保留当前 Frontmatter（title/tags/id/未知字段不动，仅 `updated` 推进，REV-01/03）；Main 乐观锁复核 + AtomicFileWriter 落盘，Renderer 侧 SourceCache/DocumentVersionChannel 推进 + 双索引显式 reconcile；协调器统一先建 before-restore 快照 | 整篇覆盖会丢当前元数据与稳定 id；旧 autosave 拿旧令牌覆盖 restore 曾是真风险；派生索引失败仅降级不回滚正文 |
 | RevisionRepository 接口演进（R012 Stage 0） | 全量列表升级为 summary + lazy get（`listByPage` 摘要 / `get` 单条完整），Web/内存实现同步适配且产品语义不变；capture 在仓储层无条件执行，operation flags 只门控 UI 入口 | 打开面板不应读取解析上百个完整版本；stub 期 UI 已由 flags 隐藏，真实实现落地后即可开放入口 |
+| Vault 根搬迁 ≠ Workspace Rename（R014 PORT-01） | `workspace.rename` 只改 `.e1/vault.json` name；物理根改名/搬家走 `vaultTransfer`（Missing Relocate / Physical Relocate + `userData/vault-relocations/` journal）；同卷 rename，跨卷 copy-verify-delete，源在目标校验完成前不删除 | R011 已冻结 rename 语义；根目录搬家会弄丢 Registry/Watcher，必须单独事务且 journal 不能放在即将消失的 Vault 内 |
+| 跨库 Copy/Move 身份（R014 PORT-02～05） | Copy 新 stable id 且不复制 revision；Move 保持 stable id 并迁移 `.e1/revisions/` series，源进回收站（meta `crossVaultMovedToVaultId`，恢复拒双 identity）；Move 入/出边界链接为 blocker，Copy 仅为 warning | 复制是新知识对象；移动是同一对象换库。边界链接静默断裂会留下坏图；双 stable id 会破坏 LinkIndex/Adoption |
+| Canonical 链接保持相对路径（R014 PORT-06 / Stage 5） | 不引入 `e1://`；引用式 `[text][id]` / `[id]: dest` 纳入提取与 source-preserving 改写；Wiki `[[…]]` 仍 warning、不按 title 解析 | Vault 必须继续能被 VS Code/Typora 打开；私有协议会锁进 E1；按标题解析会与磁盘路径身份分叉 |
 
 重大架构决策另有 ADR 详述（背景/替代方案），见 [adr/](./adr/)。
 

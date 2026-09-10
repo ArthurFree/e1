@@ -1,5 +1,7 @@
 # Portable Vault v1 格式定义（R005）
 
+> Desktop 物理根目录搬家与跨库 Copy/Move 见 [vault-portability.md](./vault-portability.md)（R014），与本文 ZIP 通道分离。
+
 Portable Vault 是 Web 与 Desktop 之间的数据迁移与备份通道：Web 端导出、Web 端重新导入、未来 Desktop 直接打开（DUAL-09）。本文取自 r005.md §十二并补全为定稿格式。
 
 **状态：v1 为设计定稿；阶段 7A（导出）与 7B（Web 导入）均已实现。** 导出见 `src/application/vault/VaultExportService.ts`；导入见 `src/application/vault/VaultImportService.ts`（zip 读取器 `src/application/services/zipReader.ts`，支持 STORED/Deflate + CRC 校验 + zip slip 防护）。导入侧两点实现取舍（与本文流程的顺序偏差不影响语义）：

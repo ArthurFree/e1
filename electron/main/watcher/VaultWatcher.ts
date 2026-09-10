@@ -273,6 +273,21 @@ export class VaultWatcherService {
     return this.watchers.has(vaultId);
   }
 
+  /**
+   * R014：Vault 根搬迁后按新路径重启监听。
+   * 旧实现 ensureWatching 对同 vaultId 幂等且保留旧根，搬迁后会看错目录。
+   */
+  async restartWatching(vaultId: string, absolutePath: string): Promise<void> {
+    const existing = this.watchers.get(vaultId);
+    if (existing) {
+      this.watchers.delete(vaultId);
+      await existing.close().catch((error: unknown) => {
+        console.warn(`[watcher] 关闭旧根失败 vaultId=${vaultId}:`, error);
+      });
+    }
+    this.ensureWatching(vaultId, absolutePath);
+  }
+
   /** 关闭全部监听并丢弃未 flush 的合并窗口（app 退出前调用）。 */
   async closeAll(): Promise<void> {
     const all = [...this.watchers.values()];

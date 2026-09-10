@@ -21,6 +21,7 @@
 13. [architecture/revision-history.md](./architecture/revision-history.md)：版本历史（R012）——REV-01~04 不变量、`.e1/revisions/` 存储结构、series identity、SHA-256 去重、retention、RevisionRepository summary + lazy get、revision IPC 七通道与 Safe Restore（Stage 0–6 已落地，Desktop 实现已真实）。
 14. [architecture/macos-distribution-trust.md](./architecture/macos-distribution-trust.md)：macOS 分发信任（R013）——Developer ID / Hardened Runtime / 公证 / stapling / Gatekeeper、本地 unsigned 与正式 Release 分离、凭证与验证脚本。
 15. [architecture/desktop-update-path.md](./architecture/desktop-update-path.md)：Desktop 自动更新（R009/R013）——electron-updater 状态机、darwin 仅已签名才 `canAutoInstall`、DIST-07、signed zip feed。
+16. [architecture/vault-portability.md](./architecture/vault-portability.md)：Vault 可移植性（R014）——物理根搬迁 journal、跨库 Copy/Move、边界链接、引用式 Markdown 改写、Renderer 无绝对路径。
 
 ## 决策记录
 

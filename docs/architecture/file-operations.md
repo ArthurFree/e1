@@ -16,7 +16,7 @@
  *
  * 约束：
  * - Markdown 是真相；LinkIndex 是派生数据；
- * - 只改写 `[text](href)` / `![alt](src)` 目的地；
+ * - 改写 `[text](href)` / `![alt](src)` 以及引用式 `[id]: dest`（R014 Stage 5）；
  * - Renderer 不见 absolutePath；
  * - 操作开关在对应能力测绿后才翻 true；
  * - 应用内 move 成功后必须显式 reconcile，不能依赖被抑制的 watcher。

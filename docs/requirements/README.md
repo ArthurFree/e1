@@ -31,10 +31,14 @@
 | R011.1           | [R011.1 收口修正](./R011.1-closeout-and-R012-desktop-revision-history.md)（Part A；Part B 为 R012 规划历史快照） | 0.3 | 已完成 | 2026-09-08 |
 | R012             | [Desktop Revision History](./R012-desktop-revision-history.md)                     | 1.0      | 已完成 | 2026-09-08 |
 | R013             | [macOS Signing & Trust](./R013-macos-signing-trust.md)                             | 0.1      | 实现中 | 2026-09-10 |
+| R013 收口 / R014 | [R013 收口与 R014 规划](./R013-closeout-and-R014-vault-portability-cross-vault-operations.md)（Part A 仍待 Stage 7 真证书；Part B 为 R014 规划历史） | 0.1 | 已采纳 | 2026-09-10 |
+| R014             | [Vault Portability & Cross-Vault Operations](./R014-vault-portability-cross-vault-operations.md) | 1.0 | 实现中 | 2026-09-10 |
 
 > R011.1（journal v2 逐跳持久化、source-preserving 链接改写、CI/packaged 验收收口）与 R012（Desktop Revision History：`.e1/revisions/` 快照存储、revision IPC 七通道、Safe Restore、VersionPanel+Diff、生命周期集成、operation matrix 翻 true）均已于 2026-09-08 收口完成：G44–G56 / P17–P20 / 性能 / 远端 CI（run 34201541622）全绿。
 >
-> R013（macOS Signing & Trust）Stage 0–6 已于 2026-09-10 落地：正式 Release 强制 Developer ID + Hardened Runtime + 公证 + stapling + Gatekeeper，本地 `dist:mac` 仍允许 unsigned；darwin `canAutoInstall` 仅已签名公证包为 true。Stage 7（第一份真实 GitHub Release 与浏览器 quarantine QA）待仓库配置证书 secrets 后由维护者打 tag。
+> R013（macOS Signing & Trust）Stage 0–6 已于 2026-09-10 落地：正式 Release 强制 Developer ID + Hardened Runtime + 公证 + stapling + Gatekeeper，本地 `dist:mac` 仍允许 unsigned；darwin `canAutoInstall` 仅已签名公证包为 true。Stage 7（第一份真实 GitHub Release 与浏览器 quarantine QA）待仓库配置证书 secrets 后由维护者打 tag——**不得**因 R014 落地而把 R013 标成已完成。
+>
+> R014（Vault Portability & Cross-Vault Operations）Stage 0–6 已于 2026-09-10 落地：Missing/Physical Relocate、跨库 Copy/Move、引用式链接、Preflight/Recovery；G57–G71 本地全绿；P27–P30 已接线（无安装包产物 skip）。Stage 7 远端 CI 待推送验证。
 
 ## 单份需求的完成定义
 

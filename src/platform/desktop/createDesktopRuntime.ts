@@ -63,6 +63,7 @@ import { DesktopLinkIndexReconciler } from "./DesktopLinkIndexReconciler";
 import { DesktopRevisionRestoreService } from "./DesktopRevisionRestoreService";
 import { RevisionRestoreCoordinator } from "../../application/services/RevisionRestoreCoordinator";
 import { DesktopFileOperationService } from "./DesktopFileOperationService";
+import { DesktopVaultTransferService } from "./DesktopVaultTransferService";
 import { DesktopExternalVaultChangeService } from "./DesktopExternalVaultChangeService";
 import { createInMemoryDocumentVersionChannel } from "../../application/services/DocumentVersionChannel";
 import { DesktopAssetRegistry } from "./DesktopAssetRegistry";
@@ -216,6 +217,13 @@ export function createDesktopRuntime(
     getDirtyRelativePaths: resolveDirtyRelativePaths,
   });
   pageRepository.setFileOperations(fileOperations);
+  const vaultTransfer = new DesktopVaultTransferService({
+    api,
+    scans,
+    linkIndex,
+    fullTextSearch,
+    getDirtyRelativePaths: resolveDirtyRelativePaths,
+  });
   // 搜索索引：标题搜索（fallback 路径）；onCommitted 钩子——正文提交
   // 成功后通知 reconciler（自写 upsert，§12.4）。
   const searchIndex = new DesktopTitleSearchIndex(
@@ -383,6 +391,7 @@ export function createDesktopRuntime(
     linkIndex,
     // R011：路径变更文件操作（plan/execute + recovery）。
     fileOperations,
+    vaultTransfer,
     // R012 Stage 4：Safe Restore 协调器（revision.restore IPC 链路）。
     revisionRestore,
     // 机密存储运行状态（R008 Stage 1，R8-02）：secure-persistent 才持久，
@@ -412,7 +421,11 @@ export function createDesktopRuntime(
           onMaintenanceError: (stage) =>
             increment("save-maintenance-error", stage),
           onStateChange: (state) => {
-            if (state.status === "dirty" || state.status === "saving") {
+            if (
+              state.status === "dirty" ||
+              state.status === "saving" ||
+              state.errorKind === "conflict"
+            ) {
               dirtyPageIds.add(pageId);
             } else {
               dirtyPageIds.delete(pageId);

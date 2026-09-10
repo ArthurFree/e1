@@ -258,6 +258,17 @@ describe("VaultWatcherService 生命周期", () => {
     expect(service.isWatching("v-别的")).toBe(false);
   });
 
+  it("restartWatching 关闭旧根再按新路径监听", async () => {
+    const first = await startWatching();
+    const nextRoot = join(root, "moved");
+    await mkdir(nextRoot);
+    await service.restartWatching("v-单测", nextRoot);
+    await waitFlush();
+    expect(first.closed).toBe(true);
+    expect(fakeWatchers).toHaveLength(2);
+    expect(service.isWatching("v-单测")).toBe(true);
+  });
+
   it("closeAll 关闭全部 watcher 并清空状态", async () => {
     const watcher = await startWatching();
     await service.closeAll();

@@ -13,9 +13,11 @@
  * - 识别 `[text](href)` 与 `![alt](src)`；目的地支持平衡括号
  *   （`fn(1).md`）与尖括号包裹的空格路径（`<my note.md>`，输出剥离尖括号），
  *   可选 `"title"`/`'title'` 题注被忽略；
+ * - R014：另识别引用式 `[text][id]` / `[text][]`，目的地取对应
+ *   `[id]: dest` / `[text]: dest` 定义（只改写定义，不改使用处）；
  * - 与 codec（marked）保持一致的取舍：裸空格目的地（`[a](my note.md)`）
- *   不是合法链接，不产出；引用式链接 `[a][1]`、自动链接 `<https://…>`、
- *   Wiki 链接 `[[a]]` 不识别（codec 序列化产物不含这些形态）；
+ *   不是合法链接，不产出；自动链接 `<https://…>`、Wiki 链接 `[[a]]`
+ *   不识别（Wiki 仍为 unsupported warning）；
  * - 空 href（`[a]()`）不产出条目。
  */
 import { splitFrontmatter } from "../markdown/frontmatter.js";
@@ -23,9 +25,16 @@ import {
   buildExtractedLink,
   type ExtractedLink,
 } from "./extractDocumentLinks.js";
+import {
+  normalizeMarkdownLinkLabel,
+  parseMarkdownLinkDefinitionLine,
+} from "./scanMarkdownLinkDestinations.js";
 
 /** 行内链接/图片候选起点：`[text](` 或 `![alt](`。label 不支持嵌套方括号。 */
 const LINK_START = /(!)?\[([^\]\n]*)\]\(/g;
+
+/** 引用式使用：`[text][id]` 或折叠 `[text][]`。 */
+const REF_USE = /(!)?\[([^\]\n]*)\]\[([^\]\n]*)\]/g;
 
 /** 围栏代码块标记行（``` 或 ~~~，允许前导空白与 info string）。 */
 const FENCE_MARKER = /^\s*(```|~~~)/;
@@ -100,8 +109,27 @@ export function extractMarkdownLinks(
   const { body } = splitFrontmatter(markdown.replace(/\r\n/g, "\n"));
   const links: ExtractedLink[] = [];
   let inFence = false;
+  const definitions = new Map<string, string>();
+  const bodyLines = body.split("\n");
 
-  for (const rawLine of body.split("\n")) {
+  for (const rawLine of bodyLines) {
+    if (FENCE_MARKER.test(rawLine)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
+    const masked = maskInlineCode(rawLine);
+    const definition = parseMarkdownLinkDefinitionLine(masked);
+    if (definition) {
+      const key = normalizeMarkdownLinkLabel(definition.id);
+      if (key.length > 0 && !definitions.has(key)) {
+        definitions.set(key, definition.href);
+      }
+    }
+  }
+
+  inFence = false;
+  for (const rawLine of bodyLines) {
     if (FENCE_MARKER.test(rawLine)) {
       inFence = !inFence;
       continue;
@@ -119,6 +147,23 @@ export function extractMarkdownLinks(
       const labelStart = match.index + (match[1] ? 2 : 1);
       const label = rawLine.slice(labelStart, labelStart + match[2].length);
       const link = buildExtractedLink(scanned.href, label, sourceRelativePath);
+      if (link) links.push(link);
+    }
+
+    REF_USE.lastIndex = 0;
+    let refMatch: RegExpExecArray | null;
+    while ((refMatch = REF_USE.exec(masked)) !== null) {
+      const label = rawLine.slice(
+        refMatch.index + (refMatch[1] ? 2 : 1),
+        refMatch.index + (refMatch[1] ? 2 : 1) + (refMatch[2]?.length ?? 0),
+      );
+      const explicitId = refMatch[3] ?? "";
+      const key = normalizeMarkdownLinkLabel(
+        explicitId.length > 0 ? explicitId : label,
+      );
+      const href = definitions.get(key);
+      if (!href) continue;
+      const link = buildExtractedLink(href, label, sourceRelativePath);
       if (link) links.push(link);
     }
   }

@@ -27,6 +27,9 @@ import {
   PageIcon,
 } from "./ui/icons";
 import { BrokenLinksPanel } from "./BrokenLinksPanel";
+import { VaultTransferPreflightDialog } from "./VaultTransferPreflightDialog";
+import type { VaultTransferPlan } from "../application/vaultTransfer/VaultTransferService";
+import { VAULT_TRANSFER_LABELS } from "../../shared/vaultTransfer/types";
 
 /** 知识库首页：头部信息、统计、主操作与完整目录概览（不拖拽）。 */
 export function WorkspaceHome() {
@@ -43,6 +46,11 @@ export function WorkspaceHome() {
   const [rescanning, setRescanning] = useState(false);
   // 「失效链接」面板开关（R010 Stage 6 §14，仅装配了 linkIndex 的运行时渲染）。
   const [showBrokenLinks, setShowBrokenLinks] = useState(false);
+  const [transferPlan, setTransferPlan] = useState<VaultTransferPlan | null>(
+    null,
+  );
+  const [transferBusy, setTransferBusy] = useState(false);
+  const [transferError, setTransferError] = useState<string | null>(null);
   // FR-26/§36.4：具备本地目录能力且装配了知识库维护 port 的运行时才
   // 提供主动刷新；§34.1 明确不做文件监听，只支持用户主动刷新。
   const canRescan =
@@ -50,6 +58,9 @@ export function WorkspaceHome() {
     services.vaultMaintenance !== undefined;
   // R010 Stage 6（DUAL-01）：linkIndex 存在性即门控，Web 缺省 undefined。
   const canShowBrokenLinks = services.linkIndex !== undefined;
+  const vaultTransfer = services.vaultTransfer;
+  const canRelocateRoot =
+    services.operations.workspace.relocate && vaultTransfer !== undefined;
 
   // 总字数统计需要正文快照，页面元数据里没有，只能额外取内容行
   useEffect(() => {
@@ -162,6 +173,44 @@ export function WorkspaceHome() {
     }
   };
 
+  const startRelocateRoot = async () => {
+    if (!vaultTransfer || !workspace) return;
+    const token = await vaultTransfer.pickDirectory();
+    if (!token) return;
+    const suggested = workspace.name.replace(/（目录不可访问）$/, "");
+    const entered = window.prompt("新文件夹名称", suggested);
+    if (!entered?.trim()) return;
+    try {
+      const plan = await vaultTransfer.plan({
+        kind: "relocate-vault",
+        sourceVaultId: workspace.id,
+        selectionToken: token,
+        newFolderName: entered.trim(),
+      });
+      setTransferError(null);
+      setTransferPlan(plan);
+    } catch (err) {
+      services.assets.notify.notify(
+        err instanceof Error ? err.message : "移动知识库失败，请重试。",
+      );
+    }
+  };
+
+  const confirmTransfer = async () => {
+    if (!vaultTransfer || !transferPlan) return;
+    setTransferBusy(true);
+    setTransferError(null);
+    try {
+      await vaultTransfer.execute(transferPlan);
+      setTransferPlan(null);
+      await refreshCurrentWorkspace();
+    } catch (err) {
+      setTransferError(err instanceof Error ? err.message : "执行失败");
+    } finally {
+      setTransferBusy(false);
+    }
+  };
+
   return (
     <div className="ws-home">
       <div className="ws-home__inner">
@@ -211,6 +260,15 @@ export function WorkspaceHome() {
               {rescanning ? "正在重新扫描…" : "重新扫描"}
             </button>
           )}
+          {canRelocateRoot && (
+            <button
+              type="button"
+              className="button"
+              onClick={() => void startRelocateRoot()}
+            >
+              {VAULT_TRANSFER_LABELS.relocateRoot}
+            </button>
+          )}
           {canShowBrokenLinks && (
             <button
               type="button"
@@ -253,6 +311,20 @@ export function WorkspaceHome() {
           onClose={() => setShowBrokenLinks(false)}
         />
       )}
+      <VaultTransferPreflightDialog
+        open={transferPlan !== null}
+        plan={transferPlan}
+        busy={transferBusy}
+        errorMessage={transferError}
+        onCancel={() => {
+          if (transferBusy) return;
+          setTransferPlan(null);
+          setTransferError(null);
+        }}
+        onConfirm={() => {
+          void confirmTransfer();
+        }}
+      />
     </div>
   );
 }

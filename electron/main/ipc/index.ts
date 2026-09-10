@@ -49,13 +49,18 @@ import {
 import { registerVaultHandlers } from "./vault.js";
 import { registerNoteHandlers } from "./note.js";
 import { registerFileHandlers } from "./files.js";
+import { registerFileOperationHandlers } from "./fileOperation.js";
 import { registerAssetHandlers } from "./asset.js";
 import { registerVaultStateHandlers } from "./vaultState.js";
 import { registerSecretHandlers } from "./secrets.js";
 import { registerRevealHandlers, type ShellLike } from "./reveal.js";
 import { registerSearchHandlers } from "./search.js";
 import { registerLinkHandlers } from "./links.js";
-import { registerFileOperationHandlers } from "./fileOperation.js";
+import { registerVaultTransferHandlers } from "./vaultTransfer.js";
+import {
+  recoverRelocations,
+  relocationJournalDir,
+} from "../vaultTransfer/VaultRelocationEngine.js";
 import { registerRevisionHandlers } from "./revisions.js";
 import { VaultRegistry } from "../vaultRegistry.js";
 import { DesktopVaultStateStore } from "../state/DesktopVaultStateStore.js";
@@ -175,10 +180,11 @@ export function registerIpcHandlers(
       onEvents: deps.broadcastVaultEvents ?? broadcastToAllWindows,
       selfWrites,
     });
+  const selectionTokens = deps.selectionTokens ?? new SelectionTokenStore();
   registerVaultHandlers(bus, {
     openDialog,
     registry,
-    selectionTokens: deps.selectionTokens ?? new SelectionTokenStore(),
+    selectionTokens,
     transients,
     watchers,
   });
@@ -198,6 +204,22 @@ export function registerIpcHandlers(
     transients,
     indexes,
     selfWrites,
+  });
+  registerVaultTransferHandlers(bus, {
+    registry,
+    transients,
+    selectionTokens,
+    userDataDir: app.getPath("userData"),
+    watchers,
+  });
+  void recoverRelocations({
+    journalDir: relocationJournalDir(app.getPath("userData")),
+    registry,
+    onRootChanged: async (vaultId, absolutePath) => {
+      await watchers.restartWatching(vaultId, absolutePath);
+    },
+  }).catch((error: unknown) => {
+    console.warn("[vaultTransfer] 启动恢复失败", error);
   });
   // R012 Stage 2：revision 组（.e1/revisions/ 版本历史；Stage 4 起
   // restore 落地，自写登记抑制 watcher 回声）。

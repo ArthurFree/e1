@@ -177,4 +177,20 @@ describe("VaultRegistry 容错", () => {
     await rm(file);
     expect(await reloaded.list()).toEqual([]);
   });
+
+  it("updateAbsolutePath 更新根路径并置顶", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "e1-registry-path-"));
+    const oldRoot = join(dir, "old");
+    const newRoot = join(dir, "new");
+    const { registry } = await makeRegistry();
+    await registry.touch({
+      vaultId: "v-reloc",
+      absolutePath: oldRoot,
+      displayName: "old",
+    });
+    await registry.updateAbsolutePath("v-reloc", newRoot, "new");
+    const found = await registry.findByVaultId("v-reloc");
+    expect(found?.absolutePath).toBe(newRoot);
+    expect(found?.displayName).toBe("new");
+  });
 });

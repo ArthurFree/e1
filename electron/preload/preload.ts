@@ -114,6 +114,11 @@ import {
   type VaultScanResult,
   type VaultFsEvent,
   type VaultState,
+  type VaultTransferPlan,
+  type VaultTransferRecoveryResult,
+  type VaultTransferRecoveryStatus,
+  type VaultTransferRequest,
+  type VaultTransferResult,
 } from "../../shared/ipc/contracts.js";
 import {
   encodeIpcBridgeError,
@@ -167,6 +172,18 @@ const api: E1DesktopAPI = {
       invoke<PurgeTrashResult>(IPC_CHANNELS.vaultPurgeTrash, input),
     rename: (input: RenameVaultInput) =>
       invoke<RenameVaultResult>(IPC_CHANNELS.vaultRename, input),
+  },
+  vaultTransfer: {
+    plan: (input: VaultTransferRequest) =>
+      invoke<VaultTransferPlan>(IPC_CHANNELS.vaultTransferPlan, input),
+    execute: (input: { plan: VaultTransferPlan }) =>
+      invoke<VaultTransferResult>(IPC_CHANNELS.vaultTransferExecute, input),
+    recoveryStatus: () =>
+      invoke<VaultTransferRecoveryStatus>(
+        IPC_CHANNELS.vaultTransferRecoveryStatus,
+      ),
+    recover: () =>
+      invoke<VaultTransferRecoveryResult>(IPC_CHANNELS.vaultTransferRecover),
   },
   fileOperation: {
     plan: (input: FileOperationPlanInput) =>

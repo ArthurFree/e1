@@ -117,10 +117,12 @@ export const FILE_OPERATION_LABELS = {
   workspaceRenameHint: "磁盘文件夹名称不会改变",
 } as const;
 
-/** 改写范围冻结（R11-004）：仅 R010 已索引形态。 */
+/** 改写范围冻结（R11-004 / R014 Stage 5）：行内 + 引用式定义。 */
 export const REWRITE_SUPPORTED_FORMS = [
   "[text](href)",
   "![alt](src)",
+  "[text][id] + [id]: dest",
+  "[text][] + [text]: dest",
 ] as const;
 
 /** 移动目标冻结（R11-003）：只允许 Root 或 Group。 */

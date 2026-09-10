@@ -37,14 +37,20 @@ import {
   IconFolderPlus,
   IconHome,
   IconImport,
+  IconMove,
+  IconCopy,
   IconPencil,
   IconPlus,
   IconTrash,
   PageIcon,
 } from "./ui/icons";
 import { FileOperationPreflightDialog } from "./FileOperationPreflightDialog";
+import { VaultTransferPreflightDialog } from "./VaultTransferPreflightDialog";
+import { VaultPickerDialog } from "./VaultPickerDialog";
 import type { FileOperationPlan } from "../application/fileOperations/FileOperationService";
+import type { VaultTransferPlan } from "../application/vaultTransfer/VaultTransferService";
 import { FILE_OPERATION_LABELS } from "../../shared/fileOperations/types";
+import { VAULT_TRANSFER_LABELS } from "../../shared/vaultTransfer/types";
 
 /** 拖拽时放入 dataTransfer 的自定义 MIME，用于识别「树内页面」拖动。 */
 const DND_MIME = "application/x-page-id";
@@ -82,6 +88,9 @@ interface PageTreeBodyProps {
   /** R011：是否装配了 fileOperations（物理文件名重命名入口门控）。 */
   fileOperationsAvailable: boolean;
   onRenameFile?(page: Page): void;
+  vaultTransferAvailable: boolean;
+  onCopyToVault?(page: Page): void;
+  onMoveToVault?(page: Page): void;
 }
 
 /**
@@ -104,6 +113,9 @@ const PageTreeBody = memo(function PageTreeBody({
   pageOps,
   fileOperationsAvailable,
   onRenameFile,
+  vaultTransferAvailable,
+  onCopyToVault,
+  onMoveToVault,
 }: PageTreeBodyProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -123,6 +135,16 @@ const PageTreeBody = memo(function PageTreeBody({
     page.kind === "document" &&
     pageOps.document.renameFile &&
     fileOperationsAvailable;
+  const canCopyToVault = (page: Page) =>
+    vaultTransferAvailable &&
+    (page.kind === "group"
+      ? pageOps.group.copyToVault
+      : pageOps.document.copyToVault);
+  const canMoveToVault = (page: Page) =>
+    vaultTransferAvailable &&
+    (page.kind === "group"
+      ? pageOps.group.moveToVault
+      : pageOps.document.moveToVault);
   const canTrashPage = (page: Page) =>
     page.kind === "group" ? pageOps.group.trash : pageOps.document.trash;
   const canMovePage = (page: Page) =>
@@ -361,6 +383,34 @@ const PageTreeBody = memo(function PageTreeBody({
               <IconImport size={14} />
             </button>
           )}
+          {canCopyToVault(page) && onCopyToVault && (
+            <button
+              type="button"
+              className="tree-row__action"
+              aria-label={`${VAULT_TRANSFER_LABELS.copyToVault}「${page.title || "无标题"}」`}
+              title={VAULT_TRANSFER_LABELS.copyToVault}
+              onClick={(event) => {
+                event.stopPropagation();
+                onCopyToVault(page);
+              }}
+            >
+              <IconCopy size={14} />
+            </button>
+          )}
+          {canMoveToVault(page) && onMoveToVault && (
+            <button
+              type="button"
+              className="tree-row__action"
+              aria-label={`${VAULT_TRANSFER_LABELS.moveToVault}「${page.title || "无标题"}」`}
+              title={VAULT_TRANSFER_LABELS.moveToVault}
+              onClick={(event) => {
+                event.stopPropagation();
+                onMoveToVault(page);
+              }}
+            >
+              <IconMove size={14} />
+            </button>
+          )}
           {canTrashPage(page) && (
             <button
               type="button"
@@ -439,8 +489,8 @@ const PageTreeBody = memo(function PageTreeBody({
 
 /** 文档树侧栏：层级展示、新建、重命名、删除、拖拽移动、标签筛选、Markdown 导入。 */
 export function PageTreeSidebar() {
-  const { operations, fileOperations } = useAppServices();
-  const { pages, tags, pageTags, workspace } = useWorkspaceData();
+  const { operations, fileOperations, vaultTransfer } = useAppServices();
+  const { pages, tags, pageTags, workspace, workspaces } = useWorkspaceData();
   const {
     createPage,
     createDocumentWithContent,
@@ -448,6 +498,7 @@ export function PageTreeSidebar() {
     deletePage,
     movePage,
     deleteTag,
+    refreshCurrentWorkspace,
   } = useWorkspaceCommands();
   const { view, selectedPageId } = useNavigationState();
   const { selectPage, showWorkspaceHome } = useNavigationCommands();
@@ -462,6 +513,15 @@ export function PageTreeSidebar() {
   const [fileOpPlan, setFileOpPlan] = useState<FileOperationPlan | null>(null);
   const [fileOpBusy, setFileOpBusy] = useState(false);
   const [fileOpError, setFileOpError] = useState<string | null>(null);
+  const [transferPlan, setTransferPlan] = useState<VaultTransferPlan | null>(
+    null,
+  );
+  const [transferBusy, setTransferBusy] = useState(false);
+  const [transferError, setTransferError] = useState<string | null>(null);
+  const [vaultPick, setVaultPick] = useState<{
+    page: Page;
+    kind: "copy" | "move";
+  } | null>(null);
   const widthRef = useRef(preferences.sidebarWidth);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -506,6 +566,53 @@ export function PageTreeSidebar() {
       setFileOpBusy(false);
     }
   }, [fileOperations, fileOpPlan]);
+
+  const planCrossVault = useCallback(
+    async (page: Page, kind: "copy" | "move", destinationVaultId: string) => {
+      if (!vaultTransfer || !workspace) return;
+      const opKind =
+        page.kind === "group"
+          ? kind === "copy"
+            ? "copy-group"
+            : "move-group"
+          : kind === "copy"
+            ? "copy-document"
+            : "move-document";
+      try {
+        const plan = await vaultTransfer.plan({
+          kind: opKind,
+          sourceVaultId: workspace.id,
+          destinationVaultId,
+          pageId: page.id,
+          destinationRelativePath: "",
+        });
+        setTransferError(null);
+        setTransferPlan(plan);
+      } catch (err) {
+        setActionError(err instanceof Error ? err.message : "预检失败");
+      }
+    },
+    [vaultTransfer, workspace],
+  );
+
+  const confirmTransfer = useCallback(async () => {
+    if (!vaultTransfer || !transferPlan) return;
+    setTransferBusy(true);
+    setTransferError(null);
+    try {
+      await vaultTransfer.execute(transferPlan);
+      setTransferPlan(null);
+      await refreshCurrentWorkspace();
+    } catch (err) {
+      setTransferError(err instanceof Error ? err.message : "执行失败");
+    } finally {
+      setTransferBusy(false);
+    }
+  }, [vaultTransfer, transferPlan, refreshCurrentWorkspace]);
+
+  const destWorkspaces = workspaces.filter(
+    (ws) => ws.id !== workspace?.id && ws.directoryAccessible !== false,
+  );
 
   const onResizeStart = useCallback(
     (event: React.PointerEvent) => {
@@ -681,6 +788,9 @@ export function PageTreeSidebar() {
         onRenameFile={(page) => {
           void startRenameFile(page);
         }}
+        vaultTransferAvailable={Boolean(vaultTransfer)}
+        onCopyToVault={(page) => setVaultPick({ page, kind: "copy" })}
+        onMoveToVault={(page) => setVaultPick({ page, kind: "move" })}
       />
       <FileOperationPreflightDialog
         open={fileOpPlan !== null}
@@ -694,6 +804,36 @@ export function PageTreeSidebar() {
         }}
         onConfirm={() => {
           void confirmFileOp();
+        }}
+      />
+      <VaultPickerDialog
+        open={vaultPick !== null}
+        title={
+          vaultPick?.kind === "move"
+            ? VAULT_TRANSFER_LABELS.moveToVault
+            : VAULT_TRANSFER_LABELS.copyToVault
+        }
+        workspaces={destWorkspaces}
+        onCancel={() => setVaultPick(null)}
+        onSelect={(workspaceId) => {
+          if (!vaultPick) return;
+          const pending = vaultPick;
+          setVaultPick(null);
+          void planCrossVault(pending.page, pending.kind, workspaceId);
+        }}
+      />
+      <VaultTransferPreflightDialog
+        open={transferPlan !== null}
+        plan={transferPlan}
+        busy={transferBusy}
+        errorMessage={transferError}
+        onCancel={() => {
+          if (transferBusy) return;
+          setTransferPlan(null);
+          setTransferError(null);
+        }}
+        onConfirm={() => {
+          void confirmTransfer();
         }}
       />
       <div className="tree-tags" aria-label="标签筛选">

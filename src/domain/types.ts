@@ -38,6 +38,11 @@ export interface Workspace {
   favoriteAt: number | null;
   /** 最近一次打开时间，用于开始首页等入口的排序。 */
   lastOpenedAt: number | null;
+  /**
+   * Desktop：最近列表里该知识库根目录当前是否可访问。
+   * false 时 UI 提供「重新定位知识库」（R014）；Web 不设此字段。
+   */
+  directoryAccessible?: boolean;
   createdAt: number;
   updatedAt: number;
 }

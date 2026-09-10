@@ -22,6 +22,13 @@
 - 为每个稳定状态保存中文截图基线；比较布局区域、颜色与像素差，并对动态光标、时间和随机 ID 做屏蔽。
 - 在 1024px、768px 和 375px 额外运行可用性冒烟测试，检查侧栏、编辑区和浮层不溢出。
 
+## Vault 可移植性（R014）
+
+- 语义冻结与引擎单测：`shared/vaultTransfer/`、`electron/main/vaultTransfer/`（Missing Relocate、同卷 rename、EXDEV copy-verify-delete、跨库 Copy/Move、边界 blocker、stale plan、100 篇预检）。
+- 引用式链接：`scanMarkdownLinkDestinations` / `rewriteMarkdownLinkDestinations` / `extractMarkdownLinks`。
+- 桌面 Golden：`e2e/desktop.vaultTransfer.spec.ts` G57–G71（描述前缀「桌面冒烟」）。
+- 安装包：`e2e/package/desktop.package.vaultTransfer.spec.ts` P27–P30（无产物 skip）。
+
 ## macOS 分发信任（R013）
 
 - 策略单测：`scripts/macTrustPolicy.test.mjs`（预检 yes/no、codesign 解析、entitlement 白名单、本地/Release builder 分流）。

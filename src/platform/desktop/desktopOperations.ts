@@ -12,6 +12,7 @@ export const desktopOperations: RuntimeOperations = {
   workspace: {
     rename: true,
     favorite: true,
+    relocate: true,
   },
   page: {
     document: {
@@ -21,12 +22,16 @@ export const desktopOperations: RuntimeOperations = {
       move: true,
       trash: true,
       favorite: true,
+      copyToVault: true,
+      moveToVault: true,
     },
     group: {
       create: true,
       rename: true,
       move: true,
       trash: true,
+      copyToVault: true,
+      moveToVault: true,
     },
     trash: {
       restore: true,

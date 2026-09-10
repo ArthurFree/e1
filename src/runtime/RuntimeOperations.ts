@@ -25,6 +25,12 @@ export interface RuntimeOperations {
     rename: boolean;
     /** 收藏/取消收藏知识库。 */
     favorite: boolean;
+    /**
+     * 搬迁知识库根目录（R014：Missing Relocate / Physical Relocate）。
+     * 与 workspace.rename 分离——rename 只改 vault.json 显示名。
+     * Web 恒为 false；Desktop 在 R014 测绿后翻 true。
+     */
+    relocate: boolean;
   };
   page: {
     /** 文档（Markdown 文件）操作。 */
@@ -46,6 +52,10 @@ export interface RuntimeOperations {
       trash: boolean;
       /** 收藏/取消收藏文档。 */
       favorite: boolean;
+      /** 复制文档到其他知识库（R014；Web 恒 false）。 */
+      copyToVault: boolean;
+      /** 移动文档到其他知识库（R014；Web 恒 false）。 */
+      moveToVault: boolean;
     };
     /** 分组（Desktop = 真实目录）操作。 */
     group: {
@@ -57,6 +67,10 @@ export interface RuntimeOperations {
       move: boolean;
       /** 移入回收站。 */
       trash: boolean;
+      /** 复制分组到其他知识库（R014；Web 恒 false）。 */
+      copyToVault: boolean;
+      /** 移动分组到其他知识库（R014；Web 恒 false）。 */
+      moveToVault: boolean;
     };
     /** 回收站操作（对 deletedAt 非空的页面）。 */
     trash: {

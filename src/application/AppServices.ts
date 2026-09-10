@@ -40,6 +40,7 @@ import type { FullTextSearchIndex } from "./search/FullTextSearchIndex";
 import type { LinkIndex } from "./links/LinkIndex";
 import type { UpdateService } from "./services/UpdateService";
 import type { FileOperationService } from "./fileOperations/FileOperationService";
+import type { VaultTransferService } from "./vaultTransfer/VaultTransferService";
 import type { RevisionRestoreCoordinator } from "./services/RevisionRestoreCoordinator";
 import type { RuntimeCapabilities } from "../runtime/RuntimeCapabilities";
 import type { RuntimeOperations } from "../runtime/RuntimeOperations";
@@ -209,6 +210,13 @@ export interface AppServices {
    * + operations 矩阵共同门控（DUAL-01）。
    */
   fileOperations?: FileOperationService;
+  /**
+   * Vault 搬迁与跨库复制/移动（可选，R014）：Desktop 装配——
+   * plan/execute + userData 级 relocation journal recovery；
+   * Web/内存不装配。UI 以 `services.vaultTransfer` 存在性 +
+   * operations 矩阵共同门控（DUAL-01）。
+   */
+  vaultTransfer?: VaultTransferService;
   /**
    * 应用更新服务（可选，R009 Stage 6 Auto Update）：由具备自更新能力的
    * 运行时装配（Desktop，electron-updater + GitHub Releases feed）；

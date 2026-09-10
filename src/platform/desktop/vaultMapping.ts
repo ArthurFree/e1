@@ -152,8 +152,8 @@ function parseIso(value: string, fallback: number): number {
 /**
  * 最近 Vault → Workspace。
  * 目录不可访问（accessible=false）的条目保留在列表中、名称加后缀提示；
- * 点击后会话加载会因 scan 失败进入可重试的错误态（重新定位属阶段 6，
- * 本批不做，见 r006 §5 US-06 / §阶段 6）。
+ * 点击后可「重新定位知识库」（R014 Stage 1）；会话加载仍会因 scan 失败
+ * 进入可重试错误态。
  * R007 阶段 2：favoriteAt 来自 vault-state（设备级，默认 null）。
  */
 export function mapRecentVaultToWorkspace(
@@ -171,6 +171,7 @@ export function mapRecentVaultToWorkspace(
     homePageId: null,
     favoriteAt,
     lastOpenedAt: lastOpenedAt || null,
+    directoryAccessible: vault.accessible,
     createdAt: lastOpenedAt,
     updatedAt: lastOpenedAt,
   };

@@ -38,6 +38,7 @@ export type MockDesktopApiOverrides = {
   events?: Partial<E1DesktopAPI["events"]>;
   update?: Partial<E1DesktopAPI["update"]>;
   fileOperation?: Partial<E1DesktopAPI["fileOperation"]>;
+  vaultTransfer?: Partial<E1DesktopAPI["vaultTransfer"]>;
   versions?: E1DesktopAPI["versions"];
 };
 
@@ -136,6 +137,45 @@ export function createMockDesktopApi(
     })),
     recover: vi.fn(async (input) => ({
       vaultId: input.vaultId,
+      recovered: true,
+      rolledBackOperationIds: [],
+    })),
+  };
+
+  const vaultTransfer: E1DesktopAPI["vaultTransfer"] = {
+    plan: vi.fn(async (input) => ({
+      operationId: "vt-mock",
+      kind: input.kind,
+      sourceVaultId: input.sourceVaultId,
+      destinationVaultId: input.destinationVaultId,
+      sourceRelativePath: input.sourceRelativePath,
+      destinationRelativePath: input.destinationRelativePath,
+      notes: [],
+      directories: [],
+      assets: [],
+      revisions: [],
+      linkImpacts: { internal: 0, inboundBoundary: 0, outboundBoundary: 0 },
+      blockers: [],
+      warnings: [],
+      sourceFingerprint: "",
+      destinationFingerprint: "",
+      createdAt: new Date().toISOString(),
+    })),
+    execute: vi.fn(async (input) => ({
+      operationId: input.plan.operationId,
+      kind: input.plan.kind,
+      sourceVaultId: input.plan.sourceVaultId,
+      destinationVaultId: input.plan.destinationVaultId,
+      notesCopied: 0,
+      assetsCopied: 0,
+      revisionsTransferred: 0,
+      sourceTrashed: false,
+    })),
+    recoveryStatus: vi.fn(async () => ({
+      phase: "clean" as const,
+      pendingOperationIds: [],
+    })),
+    recover: vi.fn(async () => ({
       recovered: true,
       rolledBackOperationIds: [],
     })),
@@ -289,5 +329,6 @@ export function createMockDesktopApi(
     events: mergeGroup(events, overrides.events),
     update: mergeGroup(update, overrides.update),
     fileOperation: mergeGroup(fileOperation, overrides.fileOperation),
+    vaultTransfer: mergeGroup(vaultTransfer, overrides.vaultTransfer),
   };
 }

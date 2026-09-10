@@ -48,6 +48,21 @@
 import type { IpcErrorPayload } from "../errors.js";
 import type { Backlink, DocumentLink } from "../links/types.js";
 import type { DesktopRevisionReason } from "../revisions/types.js";
+import type {
+  VaultTransferPlan,
+  VaultTransferRecoveryResult,
+  VaultTransferRecoveryStatus,
+  VaultTransferRequest,
+  VaultTransferResult,
+} from "../vaultTransfer/types.js";
+
+export type {
+  VaultTransferPlan,
+  VaultTransferRecoveryResult,
+  VaultTransferRecoveryStatus,
+  VaultTransferRequest,
+  VaultTransferResult,
+};
 
 /** IPC channel 常量：Main 注册与 Preload 调用共用，禁止散落字符串。 */
 export const IPC_CHANNELS = {
@@ -109,6 +124,11 @@ export const IPC_CHANNELS = {
   fileOperationRecover: "fileOperation:recover",
   /** R011：Workspace 逻辑名（只改 vault.json name）。 */
   vaultRename: "vault:rename",
+  /** R014：Vault 搬迁 / 跨库复制移动。 */
+  vaultTransferPlan: "vaultTransfer:plan",
+  vaultTransferExecute: "vaultTransfer:execute",
+  vaultTransferRecoveryStatus: "vaultTransfer:recoveryStatus",
+  vaultTransferRecover: "vaultTransfer:recover",
   updateGetState: "update:getState",
   updateCheck: "update:check",
   updateDownload: "update:download",
@@ -1176,6 +1196,16 @@ export interface E1DesktopAPI {
      * 不改磁盘根目录）。transient 拒写。
      */
     rename(input: RenameVaultInput): Promise<RenameVaultResult>;
+  };
+  /**
+   * R014：Vault 根搬迁与跨库复制/移动。
+   * Renderer 只传 vaultId / relativePath / selectionToken。
+   */
+  vaultTransfer: {
+    plan(input: VaultTransferRequest): Promise<VaultTransferPlan>;
+    execute(input: { plan: VaultTransferPlan }): Promise<VaultTransferResult>;
+    recoveryStatus(): Promise<VaultTransferRecoveryStatus>;
+    recover(): Promise<VaultTransferRecoveryResult>;
   };
   /**
    * R011：路径变更类文件操作（plan → execute + crash recovery）。

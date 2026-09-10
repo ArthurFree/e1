@@ -183,3 +183,23 @@ describe("extractMarkdownLinks：屏蔽规则", () => {
     expect(links.map((l) => l.href)).toEqual(["real.md"]);
   });
 });
+
+describe("extractMarkdownLinks：引用式（R014）", () => {
+  it("[text][id] 解析定义目的地", () => {
+    const links = extractMarkdownLinks(
+      "[页面B][target]\n\n[target]: ./页面B.md\n",
+      "目录/页面A.md",
+    );
+    expect(links.map((l) => l.targetRelativePath)).toEqual(["目录/页面B.md"]);
+    expect(links[0]?.href).toBe("./页面B.md");
+    expect(links[0]?.label).toBe("页面B");
+  });
+
+  it("[text][] 折叠引用使用 label 作为 id", () => {
+    const links = extractMarkdownLinks(
+      "[页面B][]\n\n[页面B]: 页面B.md\n",
+      "目录/a.md",
+    );
+    expect(links[0]?.targetRelativePath).toBe("目录/页面B.md");
+  });
+});

@@ -74,6 +74,26 @@ describe("rewriteMarkdownLinkDestinations", () => {
     expect(markdown).toContain("[上](上.md)");
   });
 
+  it("引用式定义只改 destination，使用处 [a][id] 保留", () => {
+    const md = "[见][target]\n\n[target]: ../Old/Target.md\n";
+    const { markdown, rewrittenCount } = rewriteMarkdownLinkDestinations(md, [
+      { oldHref: "../Old/Target.md", newHref: "../New/Target.md" },
+    ]);
+    expect(rewrittenCount).toBe(1);
+    expect(markdown).toContain("[见][target]");
+    expect(markdown).toContain("[target]: ../New/Target.md");
+    expect(markdown).not.toContain("../Old/Target.md");
+  });
+
+  it("引用式定义允许冒号后无空白（CommonMark）", () => {
+    const md = "[见][t]\n\n[t]:Old.md\n";
+    const { markdown, rewrittenCount } = rewriteMarkdownLinkDestinations(md, [
+      { oldHref: "Old.md", newHref: "New.md" },
+    ]);
+    expect(rewrittenCount).toBe(1);
+    expect(markdown).toContain("[t]:New.md");
+  });
+
   it("external / mailto / anchor / 代码不改", () => {
     const md =
       "[外](https://a.com) [邮](mailto:a@b.c) [锚](#x)\n`[内](a.md)`\n```\n[码](a.md)\n```\n[真](a.md)\n";
@@ -331,14 +351,11 @@ describe("relocateHref", () => {
 });
 
 describe("detectUnsupportedLinkSyntax", () => {
-  it("检出 Wiki 与引用式链接", () => {
+  it("检出 Wiki 链接；引用式不再告警（R014 已改写）", () => {
     const warnings = detectUnsupportedLinkSyntax(
       "见 [[Wiki]] 与 [a][1]\n\n[1]: https://x.com\n",
     );
-    expect(warnings.map((w) => w.code).sort()).toEqual([
-      "UNSUPPORTED_REFERENCE_LINK",
-      "UNSUPPORTED_WIKI_LINK",
-    ]);
+    expect(warnings.map((w) => w.code)).toEqual(["UNSUPPORTED_WIKI_LINK"]);
   });
 
   it("代码中的样例不报", () => {

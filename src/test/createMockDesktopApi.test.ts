@@ -28,6 +28,7 @@ const EXPECTED_GROUPS = [
   "update",
   "vault",
   "vaultState",
+  "vaultTransfer",
   "versions",
 ] as const;
 
@@ -78,6 +79,7 @@ const EXPECTED_SHAPE: Record<string, string[]> = {
     "restore",
   ],
   fileOperation: ["execute", "plan", "recover", "recoveryStatus"],
+  vaultTransfer: ["execute", "plan", "recover", "recoveryStatus"],
   asset: ["import", "pick", "read", "resolveUrl", "reveal"],
   events: ["subscribeUpdateStatus", "subscribeVaultChanges"],
   update: ["check", "download", "getState", "install", "openReleasePage"],

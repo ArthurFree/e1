@@ -153,6 +153,7 @@ describe("mapRecentVaultToWorkspace", () => {
     expect(ws.name).toBe("我的笔记");
     expect(ws.lastOpenedAt).toBe(Date.parse("2026-08-09T10:00:00.000Z"));
     expect(ws.favoriteAt).toBeNull();
+    expect(ws.directoryAccessible).toBe(true);
   });
 
   it("不可达条目保留并加名称后缀（重新定位属阶段 6）", () => {
@@ -164,6 +165,7 @@ describe("mapRecentVaultToWorkspace", () => {
       accessible: false,
     });
     expect(ws.name).toBe("旧库（目录不可访问）");
+    expect(ws.directoryAccessible).toBe(false);
   });
 });
 

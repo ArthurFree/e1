@@ -107,6 +107,58 @@ function maskInlineCode(line: string): string {
   return line.replace(INLINE_CODE, (span) => " ".repeat(span.length));
 }
 
+const DEFINITION_START = /^(\s*)\[([^\]]+)\]:\s*/;
+
+/**
+ * 解析引用式链接定义行：`[id]: dest` / `[id]: <dest>`（可选题注）。
+ * 失败返回 null。id 保留原文，调用方自行归一化。
+ */
+export function parseMarkdownLinkDefinitionLine(line: string): {
+  id: string;
+  href: string;
+  destStartInLine: number;
+  destEndInLine: number;
+  wrapper: "bare" | "angle";
+} | null {
+  const match = DEFINITION_START.exec(line);
+  if (!match) return null;
+  const id = match[2] ?? "";
+  if (id.length === 0) return null;
+  let i = match[0].length;
+  while (line[i] === " " || line[i] === "\t") i++;
+
+  let href: string;
+  let destStartInLine: number;
+  let destEndInLine: number;
+  let wrapper: "bare" | "angle";
+  if (line[i] === "<") {
+    const close = line.indexOf(">", i + 1);
+    if (close === -1) return null;
+    href = line.slice(i + 1, close);
+    destStartInLine = i + 1;
+    destEndInLine = close;
+    wrapper = "angle";
+  } else {
+    const begin = i;
+    while (i < line.length) {
+      const ch = line[i];
+      if (ch === " " || ch === "\t" || ch === "\r") break;
+      i++;
+    }
+    href = line.slice(begin, i);
+    destStartInLine = begin;
+    destEndInLine = i;
+    wrapper = "bare";
+  }
+  if (href.length === 0) return null;
+  return { id, href, destStartInLine, destEndInLine, wrapper };
+}
+
+/** CommonMark 标签归一：折叠空白并小写。 */
+export function normalizeMarkdownLinkLabel(label: string): string {
+  return label.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
 /**
  * 扫描 Markdown 中全部可改写链接目的地（含图片）。
  * 空 href 不产出；与 extractMarkdownLinks 取舍一致。
@@ -158,6 +210,20 @@ export function scanMarkdownLinkDestinations(
         label,
         start: lineAbsStart + match.index,
         end: lineAbsStart + scanned.endInLine,
+      });
+    }
+
+    const definition = parseMarkdownLinkDefinitionLine(masked);
+    if (definition && definition.href.length > 0) {
+      spans.push({
+        href: definition.href,
+        destinationStart: lineAbsStart + definition.destStartInLine,
+        destinationEnd: lineAbsStart + definition.destEndInLine,
+        wrapper: definition.wrapper,
+        isImage: false,
+        label: definition.id,
+        start: lineAbsStart,
+        end: lineAbsStart + rawLine.length,
       });
     }
   }

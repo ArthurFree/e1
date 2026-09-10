@@ -78,6 +78,27 @@ export class VaultRegistry {
     await this.write(next);
   }
 
+  /** R014：更新已登记 vault 的物理根路径（同 vaultId；新路径去重置顶）。 */
+  async updateAbsolutePath(
+    vaultId: string,
+    absolutePath: string,
+    displayName?: string,
+  ): Promise<void> {
+    const records = await this.read();
+    const current = records.find((r) => r.vaultId === vaultId);
+    if (!current) return;
+    const rest = records.filter(
+      (r) => r.vaultId !== vaultId && r.absolutePath !== absolutePath,
+    );
+    rest.unshift({
+      ...current,
+      absolutePath,
+      displayName: displayName ?? current.displayName,
+      lastOpenedAt: this.now().toISOString(),
+    });
+    await this.write(rest.slice(0, MAX_ENTRIES));
+  }
+
   private async isAccessible(absolutePath: string): Promise<boolean> {
     try {
       return (await stat(absolutePath)).isDirectory();

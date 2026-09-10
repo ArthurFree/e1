@@ -36,10 +36,12 @@ describe("R011 Stage 0 语义冻结", () => {
     expect(allowed).toEqual(["root", "group"]);
   });
 
-  it("改写范围 = R010 已索引形态", () => {
+  it("改写范围 = 行内链接 + 引用式定义（R014）", () => {
     expect(REWRITE_SUPPORTED_FORMS).toEqual([
       "[text](href)",
       "![alt](src)",
+      "[text][id] + [id]: dest",
+      "[text][] + [text]: dest",
     ]);
   });
 
