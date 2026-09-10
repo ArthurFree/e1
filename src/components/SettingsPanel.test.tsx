@@ -567,14 +567,12 @@ describe("SettingsPanel 版本与更新（R009 Stage 6）", () => {
     });
   });
 
-  it("available + 不可自动安装（macOS 未签名降级）：显示「前往下载」", async () => {
+  it("available + 不可自动安装：显示「前往下载」", async () => {
     const update = renderWithUpdate({
       ...AVAILABLE_AUTO,
       canAutoInstall: false,
     });
-    fireEvent.click(
-      await screen.findByRole("button", { name: "前往下载" }),
-    );
+    fireEvent.click(await screen.findByRole("button", { name: "前往下载" }));
     await vi.waitFor(() => {
       expect(update.service.openReleasePage).toHaveBeenCalledTimes(1);
     });
@@ -587,9 +585,7 @@ describe("SettingsPanel 版本与更新（R009 Stage 6）", () => {
       state: "downloaded",
       progressPercent: 100,
     });
-    fireEvent.click(
-      await screen.findByRole("button", { name: "重启安装" }),
-    );
+    fireEvent.click(await screen.findByRole("button", { name: "重启安装" }));
     await vi.waitFor(() => {
       expect(update.service.install).toHaveBeenCalledTimes(1);
     });

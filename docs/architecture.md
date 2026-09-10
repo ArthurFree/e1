@@ -19,6 +19,8 @@
 11. [architecture/link-index.md](./architecture/link-index.md)：链接索引（R010）——链接语义冻结、双提取器、SQLite 共库、增量 Reconciliation、Backlinks/失效链接 UI 门控。
 12. [architecture/file-operations.md](./architecture/file-operations.md)：Desktop 文件操作 v2（R011）——plan/preflight/journaled execute、源码级链接改写、crash recovery、显式索引 reconcile。
 13. [architecture/revision-history.md](./architecture/revision-history.md)：版本历史（R012）——REV-01~04 不变量、`.e1/revisions/` 存储结构、series identity、SHA-256 去重、retention、RevisionRepository summary + lazy get、revision IPC 七通道与 Safe Restore（Stage 0–6 已落地，Desktop 实现已真实）。
+14. [architecture/macos-distribution-trust.md](./architecture/macos-distribution-trust.md)：macOS 分发信任（R013）——Developer ID / Hardened Runtime / 公证 / stapling / Gatekeeper、本地 unsigned 与正式 Release 分离、凭证与验证脚本。
+15. [architecture/desktop-update-path.md](./architecture/desktop-update-path.md)：Desktop 自动更新（R009/R013）——electron-updater 状态机、darwin 仅已签名才 `canAutoInstall`、DIST-07、signed zip feed。
 
 ## 决策记录
 

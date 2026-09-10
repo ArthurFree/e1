@@ -3,6 +3,7 @@
  * CI 上缺产物必须失败（避免假绿）。
  */
 import { existsSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "@playwright/test";
@@ -54,4 +55,49 @@ export function requirePackagedArtifact(): void {
     throw new Error(message);
   }
   test.skip(true, message);
+}
+
+/** 打包 app bundle 路径（macOS arm64）。 */
+export function resolvePackagedAppBundle(): string | null {
+  const executable = resolvePackagedExecutable();
+  if (!executable) return null;
+  return executable.replace(/\/Contents\/MacOS\/E1$/, "");
+}
+
+export function requireSignedMode(): boolean {
+  return (
+    process.env.E1_REQUIRE_SIGNED === "1" ||
+    process.env.E1_RELEASE_SIGNING === "1"
+  );
+}
+
+/**
+ * R013：P21+ 需要 signed / notarized 产物。
+ * 正式 Release（E1_REQUIRE_SIGNED）缺签名直接失败；
+ * 本地 unsigned QA 跳过，不阻断 P01–P20。
+ */
+export function requireSignedPackagedArtifact(): void {
+  requirePackagedArtifact();
+  if (process.platform !== "darwin") {
+    const message = "签名校验仅 macOS arm64";
+    if (requireSignedMode()) throw new Error(message);
+    test.skip(true, message);
+    return;
+  }
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  const result = spawnSync(
+    process.execPath,
+    [path.join(root, "scripts/verifyMacSigning.mjs")],
+    { encoding: "utf8", cwd: root, env: { ...process.env } },
+  );
+  const output = `${result.stdout}\n${result.stderr}`;
+  if (requireSignedMode()) {
+    if (result.status !== 0) {
+      throw new Error(`正式 Release 要求已签名产物：${output.trim()}`);
+    }
+    return;
+  }
+  if (result.status !== 0 || /^\s*skip:/m.test(output)) {
+    test.skip(true, "本地 unsigned 产物，P21+ 仅在 signed Release 上强制");
+  }
 }

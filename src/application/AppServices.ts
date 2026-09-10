@@ -213,8 +213,8 @@ export interface AppServices {
    * 应用更新服务（可选，R009 Stage 6 Auto Update）：由具备自更新能力的
    * 运行时装配（Desktop，electron-updater + GitHub Releases feed）；
    * Web/内存容器不装配本字段，UI 以 `services.update` 存在性门控
-   * 「检查更新」入口（DUAL-01）；macOS 未签名降级等平台分流由 Main 侧
-   * 完成，Renderer 只消费 UpdateStatus.canAutoInstall。
+   * 「检查更新」入口（DUAL-01）；是否自动安装由 Main 侧
+   * UpdateStatus.canAutoInstall 表达，Renderer 不判断平台名。
    */
   update?: UpdateService;
   /**

@@ -22,6 +22,12 @@
 - 为每个稳定状态保存中文截图基线；比较布局区域、颜色与像素差，并对动态光标、时间和随机 ID 做屏蔽。
 - 在 1024px、768px 和 375px 额外运行可用性冒烟测试，检查侧栏、编辑区和浮层不溢出。
 
+## macOS 分发信任（R013）
+
+- 策略单测：`scripts/macTrustPolicy.test.mjs`（预检 yes/no、codesign 解析、entitlement 白名单、本地/Release builder 分流）。
+- 真机脚本：`verify:mac-signing` / `verify:mac-entitlements` / `verify:mac-distribution`（正式 Release 强制；本地 unsigned skip）。
+- 安装包 E2E：P01–P20 在 signed 产物上回归；P21–P24 锁定身份/运行时/公证/safeStorage；P25–P26 在无更新 feed 时断言 `canAutoInstall` 与重启保持。
+
 ## 发布前验收
 
 - 新浏览器配置下不联网即可创建并保存笔记。

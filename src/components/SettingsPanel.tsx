@@ -447,9 +447,9 @@ export function SettingsPanel() {
         )}
       </div>
 
-      {/* R009 Stage 6（Auto Update）：版本与更新——仅 Desktop 装配
-          services.update；macOS 未签名期间 canAutoInstall=false，
-          降级为「前往下载」手动链路（平台分流在 Main 侧完成）。 */}
+      {/* R009 Stage 6 / R013 Stage 5：版本与更新——仅 Desktop 装配
+          services.update；canAutoInstall 由 Main 决定，true 走下载/
+          重启安装，false 降级「前往下载」。 */}
       {services.update && updateStatus && (
         <div className="settings-panel__section">
           <span className="settings-panel__label">版本与更新</span>

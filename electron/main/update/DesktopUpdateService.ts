@@ -5,12 +5,11 @@
  * → electron-updater 检查/下载 → 用户确认安装（autoDownload=false，
  * autoInstallOnAppQuit=true，install 显式 quitAndInstall）。
  *
- * 平台分流（R009 §Stage 6 决策）：
- * - Windows NSIS 未签名亦可自动更新 → canAutoInstall=true；
- * - macOS Squirrel.Mac 拒绝替换未签名应用（签名迁移 R013）→
- *   canAutoInstall=false，download 为 no-op，UI 降级为「前往下载」手动链路。
- *   R013 签名落地后把 darwin 分支翻 true（win32 分支为恢复 Windows 时的
- *   未来能力，MAC-01 下不在验证范围）。
+ * 平台分流（R013 Stage 5）：
+ * - macOS：仅 codeSigned=true（Developer ID + Hardened Runtime）才
+ *   canAutoInstall=true；本地 unsigned 包降级「前往下载」；
+ * - win32 分支保留为恢复 Windows 时的未来能力（MAC-01 下不在验证范围）。
+ * Linux 等其它平台 canAutoInstall=false，download 为 no-op。
  *
  * 安全约束：所有 electron/OS 依赖经构造注入（单测不 mock 模块）；
  * error 事件只沉淀为 status.state="error"，事件回调永不 throw——
@@ -22,13 +21,22 @@ import type { UpdateStatus } from "../../../shared/ipc/contracts.js";
 export interface AutoUpdaterLike {
   autoDownload: boolean;
   autoInstallOnAppQuit: boolean;
-  on(event: "update-available", listener: (info: { version: string }) => void): unknown;
-  on(event: "update-not-available", listener: (info: { version: string }) => void): unknown;
+  on(
+    event: "update-available",
+    listener: (info: { version: string }) => void,
+  ): unknown;
+  on(
+    event: "update-not-available",
+    listener: (info: { version: string }) => void,
+  ): unknown;
   on(
     event: "download-progress",
     listener: (progress: { percent: number }) => void,
   ): unknown;
-  on(event: "update-downloaded", listener: (info: { version: string }) => void): unknown;
+  on(
+    event: "update-downloaded",
+    listener: (info: { version: string }) => void,
+  ): unknown;
   on(event: "error", listener: (error: Error) => void): unknown;
   checkForUpdates(): Promise<{ updateInfo?: { version?: string } } | null>;
   downloadUpdate(): Promise<unknown>;
@@ -53,6 +61,20 @@ export interface DesktopUpdateServiceDeps {
   /** E1_UPDATE_FEED_URL：手动 QA 用本地静态服务器演练完整链路。 */
   feedUrlOverride?: string;
   releasePageUrl?: string;
+  /**
+   * 当前包是否为 Developer ID + Hardened Runtime（darwin 由装配根探测）。
+   * darwin 必须为 true 才打开自动安装；win32 仍为未来能力。
+   */
+  codeSigned?: boolean;
+}
+
+export function resolveCanAutoInstall(deps: {
+  platform: NodeJS.Platform;
+  codeSigned?: boolean;
+}): boolean {
+  if (deps.platform === "win32") return true;
+  if (deps.platform === "darwin") return deps.codeSigned === true;
+  return false;
 }
 
 const DEFAULT_RELEASE_PAGE_URL = "https://github.com/ArthurFree/e1/releases";
@@ -69,14 +91,15 @@ export class DesktopUpdateService {
     this.status = {
       state: deps.isPackaged ? "idle" : "unsupported",
       currentVersion: deps.currentVersion,
-      // macOS 未签名期间降级手动下载（R013 签名后 darwin 翻 true）。
-      canAutoInstall: deps.platform === "win32",
+      canAutoInstall: resolveCanAutoInstall(deps),
       releasePageUrl: deps.releasePageUrl ?? DEFAULT_RELEASE_PAGE_URL,
     };
 
     if (!deps.isPackaged) return;
     if (!deps.autoUpdater) {
-      throw new Error("DesktopUpdateService: isPackaged 环境必须注入 autoUpdater");
+      throw new Error(
+        "DesktopUpdateService: isPackaged 环境必须注入 autoUpdater",
+      );
     }
     const updater = deps.autoUpdater;
     this.updater = updater;
@@ -149,7 +172,7 @@ export class DesktopUpdateService {
   }
 
   async download(): Promise<UpdateStatus> {
-    // canAutoInstall=false（macOS 未签名降级）为 no-op：UI 改走 openReleasePage。
+    // canAutoInstall=false（非 darwin/win32）为 no-op：UI 改走 openReleasePage。
     if (!this.updater || !this.status.canAutoInstall) {
       return this.getState();
     }

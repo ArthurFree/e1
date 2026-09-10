@@ -24,7 +24,8 @@
  * 查询/重建/增量维护通道（索引是 derived data，R8-03）。
  * R009 Stage 6（Auto Update）：update.* 组与 events:updateStatus——
  * electron-updater（GitHub Releases feed）的检查/下载/安装与状态推送；
- * macOS 未签名期间 canAutoInstall=false 降级为手动下载（R013 签名后翻 true）。
+ * macOS 运行时探测到 Developer ID + Hardened Runtime 后
+ * canAutoInstall=true，走应用内下载/安装；本地 unsigned 包为 false。
  * R010 Stage 3：link.* 组——派生链接索引（与搜索共库单连接，LINK-03）
  * 的 outgoing/backlinks/broken/rebuild/upsert/remove/relocate/status。
  * R012 Stage 2：revision.* 组——Desktop 版本历史（.e1/revisions/
@@ -1077,10 +1078,9 @@ export interface UpdateStatus {
   /** downloading 时的进度（0–100）。 */
   progressPercent?: number;
   /**
-   * 是否支持自动下载安装：macOS 未签名期间为 false（Squirrel.Mac 拒绝替换
-   * 未签名应用），UI 降级为「前往下载」手动链路；R013 签名落地后 darwin
-   * 翻 true。win32（NSIS 未签名亦可）为 true，属恢复 Windows 时的未来能力
-   *（MAC-01 下不在验证范围）。
+   * 是否支持自动下载安装：darwin 仅在运行时探测到 Developer ID +
+   * Hardened Runtime 时为 true；本地 unsigned 包为 false。
+   * win32 为 true，属恢复 Windows 时的未来能力（MAC-01 下不在验证范围）。
    */
   canAutoInstall: boolean;
   /** 手动下载入口（GitHub Releases 页）。 */
@@ -1339,8 +1339,8 @@ export interface E1DesktopAPI {
     /** 检查更新（触网）；结果即最新状态。 */
     check(): Promise<UpdateStatus>;
     /**
-     * 下载已发现的更新；canAutoInstall=false（macOS 未签名降级）时为
-     * no-op（返回当前状态），UI 应改走 openReleasePage。
+     * 下载已发现的更新；canAutoInstall=false 时为 no-op（返回当前状态），
+     * UI 应改走 openReleasePage。
      */
     download(): Promise<UpdateStatus>;
     /** 退出并安装已下载的更新（仅 state=downloaded 有意义）。 */

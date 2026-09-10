@@ -2,7 +2,7 @@
 
 一个独立的本地优先笔记应用：Web 端开箱即用，桌面端（Electron）以本地 Markdown 目录为真实数据源，提供知识库、页面树和块编辑能力。面向简体中文个人用户。
 
-**当前状态：R001–R009 全部完成（R009 于 2026-08-30 收口关闭，Stage 4 签名迁移 R013）——远端 CI 全绿、产品身份冻结（E1 / com.e1.notes）、userData 迁移、electron-builder 打包（macOS 单平台，MAC-01）、安装包级 E2E（P01–P09）、tag 触发 Release 流水线、Auto Update（electron-updater + GitHub Releases）。首版发布为未签名包（无证书，签名通道已预留）。**
+**当前状态：R001–R012 已完成；R013（macOS Signing & Trust）Stage 0–6 已落地——正式 `v*` Release 强制 Developer ID 签名、Hardened Runtime、公证与 stapling，缺证书即失败；本地 `dist:mac` 仍允许 unsigned QA。Stage 7 第一份真实 GitHub Release 待仓库配置签名 secrets 后由维护者打 tag。**
 
 ## 功能
 
@@ -20,15 +20,13 @@
 
 从 [GitHub Releases](https://github.com/ArthurFree/e1/releases) 下载最新版本：`E1-x.y.z-arm64.dmg`（或 zip）。
 
-**当前版本未做代码签名**（签名与公证迁移至 R013，无证书）：
-
-- macOS 首次打开会提示「无法验证开发者」——在「系统设置 → 隐私与安全性」中允许，或右键应用选择「打开」。
+正式 GitHub Release 为 **Developer ID 签名 + 公证** 的 DMG/ZIP。从浏览器下载后首次打开应被 Gatekeeper 接受（source = Notarized Developer ID）。本地自行 `dist:mac` 的产物默认未签名，仅供开发 QA。
 
 校验完整性：对照 Release 中的 `SHA256SUMS.txt`。
 
 ### 自动更新
 
-macOS 未签名期间为「检查更新 + 提示新版本 + 引导回 Release 页手动下载」（设置 → 版本与更新）；签名接入后自动升级为应用内「下载 → 确认 → 重启安装」。
+安装包内：设置 → 版本与更新 → 检查更新 → 下载 → 重启安装。更新失败不影响当前版本与本地 Vault。
 
 ## 运行
 
@@ -62,10 +60,11 @@ npm run build:desktop    # Web 构建 + Electron 主进程/预加载（dist-elec
 npm run test:desktop     # 桌面侧单元测试（IPC 契约/preload/平台适配）
 npm run test:e2e:desktop # Electron 全套冒烟（需先 build:desktop）
 npm run test:e2e:desktop:golden # 黄金路径子集（打开 Vault / 保存重启 / 附件重启；进 CI）
-npm run package:desktop  # 打包快速校验（electron-builder --dir）
-npm run dist:mac         # 产出 DMG/ZIP 安装包（release/，未签名）
+npm run package:desktop  # 打包快速校验（本地 unsigned --dir）
+npm run dist:mac         # 产出 DMG/ZIP（本地默认 unsigned；Release 设 E1_RELEASE_SIGNING=1 则签名+公证）
 npm run dist:win         # （保留为未来能力，当前不验证）产出 Windows NSIS 安装包
-npm run test:e2e:package # 安装包级 E2E（直起打包产物，需先 dist:mac）
+npm run test:e2e:package # 安装包级 E2E（直起打包产物，需先 dist:mac；P21–P26 在 unsigned 上 skip）
+npm run signing:preflight / verify:mac-signing / verify:mac-entitlements / verify:mac-distribution
 ```
 
 Playwright 浏览器二进制安装在项目内（`PLAYWRIGHT_BROWSERS_PATH=0`），首次运行 `test:e2e` 前如缺浏览器，执行 `PLAYWRIGHT_BROWSERS_PATH=0 npx playwright install chromium`。

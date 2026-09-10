@@ -3,7 +3,8 @@
  * R009 Stage 6（Auto Update）：DesktopUpdateService 状态机测试。
  * autoUpdater 全注入 fake（事件发射器 + vi.fn），不 mock electron 模块；
  * 覆盖：未打包 unsupported 不触网、check 全状态迁移、进度转发、
- * canAutoInstall=false（macOS 未签名降级）download 为 no-op、
+ * canAutoInstall=true（macOS 已签名）download 走 updater、
+ * 其它平台 canAutoInstall=false 时 download 为 no-op、
  * error 事件沉淀为 error 状态且不 throw、feedUrlOverride 接线。
  */
 import { describe, expect, it, vi } from "vitest";
@@ -42,9 +43,7 @@ function createFakeAutoUpdater() {
   return fake;
 }
 
-function createService(
-  overrides: Partial<DesktopUpdateServiceDeps> = {},
-) {
+function createService(overrides: Partial<DesktopUpdateServiceDeps> = {}) {
   const emitted: UpdateStatus[] = [];
   const autoUpdater = createFakeAutoUpdater();
   const openExternal = vi.fn(async () => {});
@@ -161,8 +160,36 @@ describe("DesktopUpdateService（R009 Stage 6）", () => {
     expect(autoUpdater.quitAndInstall).toHaveBeenCalledTimes(1);
   });
 
-  it("canAutoInstall=false（macOS 未签名降级）：download 为 no-op", async () => {
-    const { service, autoUpdater } = createService({ platform: "darwin" });
+  it("canAutoInstall=true（macOS 已签名）：download 走 updater", async () => {
+    const { service, autoUpdater } = createService({
+      platform: "darwin",
+      codeSigned: true,
+    });
+    expect(service.getState().canAutoInstall).toBe(true);
+    autoUpdater.emit("update-available", { version: "0.2.0" });
+    autoUpdater.downloadUpdate.mockImplementation(async () => {
+      autoUpdater.emit("update-downloaded", { version: "0.2.0" });
+      return [];
+    });
+    const status = await service.download();
+    expect(status.state).toBe("downloaded");
+    expect(autoUpdater.downloadUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it("canAutoInstall=false（darwin 未签名）：download 为 no-op", async () => {
+    const { service, autoUpdater } = createService({
+      platform: "darwin",
+      codeSigned: false,
+    });
+    expect(service.getState().canAutoInstall).toBe(false);
+    autoUpdater.emit("update-available", { version: "0.2.0" });
+    const status = await service.download();
+    expect(status.state).toBe("available");
+    expect(autoUpdater.downloadUpdate).not.toHaveBeenCalled();
+  });
+
+  it("canAutoInstall=false（非 darwin/win32）：download 为 no-op", async () => {
+    const { service, autoUpdater } = createService({ platform: "linux" });
     expect(service.getState().canAutoInstall).toBe(false);
     autoUpdater.emit("update-available", { version: "0.2.0" });
     const status = await service.download();

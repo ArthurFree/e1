@@ -6,7 +6,7 @@
  * GitHub Releases feed）；Web/内存容器不装配。UI 一律以
  * `services.update` 存在性门控（DUAL-01：不判断平台名称）——平台分流
  *（macOS 未签名降级手动下载）由 Main 侧完成，Renderer 只消费
- * UpdateStatus.canAutoInstall。
+ * UpdateStatus.canAutoInstall（darwin 仅已签名公证包为 true）。
  *
  * 线格式与 shared/ipc/contracts 的 UpdateStatus 同构（wire 契约），
  * 本文件是 application/components 消费的平台无关视图（同

@@ -8,5 +8,10 @@ playwright-report/
 *.local
 .DS_Store
 
+# R013：签名 / 公证材料永不入库
+*.p12
+*.p8
+AuthKey.p8
+
 # R008 搜索 benchmark 生成产物（fixtures/search/generator.mjs 按需生成，不提交）
 fixtures/search/generated/

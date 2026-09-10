@@ -86,6 +86,20 @@ export function launchPackaged(
     env: (() => {
       const rest = { ...process.env };
       delete rest.ELECTRON_RUN_AS_NODE;
+      for (const key of [
+        "MAC_CERT_P12_BASE64",
+        "MAC_CERT_PASSWORD",
+        "APPLE_API_KEY",
+        "APPLE_API_KEY_ID",
+        "APPLE_API_ISSUER",
+        "CSC_LINK",
+        "CSC_KEY_PASSWORD",
+        "CSC_NAME",
+        "E1_SIGNING_KEYCHAIN",
+        "E1_SIGNING_KEYCHAIN_PASSWORD",
+      ]) {
+        delete rest[key];
+      }
       return {
         ...rest,
         E1_USER_DATA_DIR: userDataDir,

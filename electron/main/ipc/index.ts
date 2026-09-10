@@ -74,6 +74,7 @@ import {
   DesktopUpdateService,
   type AutoUpdaterLike,
 } from "../update/DesktopUpdateService.js";
+import { detectDarwinDeveloperIdSigned } from "../update/detectMacCodeSignature.js";
 import { registerUpdateHandlers } from "./update.js";
 import type { IpcMainLike } from "./handler.js";
 import type { OpenDialogLike } from "./vault.js";
@@ -118,6 +119,8 @@ export interface RegisterIpcHandlersDeps {
   openExternal?: (url: string) => Promise<void>;
   /** R009 Stage 6：E1_UPDATE_FEED_URL 手动 QA 覆盖（main.ts 注入）。 */
   updateFeedUrlOverride?: string;
+  /** R013：测试注入；缺省对 darwin 打包 app 做 codesign 探测。 */
+  codeSigned?: boolean;
 }
 
 /** registerIpcHandlers 返回值：vault 根解析依赖 + watcher / update 句柄。 */
@@ -215,6 +218,11 @@ export function registerIpcHandlers(
     emit: deps.broadcastUpdateStatus ?? broadcastUpdateStatusToAllWindows,
     openExternal: deps.openExternal ?? ((url) => shell.openExternal(url)),
     feedUrlOverride: deps.updateFeedUrlOverride,
+    codeSigned:
+      deps.codeSigned ??
+      (app.isPackaged && deps.updateAutoUpdater !== undefined
+        ? detectDarwinDeveloperIdSigned(app.getPath("exe"))
+        : false),
   });
   registerUpdateHandlers(bus, { service: update });
   return { registry, transients, watchers, update };
