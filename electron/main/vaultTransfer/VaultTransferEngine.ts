@@ -4,10 +4,11 @@
  */
 import { createHash, randomUUID } from "node:crypto";
 import {
-  copyFile,
   mkdir,
   readFile,
   readdir,
+  rename,
+  rm,
   writeFile,
 } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -21,6 +22,11 @@ import {
   splitFrontmatter,
 } from "../../../shared/markdown/frontmatter.js";
 import { classifyBoundaryLink } from "../../../shared/vaultTransfer/boundary.js";
+import {
+  VAULT_TRANSFER_JOURNAL_VERSION,
+  type VaultCopyMoveJournal,
+  type VaultCopyMovePhase,
+} from "../../../shared/vaultTransfer/journal.js";
 import type {
   VaultTransferAssetPlan,
   VaultTransferIssue,
@@ -38,7 +44,13 @@ import {
 } from "../revisions/DesktopRevisionStore.js";
 import { seriesIdForStableNoteId } from "../revisions/DesktopRevisionIdentity.js";
 import { resolveVaultRoot, type VaultRootDeps } from "../vaultRoots.js";
-import { copyDirectoryContents, pathExists } from "./walkHash.js";
+import {
+  copyDirectoryContents,
+  copyFileExclusive,
+  pathExists,
+  verifyCopiedTrees,
+  walkHashedFiles,
+} from "./walkHash.js";
 import { emptyTransferPlan } from "./VaultRelocationEngine.js";
 
 function posixJoin(...parts: string[]): string {
@@ -98,6 +110,139 @@ function replaceFrontmatterId(markdown: string, newId: string): string {
 async function fileSha256(abs: string): Promise<string> {
   const bytes = await readFile(abs);
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+function fingerprintSnapshot(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+async function seriesFingerprint(seriesDir: string): Promise<string | null> {
+  if (!(await pathExists(seriesDir))) return null;
+  const files = await walkHashedFiles(seriesDir);
+  return files
+    .map((f) => `${f.relativePath}:${f.sha256}`)
+    .sort()
+    .join("|");
+}
+
+async function destinationSnapshotFingerprint(input: {
+  destRoot: string;
+  notes: VaultTransferNotePlan[];
+  directories: Array<{ destinationPath: string }>;
+  assets: VaultTransferAssetPlan[];
+  revisions: Array<{ destinationSeriesId: string }>;
+  destScanNoteIds: Array<{ relativePath: string; noteId: string | null }>;
+  destSeriesRoot: string;
+}): Promise<string> {
+  const notes = [];
+  for (const n of input.notes) {
+    const abs = join(input.destRoot, ...n.destinationPath.split("/").filter(Boolean));
+    const exists = await pathExists(abs);
+    let stableNoteId: string | null = null;
+    let sha256: string | null = null;
+    if (exists) {
+      try {
+        const raw = await readFile(abs);
+        sha256 = createHash("sha256").update(raw).digest("hex");
+        stableNoteId = splitFrontmatter(raw.toString("utf8")).metadata.id ?? null;
+      } catch {
+        sha256 = null;
+      }
+    }
+    notes.push({
+      relativePath: n.destinationPath,
+      exists,
+      stableNoteId,
+      sha256,
+    });
+  }
+  const assets = [];
+  for (const a of input.assets) {
+    const abs = join(input.destRoot, ...a.destinationPath.split("/").filter(Boolean));
+    const exists = await pathExists(abs);
+    let sha256: string | null = null;
+    if (exists) {
+      try {
+        sha256 = await fileSha256(abs);
+      } catch {
+        sha256 = null;
+      }
+    }
+    assets.push({ relativePath: a.destinationPath, exists, sha256 });
+  }
+  const revisions = [];
+  for (const r of input.revisions) {
+    const abs = seriesDirPath(input.destSeriesRoot, r.destinationSeriesId);
+    const exists = await pathExists(abs);
+    revisions.push({
+      seriesId: r.destinationSeriesId,
+      exists,
+      fingerprint: exists ? await seriesFingerprint(abs) : null,
+    });
+  }
+  const directories = [];
+  for (const d of input.directories) {
+    if (!d.destinationPath) continue;
+    directories.push({
+      relativePath: d.destinationPath,
+      exists: await pathExists(
+        join(input.destRoot, ...d.destinationPath.split("/").filter(Boolean)),
+      ),
+    });
+  }
+  const sourceIds = new Set(
+    input.notes
+      .map((n) => n.sourceStableId)
+      .filter((id): id is string => typeof id === "string" && id.length > 0),
+  );
+  const identities = input.destScanNoteIds
+    .filter((e) => e.noteId && sourceIds.has(e.noteId))
+    .map((e) => ({ stableNoteId: e.noteId!, relativePath: e.relativePath }))
+    .sort(
+      (a, b) =>
+        a.stableNoteId.localeCompare(b.stableNoteId) ||
+        a.relativePath.localeCompare(b.relativePath),
+    );
+  notes.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+  assets.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+  revisions.sort((a, b) => a.seriesId.localeCompare(b.seriesId));
+  directories.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+  return fingerprintSnapshot({
+    notes,
+    assets,
+    revisions,
+    directories,
+    identities,
+  });
+}
+
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
+export function transferJournalDir(userDataDir: string): string {
+  return join(userDataDir, "vault-transfers");
+}
+
+async function writeTransferJournal(
+  journalDir: string,
+  journal: VaultCopyMoveJournal,
+): Promise<void> {
+  await mkdir(journalDir, { recursive: true });
+  const file = join(journalDir, `${journal.operationId}.json`);
+  const tmp = `${file}.tmp`;
+  await writeFile(tmp, `${JSON.stringify(journal, null, 2)}\n`, "utf8");
+  await rename(tmp, file);
+}
+
+async function persistTransferPhase(
+  journalDir: string,
+  journal: VaultCopyMoveJournal,
+  phase: VaultCopyMovePhase,
+): Promise<VaultCopyMoveJournal> {
+  const next = { ...journal, phase, updatedAt: nowIso() };
+  await writeTransferJournal(journalDir, next);
+  return next;
 }
 
 export async function planCrossVaultTransfer(input: {
@@ -351,6 +496,48 @@ export async function planCrossVaultTransfer(input: {
         .filter((r) => r.sourceSeriesId && r.destinationSeriesId)
     : [];
 
+  if (isMove) {
+    const destById = new Map<string, string>();
+    for (const entry of destScan.entries) {
+      if (entry.kind !== "document" || !entry.noteId) continue;
+      destById.set(entry.noteId, entry.relativePath);
+    }
+    for (const note of notes) {
+      if (!note.sourceStableId) continue;
+      const destPath = destById.get(note.sourceStableId);
+      if (!destPath) continue;
+      blockers.push({
+        code: CODES.identityCollision,
+        message: `目标知识库已存在具有相同内部身份的文档。源：${note.sourcePath}；目标：${destPath}；Stable ID：${note.sourceStableId}`,
+        relativePath: note.sourcePath,
+      });
+    }
+    const destSeriesRoot = await resolveRevisionSeriesRoot(destRoot.absolutePath);
+    for (const rev of revisions) {
+      const destSeries = seriesDirPath(destSeriesRoot, rev.destinationSeriesId);
+      if (await pathExists(destSeries)) {
+        blockers.push({
+          code: CODES.revisionCollision,
+          message: `目标知识库已存在相同版本历史（${rev.destinationSeriesId}），拒绝合并或覆盖。`,
+          relativePath: rev.destinationSeriesId,
+        });
+      }
+    }
+  }
+
+  const destSeriesRoot = await resolveRevisionSeriesRoot(destRoot.absolutePath);
+  const destinationFingerprint = await destinationSnapshotFingerprint({
+    destRoot: destRoot.absolutePath,
+    notes,
+    directories,
+    assets,
+    revisions,
+    destScanNoteIds: destScan.entries
+      .filter((e) => e.kind === "document")
+      .map((e) => ({ relativePath: e.relativePath, noteId: e.noteId })),
+    destSeriesRoot,
+  });
+
   return emptyTransferPlan({
     operationId,
     kind: input.kind,
@@ -366,18 +553,14 @@ export async function planCrossVaultTransfer(input: {
     blockers,
     warnings,
     sourceFingerprint: sourceFingerprintParts.sort().join("|"),
-    destinationFingerprint: [
-      ...directories.map((d) => d.destinationPath),
-      ...notes.map((n) => n.destinationPath),
-    ]
-      .sort()
-      .join("|"),
+    destinationFingerprint,
   });
 }
 
 export async function executeCrossVaultTransfer(input: {
   plan: VaultTransferPlan;
   roots: VaultRootDeps;
+  journalDir?: string;
 }): Promise<VaultTransferResult> {
   const plan = input.plan;
   if (plan.blockers.length > 0) {
@@ -419,11 +602,15 @@ export async function executeCrossVaultTransfer(input: {
       "目标知识库在预检后已变化，请重新计划。",
     );
   }
-  if (replay.blockers.some((b) => b.code === CODES.collision)) {
-    throw new IpcFailure(
-      "VAULT_TRANSFER_STALE_PLAN",
-      "目标路径在预检后已被占用，请重新计划。",
-    );
+  if (replay.blockers.length > 0) {
+    const first = replay.blockers[0]!;
+    const code =
+      first.code === CODES.identityCollision
+        ? "VAULT_TRANSFER_IDENTITY_COLLISION"
+        : first.code === CODES.revisionCollision
+          ? "VAULT_TRANSFER_REVISION_COLLISION"
+          : "VAULT_TRANSFER_STALE_PLAN";
+    throw new IpcFailure(code, first.message);
   }
 
   const sourceRoot = await resolveVaultRoot(plan.sourceVaultId, input.roots);
@@ -434,104 +621,229 @@ export async function executeCrossVaultTransfer(input: {
     fromRelativePath: n.sourcePath,
     toRelativePath: n.destinationPath,
   }));
-  const idBySource = new Map(
-    plan.notes.map((n) => [n.sourcePath, n.destinationStableId]),
-  );
 
-  for (const dir of plan.directories) {
-    const destDir = join(
-      destRoot.absolutePath,
-      ...dir.destinationPath.split("/").filter(Boolean),
+  let journal: VaultCopyMoveJournal | null = null;
+  if (input.journalDir) {
+    const createdAt = nowIso();
+    journal = {
+      version: VAULT_TRANSFER_JOURNAL_VERSION,
+      operationId: plan.operationId,
+      kind,
+      sourceVaultId: plan.sourceVaultId,
+      destinationVaultId: destVaultId,
+      sourceRelativePath: plan.sourceRelativePath ?? "",
+      phase: "prepared",
+      destinationNotePaths: plan.notes.map((n) => n.destinationPath),
+      destinationAssetPaths: plan.assets
+        .filter((a) => !a.reuseExisting)
+        .map((a) => a.destinationPath),
+      destinationRevisionSeries: plan.revisions.map((r) => r.destinationSeriesId),
+      createdAt,
+      updatedAt: createdAt,
+    };
+    await writeTransferJournal(input.journalDir, journal);
+    journal = await persistTransferPhase(
+      input.journalDir,
+      journal,
+      "destination-writing",
     );
-    if (dir.destinationPath) {
-      await mkdir(destDir, { recursive: true });
-    }
   }
 
-  for (const asset of plan.assets) {
-    if (asset.reuseExisting) continue;
-    const from = join(sourceRoot.absolutePath, ...asset.sourcePath.split("/"));
-    const to = join(destRoot.absolutePath, ...asset.destinationPath.split("/"));
-    await mkdir(dirname(to), { recursive: true });
-    await copyFile(from, to);
-  }
-
-  for (const note of plan.notes) {
-    const destDir = join(
-      destRoot.absolutePath,
-      ...parentPosix(note.destinationPath).split("/").filter(Boolean),
-    );
-    if (parentPosix(note.destinationPath)) {
-      await mkdir(destDir, { recursive: true });
-    }
-    const from = join(sourceRoot.absolutePath, ...note.sourcePath.split("/"));
-    let markdown = await readFile(from, "utf8");
-    if (isCopy) {
-      markdown = replaceFrontmatterId(markdown, note.destinationStableId);
-    }
-    const rules: Array<{ oldHref: string; newHref: string }> = [];
-    for (const link of extractMarkdownLinks(markdown, note.sourcePath)) {
-      const kindLink = classifyLinkHref(link.href).kind;
-      const target = resolveLinkPath(note.sourcePath, link.href);
-      if (!target) continue;
-      if (kindLink === "internal") {
-        const mapped = pathMoves.find((m) => m.fromRelativePath === target);
-        if (!mapped) continue;
-        const relocated = relocateHref({
-          sourcePathBefore: note.sourcePath,
-          targetPathBefore: target,
-          sourcePathAfter: note.destinationPath,
-          targetPathAfter: mapped.toRelativePath,
-          oldHref: link.href,
-        });
-        if (relocated.changed) {
-          rules.push({ oldHref: link.href, newHref: relocated.newHref });
-        }
-      }
-      if (kindLink === "asset") {
-        const mapped = plan.assets.find((a) => a.sourcePath === target);
-        if (!mapped) continue;
-        const relocated = relocateHref({
-          sourcePathBefore: note.sourcePath,
-          targetPathBefore: target,
-          sourcePathAfter: note.destinationPath,
-          targetPathAfter: mapped.destinationPath,
-          oldHref: link.href,
-        });
-        if (relocated.changed) {
-          rules.push({ oldHref: link.href, newHref: relocated.newHref });
-        }
-      }
-    }
-    if (rules.length > 0) {
-      markdown = rewriteMarkdownLinkDestinations(markdown, rules).markdown;
-    }
-    const to = join(destRoot.absolutePath, ...note.destinationPath.split("/"));
-    await mkdir(dirname(to), { recursive: true });
-    await writeFile(to, markdown, { encoding: "utf8", flag: "wx" });
-    void idBySource;
-  }
-
-  if (isMove) {
-    for (const rev of plan.revisions) {
-      const srcSeriesRoot = await resolveRevisionSeriesRoot(
-        sourceRoot.absolutePath,
-      );
-      const destSeriesRoot = await resolveRevisionSeriesRoot(
+  try {
+    for (const dir of plan.directories) {
+      const destDir = join(
         destRoot.absolutePath,
+        ...dir.destinationPath.split("/").filter(Boolean),
       );
-      const from = seriesDirPath(srcSeriesRoot, rev.sourceSeriesId);
-      const to = seriesDirPath(destSeriesRoot, rev.destinationSeriesId);
-      if (await pathExists(from)) {
-        await copyDirectoryContents(from, to);
+      if (dir.destinationPath) {
+        await mkdir(destDir, { recursive: true });
       }
     }
-    const top = plan.sourceRelativePath ?? commonPrefix(plan.notes.map((n) => n.sourcePath));
-    await trashEntry({
-      vaultRoot: sourceRoot.absolutePath,
-      relativePath: top,
-      crossVaultMovedToVaultId: destVaultId,
-    });
+
+    for (const asset of plan.assets) {
+      const to = join(
+        destRoot.absolutePath,
+        ...asset.destinationPath.split("/").filter(Boolean),
+      );
+      if (asset.reuseExisting) {
+        if (!(await pathExists(to)) || (await fileSha256(to)) !== asset.sha256) {
+          throw new IpcFailure(
+            "VAULT_TRANSFER_STALE_PLAN",
+            `目标附件不再可复用：${asset.destinationPath}`,
+          );
+        }
+        continue;
+      }
+      const from = join(
+        sourceRoot.absolutePath,
+        ...asset.sourcePath.split("/").filter(Boolean),
+      );
+      await mkdir(dirname(to), { recursive: true });
+      try {
+        await copyFileExclusive(from, to);
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException | undefined)?.code;
+        if (code === "EEXIST") {
+          if ((await fileSha256(to)) === asset.sha256) continue;
+          throw new IpcFailure(
+            "VAULT_TRANSFER_STALE_PLAN",
+            `目标附件已被占用：${asset.destinationPath}`,
+          );
+        }
+        throw error;
+      }
+    }
+
+    for (const note of plan.notes) {
+      const destDir = join(
+        destRoot.absolutePath,
+        ...parentPosix(note.destinationPath).split("/").filter(Boolean),
+      );
+      if (parentPosix(note.destinationPath)) {
+        await mkdir(destDir, { recursive: true });
+      }
+      const from = join(
+        sourceRoot.absolutePath,
+        ...note.sourcePath.split("/").filter(Boolean),
+      );
+      let markdown = await readFile(from, "utf8");
+      if (isCopy) {
+        markdown = replaceFrontmatterId(markdown, note.destinationStableId);
+      }
+      const rules: Array<{ oldHref: string; newHref: string }> = [];
+      for (const link of extractMarkdownLinks(markdown, note.sourcePath)) {
+        const kindLink = classifyLinkHref(link.href).kind;
+        const target = resolveLinkPath(note.sourcePath, link.href);
+        if (!target) continue;
+        if (kindLink === "internal") {
+          const mapped = pathMoves.find((m) => m.fromRelativePath === target);
+          if (!mapped) continue;
+          const relocated = relocateHref({
+            sourcePathBefore: note.sourcePath,
+            targetPathBefore: target,
+            sourcePathAfter: note.destinationPath,
+            targetPathAfter: mapped.toRelativePath,
+            oldHref: link.href,
+          });
+          if (relocated.changed) {
+            rules.push({ oldHref: link.href, newHref: relocated.newHref });
+          }
+        }
+        if (kindLink === "asset") {
+          const mapped = plan.assets.find((a) => a.sourcePath === target);
+          if (!mapped) continue;
+          const relocated = relocateHref({
+            sourcePathBefore: note.sourcePath,
+            targetPathBefore: target,
+            sourcePathAfter: note.destinationPath,
+            targetPathAfter: mapped.destinationPath,
+            oldHref: link.href,
+          });
+          if (relocated.changed) {
+            rules.push({ oldHref: link.href, newHref: relocated.newHref });
+          }
+        }
+      }
+      if (rules.length > 0) {
+        markdown = rewriteMarkdownLinkDestinations(markdown, rules).markdown;
+      }
+      const to = join(
+        destRoot.absolutePath,
+        ...note.destinationPath.split("/").filter(Boolean),
+      );
+      await mkdir(dirname(to), { recursive: true });
+      await writeFile(to, markdown, { encoding: "utf8", flag: "wx" });
+    }
+
+    if (isMove) {
+      for (const rev of plan.revisions) {
+        const srcSeriesRoot = await resolveRevisionSeriesRoot(
+          sourceRoot.absolutePath,
+        );
+        const destSeriesRoot = await resolveRevisionSeriesRoot(
+          destRoot.absolutePath,
+        );
+        const from = seriesDirPath(srcSeriesRoot, rev.sourceSeriesId);
+        const to = seriesDirPath(destSeriesRoot, rev.destinationSeriesId);
+        if (!(await pathExists(from))) continue;
+        if (await pathExists(to)) {
+          throw new IpcFailure(
+            "VAULT_TRANSFER_REVISION_COLLISION",
+            `目标知识库已存在相同版本历史（${rev.destinationSeriesId}）。`,
+          );
+        }
+        const staging = `${to}.e1-rev-staging`;
+        await rm(staging, { recursive: true, force: true });
+        await mkdir(dirname(to), { recursive: true });
+        await copyDirectoryContents(from, staging);
+        const mismatches = verifyCopiedTrees(
+          await walkHashedFiles(from),
+          await walkHashedFiles(staging),
+        );
+        if (mismatches.length > 0) {
+          await rm(staging, { recursive: true, force: true });
+          throw new IpcFailure(
+            "VAULT_TRANSFER_PARTIAL_FAILURE",
+            `版本历史复制校验失败：${mismatches[0]}`,
+          );
+        }
+        try {
+          await rename(staging, to);
+        } catch (error) {
+          await rm(staging, { recursive: true, force: true });
+          throw error;
+        }
+      }
+    }
+
+    if (journal && input.journalDir) {
+      journal = await persistTransferPhase(
+        input.journalDir,
+        journal,
+        "destination-ready",
+      );
+    }
+
+    if (isMove) {
+      if (journal && input.journalDir) {
+        journal = await persistTransferPhase(
+          input.journalDir,
+          journal,
+          "source-trashing",
+        );
+      }
+      const top =
+        plan.sourceRelativePath ??
+        commonPrefix(plan.notes.map((n) => n.sourcePath));
+      await trashEntry({
+        vaultRoot: sourceRoot.absolutePath,
+        relativePath: top,
+        crossVaultMovedToVaultId: destVaultId,
+      });
+      if (journal && input.journalDir) {
+        journal = await persistTransferPhase(
+          input.journalDir,
+          journal,
+          "source-trashed",
+        );
+      }
+    }
+
+    if (journal && input.journalDir) {
+      await persistTransferPhase(input.journalDir, journal, "committed");
+      await rm(join(input.journalDir, `${journal.operationId}.json`), {
+        force: true,
+      });
+    }
+  } catch (error) {
+    if (journal && input.journalDir && journal.phase === "destination-writing") {
+      await persistTransferPhase(
+        input.journalDir,
+        journal,
+        "recovery-required",
+      );
+    }
+    throw error;
   }
 
   return {
@@ -557,4 +869,201 @@ function commonPrefix(paths: string[]): string {
   const cut = shared.lastIndexOf("/");
   if (paths.every((p) => p === first)) return first;
   return cut === -1 ? shared.replace(/\/[^/]*$/, "") || first.split("/")[0]! : shared.slice(0, cut);
+}
+
+function isJournalRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+async function readTransferJournalFile(
+  file: string,
+): Promise<VaultCopyMoveJournal | "corrupt" | "unsupported"> {
+  try {
+    const parsed: unknown = JSON.parse(await readFile(file, "utf8"));
+    if (!isJournalRecord(parsed)) return "corrupt";
+    if (parsed.version !== VAULT_TRANSFER_JOURNAL_VERSION) return "unsupported";
+    if (typeof parsed.operationId !== "string" || typeof parsed.phase !== "string") {
+      return "corrupt";
+    }
+    return parsed as unknown as VaultCopyMoveJournal;
+  } catch {
+    return "corrupt";
+  }
+}
+
+export type TransferInspectItem = {
+  operationId: string;
+  fileName: string;
+  classification: "recoverable" | "manual-required";
+  reason?: string;
+};
+
+export async function inspectTransfers(input: {
+  journalDir: string;
+}): Promise<{ recoverable: TransferInspectItem[]; manual: TransferInspectItem[] }> {
+  const recoverable: TransferInspectItem[] = [];
+  const manual: TransferInspectItem[] = [];
+  let names: string[];
+  try {
+    names = await readdir(input.journalDir);
+  } catch {
+    return { recoverable, manual };
+  }
+  for (const name of names) {
+    if (!name.endsWith(".json") || name.endsWith(".tmp")) continue;
+    const read = await readTransferJournalFile(join(input.journalDir, name));
+    if (read === "corrupt" || read === "unsupported") {
+      manual.push({
+        operationId: name.replace(/\.json$/, ""),
+        fileName: name,
+        classification: "manual-required",
+        reason: read === "unsupported" ? "不支持的跨库 journal 版本。" : "跨库 journal 损坏。",
+      });
+      continue;
+    }
+    const isMove = read.kind.startsWith("move-");
+    const item: TransferInspectItem = {
+      operationId: read.operationId,
+      fileName: name,
+      classification: "recoverable",
+    };
+    if (
+      read.phase === "destination-writing" ||
+      read.phase === "prepared" ||
+      read.phase === "recovery-required"
+    ) {
+      recoverable.push(item);
+      continue;
+    }
+    if (read.phase === "source-trashed" || read.phase === "committed") {
+      recoverable.push(item);
+      continue;
+    }
+    if (read.phase === "destination-ready" && !isMove) {
+      recoverable.push(item);
+      continue;
+    }
+    if (
+      read.phase === "destination-ready" ||
+      read.phase === "source-trashing"
+    ) {
+      manual.push({
+        ...item,
+        classification: "manual-required",
+        reason:
+          read.phase === "destination-ready"
+            ? "跨库移动目标已写完，源尚未进回收站，未自动删除源。"
+            : "跨库操作需要人工确认。",
+      });
+      continue;
+    }
+    manual.push({
+      ...item,
+      classification: "manual-required",
+      reason: `未知跨库 phase：${read.phase}`,
+    });
+  }
+  return { recoverable, manual };
+}
+
+async function rollbackOwnedDestination(
+  journal: VaultCopyMoveJournal,
+  destRoot: string,
+): Promise<void> {
+  for (const rel of journal.destinationNotePaths) {
+    await rm(join(destRoot, ...rel.split("/").filter(Boolean)), { force: true });
+  }
+  for (const rel of journal.destinationAssetPaths) {
+    await rm(join(destRoot, ...rel.split("/").filter(Boolean)), { force: true });
+  }
+  if (journal.destinationRevisionSeries.length === 0) return;
+  const destSeriesRoot = await resolveRevisionSeriesRoot(destRoot);
+  for (const seriesId of journal.destinationRevisionSeries) {
+    const to = seriesDirPath(destSeriesRoot, seriesId);
+    await rm(to, { recursive: true, force: true });
+    await rm(`${to}.e1-rev-staging`, { recursive: true, force: true });
+  }
+}
+
+export async function recoverTransfers(input: {
+  journalDir: string;
+  roots: VaultRootDeps;
+  /** 用户显式 recover 时才完成 destination-ready 的源回收站。 */
+  completeManualMoves?: boolean;
+}): Promise<{ recovered: string[]; manual: string[] }> {
+  const inspected = await inspectTransfers({ journalDir: input.journalDir });
+  const recovered: string[] = [];
+  const manual = inspected.manual.map((item) => item.operationId);
+  const pending = input.completeManualMoves
+    ? [...inspected.recoverable, ...inspected.manual]
+    : inspected.recoverable;
+
+  for (const item of pending) {
+    const file = join(input.journalDir, item.fileName);
+    const read = await readTransferJournalFile(file);
+    if (read === "corrupt" || read === "unsupported") continue;
+    const isMove = read.kind.startsWith("move-");
+    try {
+      if (read.phase === "prepared") {
+        await rm(file, { force: true });
+        recovered.push(read.operationId);
+        continue;
+      }
+      if (read.phase === "destination-writing" || read.phase === "recovery-required") {
+        const dest = await resolveVaultRoot(read.destinationVaultId, input.roots);
+        await rollbackOwnedDestination(read, dest.absolutePath);
+        await rm(file, { force: true });
+        recovered.push(read.operationId);
+        continue;
+      }
+      if (read.phase === "source-trashed" || read.phase === "committed") {
+        await rm(file, { force: true });
+        recovered.push(read.operationId);
+        continue;
+      }
+      if (read.phase === "destination-ready" && !isMove) {
+        await rm(file, { force: true });
+        recovered.push(read.operationId);
+        continue;
+      }
+      if (
+        input.completeManualMoves &&
+        (read.phase === "destination-ready" || read.phase === "source-trashing") &&
+        isMove
+      ) {
+        const dest = await resolveVaultRoot(read.destinationVaultId, input.roots);
+        const destOk = (
+          await Promise.all(
+            read.destinationNotePaths.map((rel) =>
+              pathExists(
+                join(dest.absolutePath, ...rel.split("/").filter(Boolean)),
+              ),
+            ),
+          )
+        ).every(Boolean);
+        if (!destOk) continue;
+        if (read.sourceRelativePath) {
+          const source = await resolveVaultRoot(read.sourceVaultId, input.roots);
+          const srcAbs = join(
+            source.absolutePath,
+            ...read.sourceRelativePath.split("/").filter(Boolean),
+          );
+          if (await pathExists(srcAbs)) {
+            await trashEntry({
+              vaultRoot: source.absolutePath,
+              relativePath: read.sourceRelativePath,
+              crossVaultMovedToVaultId: read.destinationVaultId,
+            });
+          }
+        }
+        await rm(file, { force: true });
+        const idx = manual.indexOf(read.operationId);
+        if (idx >= 0) manual.splice(idx, 1);
+        recovered.push(read.operationId);
+      }
+    } catch {
+      if (!manual.includes(read.operationId)) manual.push(read.operationId);
+    }
+  }
+  return { recovered, manual };
 }

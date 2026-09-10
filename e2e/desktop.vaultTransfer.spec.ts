@@ -126,6 +126,7 @@ interface TransferPlan {
     sourceStableId: string | null;
     destinationStableId: string;
   }>;
+  assets: Array<{ destinationPath: string; reuseExisting: boolean }>;
   revisions: unknown[];
   sourceFingerprint: string;
   destinationFingerprint: string;
@@ -677,14 +678,16 @@ test.describe("桌面冒烟：R014 Vault 可移植与跨库（G57–G71）", () 
     await writeFile(
       path.join(journalDir, "op-crash.json"),
       JSON.stringify({
-        version: 1,
+        version: 2,
         operationId: "op-crash",
         vaultId: SRC_ID,
         sourcePath: fixture.srcDir,
         destinationPath: path.join(fixture.dstDir, "unused"),
         strategy: "copy-verify-delete",
         phase: "copying",
+        sourceFingerprint: "",
         createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       }),
     );
     const app = await launch(fixture.userDataDir);
@@ -702,4 +705,359 @@ test.describe("桌面冒烟：R014 Vault 可移植与跨库（G57–G71）", () 
       await fixture.cleanup();
     }
   });
+
+  test("@golden G69b：预检后目标附件变化则 stale 且不覆盖", async () => {
+    const fixture = await createDualFixture([
+      ["a.md", note("id-a", "A", "![图](assets/pic.bin)")],
+      ["assets/pic.bin", "source-bytes"],
+    ]);
+    const app = await launch(fixture.userDataDir);
+    try {
+      const window = await app.firstWindow();
+      await waitAppReady(window);
+      const bridge = transferOf(window);
+      const plan = await bridge.plan({
+        kind: "copy-document",
+        sourceVaultId: SRC_ID,
+        destinationVaultId: DST_ID,
+        sourceRelativePath: "a.md",
+        destinationRelativePath: "",
+      });
+      expect(plan.assets.length).toBeGreaterThan(0);
+      const destAsset = path.join(
+        fixture.dstDir,
+        plan.assets[0]!.destinationPath,
+      );
+      await mkdir(path.dirname(destAsset), { recursive: true });
+      await writeFile(destAsset, "planted-after-preflight");
+      const failed = await bridge.executeFail(plan);
+      expect(failed.ok).toBe(false);
+      expect(failed.message).toMatch(/预检|变化|过期|占用/);
+      expect(await readFile(destAsset, "utf8")).toBe("planted-after-preflight");
+    } finally {
+      await app.close();
+      await fixture.cleanup();
+    }
+  });
+
+  test("@golden G69c：预检后目标出现同 stable ID 则 stale", async () => {
+    const fixture = await createDualFixture([
+      ["a.md", note("id-race", "源", "源")],
+    ]);
+    const app = await launch(fixture.userDataDir);
+    try {
+      const window = await app.firstWindow();
+      await waitAppReady(window);
+      const bridge = transferOf(window);
+      const plan = await bridge.plan({
+        kind: "move-document",
+        sourceVaultId: SRC_ID,
+        destinationVaultId: DST_ID,
+        sourceRelativePath: "a.md",
+        destinationRelativePath: "",
+      });
+      await writeFile(
+        path.join(fixture.dstDir, "sneak.md"),
+        note("id-race", "偷", "偷"),
+      );
+      const failed = await bridge.executeFail(plan);
+      expect(failed.ok).toBe(false);
+      expect(failed.message).toMatch(/预检|变化|过期|身份/);
+    } finally {
+      await app.close();
+      await fixture.cleanup();
+    }
+  });
+
+  test("@golden G69d：预检后目标出现 revision series 则 stale", async () => {
+    const fixture = await createDualFixture([
+      ["h.md", note("idHistG69d", "史", "第一版")],
+    ]);
+    const app = await launch(fixture.userDataDir);
+    try {
+      const window = await app.firstWindow();
+      await waitAppReady(window);
+      await window.evaluate(async (vid) => {
+        const e1 = (
+          window as unknown as {
+            e1?: {
+              revisions?: {
+                capture: (i: Record<string, unknown>) => Promise<unknown>;
+              };
+            };
+          }
+        ).e1;
+        await e1?.revisions?.capture({
+          vaultId: vid,
+          relativePath: "h.md",
+          stableNoteId: "idHistG69d",
+          reason: "manual",
+        });
+      }, SRC_ID);
+      const bridge = transferOf(window);
+      const plan = await bridge.plan({
+        kind: "move-document",
+        sourceVaultId: SRC_ID,
+        destinationVaultId: DST_ID,
+        sourceRelativePath: "h.md",
+        destinationRelativePath: "",
+      });
+      expect(plan.revisions.length).toBeGreaterThan(0);
+      const seriesDir = path.join(
+        fixture.dstDir,
+        ".e1",
+        "revisions",
+        "series",
+        "sn_idHistG69d",
+      );
+      await mkdir(seriesDir, { recursive: true });
+      await writeFile(path.join(seriesDir, "series.json"), "{}");
+      const failed = await bridge.executeFail(plan);
+      expect(failed.ok).toBe(false);
+      expect(failed.message).toMatch(/预检|变化|过期|版本历史/);
+    } finally {
+      await app.close();
+      await fixture.cleanup();
+    }
+  });
+
+  test("@golden G71b：rename 已完成 journal 停在 rename-intent → 推进 registry", async () => {
+    const fixture = await createDualFixture([["a.md", note("id-a", "A", "a")]]);
+    const dest = `${fixture.srcDir}-relocated`;
+    await rename(fixture.srcDir, dest);
+    const journalDir = path.join(fixture.userDataDir, "vault-relocations");
+    await mkdir(journalDir, { recursive: true });
+    await writeFile(
+      path.join(journalDir, "op-g71b.json"),
+      JSON.stringify({
+        version: 2,
+        operationId: "op-g71b",
+        vaultId: SRC_ID,
+        sourcePath: fixture.srcDir,
+        destinationPath: dest,
+        strategy: "rename",
+        phase: "rename-intent",
+        sourceFingerprint: "",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }),
+    );
+    const app = await launch(fixture.userDataDir);
+    try {
+      const window = await app.firstWindow();
+      await waitAppReady(window);
+      await transferOf(window).recover();
+      const recent = JSON.parse(
+        await readFile(
+          path.join(fixture.userDataDir, "recent-vaults.json"),
+          "utf8",
+        ),
+      ) as Array<{ vaultId: string; absolutePath: string }>;
+      expect(recent.find((v) => v.vaultId === SRC_ID)?.absolutePath).toBe(dest);
+      expect(await fileExists(path.join(dest, "a.md"))).toBe(true);
+    } finally {
+      await app.close();
+      await rm(dest, { recursive: true, force: true });
+      await fixture.cleanup();
+    }
+  });
+
+  test("@golden G71c：destination-ready + crash before registry → 补 registry", async () => {
+    const fixture = await createDualFixture([["a.md", note("id-a", "A", "a")]]);
+    const dest = `${fixture.srcDir}-copied`;
+    await mkdir(dest, { recursive: true });
+    const vaultJson = await readFile(
+      path.join(fixture.srcDir, ".e1", "vault.json"),
+      "utf8",
+    );
+    await mkdir(path.join(dest, ".e1"), { recursive: true });
+    await writeFile(path.join(dest, ".e1", "vault.json"), vaultJson);
+    await writeFile(path.join(dest, "a.md"), note("id-a", "A", "a"));
+    const journalDir = path.join(fixture.userDataDir, "vault-relocations");
+    await mkdir(journalDir, { recursive: true });
+    await writeFile(
+      path.join(journalDir, "op-g71c.json"),
+      JSON.stringify({
+        version: 2,
+        operationId: "op-g71c",
+        vaultId: SRC_ID,
+        sourcePath: fixture.srcDir,
+        destinationPath: dest,
+        strategy: "copy-verify-delete",
+        phase: "destination-ready",
+        sourceFingerprint: "",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }),
+    );
+    const app = await launch(fixture.userDataDir);
+    try {
+      const window = await app.firstWindow();
+      await waitAppReady(window);
+      await transferOf(window).recover();
+      const recent = JSON.parse(
+        await readFile(
+          path.join(fixture.userDataDir, "recent-vaults.json"),
+          "utf8",
+        ),
+      ) as Array<{ vaultId: string; absolutePath: string }>;
+      expect(recent.find((v) => v.vaultId === SRC_ID)?.absolutePath).toBe(dest);
+      expect(await fileExists(path.join(fixture.srcDir, "a.md"))).toBe(true);
+    } finally {
+      await app.close();
+      await rm(dest, { recursive: true, force: true });
+      await fixture.cleanup();
+    }
+  });
+
+  test("@golden G71d：源与目标都在 → manual-required，不自动删除", async () => {
+    const fixture = await createDualFixture([["a.md", note("id-a", "A", "a")]]);
+    const journalDir = path.join(fixture.userDataDir, "vault-relocations");
+    await mkdir(journalDir, { recursive: true });
+    await writeFile(
+      path.join(journalDir, "op-g71d.json"),
+      JSON.stringify({
+        version: 2,
+        operationId: "op-g71d",
+        vaultId: SRC_ID,
+        sourcePath: fixture.srcDir,
+        destinationPath: fixture.dstDir,
+        strategy: "rename",
+        phase: "rename-intent",
+        sourceFingerprint: "",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }),
+    );
+    const app = await launch(fixture.userDataDir);
+    try {
+      const window = await app.firstWindow();
+      await waitAppReady(window);
+      const status = await transferOf(window).recoveryStatus();
+      expect(status?.phase).toBe("manual-required");
+      expect(await fileExists(path.join(fixture.srcDir, "a.md"))).toBe(true);
+      expect(await fileExists(path.join(fixture.dstDir, ".e1", "vault.json"))).toBe(
+        true,
+      );
+    } finally {
+      await app.close();
+      await fixture.cleanup();
+    }
+  });
+
+  test("@golden G71e：源与目标都缺失 → manual-required", async () => {
+    const fixture = await createDualFixture([["a.md", note("id-a", "A", "a")]]);
+    const journalDir = path.join(fixture.userDataDir, "vault-relocations");
+    await mkdir(journalDir, { recursive: true });
+    await writeFile(
+      path.join(journalDir, "op-g71e.json"),
+      JSON.stringify({
+        version: 2,
+        operationId: "op-g71e",
+        vaultId: SRC_ID,
+        sourcePath: path.join(fixture.srcDir, "missing-src"),
+        destinationPath: path.join(fixture.dstDir, "missing-dst"),
+        strategy: "rename",
+        phase: "rename-intent",
+        sourceFingerprint: "",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }),
+    );
+    const app = await launch(fixture.userDataDir);
+    try {
+      const window = await app.firstWindow();
+      await waitAppReady(window);
+      const status = await transferOf(window).recoveryStatus();
+      expect(status?.phase).toBe("manual-required");
+    } finally {
+      await app.close();
+      await fixture.cleanup();
+    }
+  });
+
+  test("@golden G71f：Move dest 完成 crash before trash → 源仍在，显式 recover 才回收", async () => {
+    const fixture = await createDualFixture([
+      ["solo.md", note("id-solo", "独", "独正文")],
+    ]);
+    await writeFile(
+      path.join(fixture.dstDir, "solo.md"),
+      note("id-solo", "独", "独正文"),
+    );
+    const journalDir = path.join(fixture.userDataDir, "vault-transfers");
+    await mkdir(journalDir, { recursive: true });
+    await writeFile(
+      path.join(journalDir, "op-g71f.json"),
+      JSON.stringify({
+        version: 1,
+        operationId: "op-g71f",
+        kind: "move-document",
+        sourceVaultId: SRC_ID,
+        destinationVaultId: DST_ID,
+        sourceRelativePath: "solo.md",
+        phase: "destination-ready",
+        destinationNotePaths: ["solo.md"],
+        destinationAssetPaths: [],
+        destinationRevisionSeries: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }),
+    );
+    const app = await launch(fixture.userDataDir);
+    try {
+      const window = await app.firstWindow();
+      await waitAppReady(window);
+      expect(await fileExists(path.join(fixture.srcDir, "solo.md"))).toBe(true);
+      const status = await transferOf(window).recoveryStatus();
+      expect(status?.phase).toBe("manual-required");
+      await transferOf(window).recover();
+      expect(await fileExists(path.join(fixture.srcDir, "solo.md"))).toBe(false);
+      expect(await fileExists(path.join(fixture.dstDir, "solo.md"))).toBe(true);
+    } finally {
+      await app.close();
+      await fixture.cleanup();
+    }
+  });
+
+  test("@golden G71g：Move 源已 trash crash before commit → 认 dest 已提交", async () => {
+    const fixture = await createDualFixture([
+      ["solo.md", note("id-solo", "独", "独正文")],
+    ]);
+    await writeFile(
+      path.join(fixture.dstDir, "solo.md"),
+      note("id-solo", "独", "独正文"),
+    );
+    await rm(path.join(fixture.srcDir, "solo.md"));
+    const journalDir = path.join(fixture.userDataDir, "vault-transfers");
+    await mkdir(journalDir, { recursive: true });
+    await writeFile(
+      path.join(journalDir, "op-g71g.json"),
+      JSON.stringify({
+        version: 1,
+        operationId: "op-g71g",
+        kind: "move-document",
+        sourceVaultId: SRC_ID,
+        destinationVaultId: DST_ID,
+        sourceRelativePath: "solo.md",
+        phase: "source-trashed",
+        destinationNotePaths: ["solo.md"],
+        destinationAssetPaths: [],
+        destinationRevisionSeries: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }),
+    );
+    const app = await launch(fixture.userDataDir);
+    try {
+      const window = await app.firstWindow();
+      await waitAppReady(window);
+      await transferOf(window).recover();
+      expect(await fileExists(path.join(fixture.dstDir, "solo.md"))).toBe(true);
+      expect(await fileExists(path.join(fixture.srcDir, "solo.md"))).toBe(false);
+    } finally {
+      await app.close();
+      await fixture.cleanup();
+    }
+  });
 });
+

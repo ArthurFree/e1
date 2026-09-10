@@ -11,6 +11,7 @@ import { VaultRegistry } from "../vaultRegistry.js";
 import {
   executeRelocateMissing,
   executeRelocateVault,
+  inspectRelocations,
   planRelocateMissing,
   planRelocateVault,
   recoverRelocations,
@@ -194,21 +195,158 @@ describe("Physical Vault Relocation", () => {
     await writeFile(
       join(journalDir, "op-crash.json"),
       JSON.stringify({
-        version: 1,
+        version: 2,
         operationId: "op-crash",
         vaultId: "v1",
         sourcePath: src,
         destinationPath: dest,
         strategy: "copy-verify-delete",
         phase: "copying",
+        sourceFingerprint: "",
         createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       }),
     );
     const staging = `${dest}.e1-relocating`;
     await mkdir(staging, { recursive: true });
     const registry = new VaultRegistry(join(user, "recent-vaults.json"));
+    const inspected = await inspectRelocations({ journalDir });
+    expect(inspected.recoverable.map((i) => i.operationId)).toContain("op-crash");
     const result = await recoverRelocations({ journalDir, registry });
     expect(result.recovered).toContain("op-crash");
     await expect(readFile(join(staging, "x"), "utf8")).rejects.toThrow();
+  });
+
+  it("v1 journal 不迁移，标 manual-required", async () => {
+    const user = await tmp("e1-reloc-ud-");
+    const journalDir = relocationJournalDir(user);
+    await mkdir(journalDir, { recursive: true });
+    await writeFile(
+      join(journalDir, "op-v1.json"),
+      JSON.stringify({
+        version: 1,
+        operationId: "op-v1",
+        vaultId: "v1",
+        sourcePath: "/a",
+        destinationPath: "/b",
+        strategy: "rename",
+        phase: "prepared",
+        createdAt: new Date().toISOString(),
+      }),
+    );
+    const inspected = await inspectRelocations({ journalDir });
+    expect(inspected.manual.map((i) => i.operationId)).toContain("op-v1");
+    const registry = new VaultRegistry(join(user, "recent-vaults.json"));
+    const recovered = await recoverRelocations({ journalDir, registry });
+    expect(recovered.manual).toContain("op-v1");
+    expect(await readFile(join(journalDir, "op-v1.json"), "utf8")).toContain(
+      '"version":1',
+    );
+  });
+
+  it("rename-intent：源在目标不在 → 可安全放弃", async () => {
+    const src = await tmp("e1-reloc-src-");
+    await initializeVault(src, "库");
+    const dest = join(await tmp("e1-reloc-dst-"), "Frontend");
+    const user = await tmp("e1-reloc-ud-");
+    const journalDir = relocationJournalDir(user);
+    await mkdir(journalDir, { recursive: true });
+    await writeFile(
+      join(journalDir, "op-intent.json"),
+      JSON.stringify({
+        version: 2,
+        operationId: "op-intent",
+        vaultId: "v-intent",
+        sourcePath: src,
+        destinationPath: dest,
+        strategy: "rename",
+        phase: "rename-intent",
+        sourceFingerprint: "",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }),
+    );
+    const registry = new VaultRegistry(join(user, "recent-vaults.json"));
+    const inspected = await inspectRelocations({ journalDir });
+    expect(inspected.recoverable[0]?.action).toBe("abort-rename");
+    const result = await recoverRelocations({ journalDir, registry });
+    expect(result.recovered).toContain("op-intent");
+    expect(await readFile(join(src, ".e1", "vault.json"), "utf8")).toContain(
+      "vaultId",
+    );
+  });
+
+  it("rename-intent：rename 已完成 journal 未推进 → 补 registry", async () => {
+    const parent = await tmp("e1-reloc-parent-");
+    const src = join(parent, "OldName");
+    const dest = join(parent, "NewName");
+    await mkdir(src);
+    const meta = await initializeVault(src, "库");
+    await rename(src, dest);
+    const user = await tmp("e1-reloc-ud-");
+    const journalDir = relocationJournalDir(user);
+    await mkdir(journalDir, { recursive: true });
+    const registry = new VaultRegistry(join(user, "recent-vaults.json"));
+    await registry.touch({
+      vaultId: meta.vaultId,
+      absolutePath: src,
+      displayName: "库",
+    });
+    await writeFile(
+      join(journalDir, "op-done.json"),
+      JSON.stringify({
+        version: 2,
+        operationId: "op-done",
+        vaultId: meta.vaultId,
+        sourcePath: src,
+        destinationPath: dest,
+        strategy: "rename",
+        phase: "rename-intent",
+        sourceFingerprint: "",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }),
+    );
+    const result = await recoverRelocations({ journalDir, registry });
+    expect(result.recovered).toContain("op-done");
+    expect((await registry.findByVaultId(meta.vaultId))?.absolutePath).toBe(dest);
+  });
+
+  it("rename-intent：源与目标都在 → manual，不删任何一侧", async () => {
+    const src = await tmp("e1-reloc-src-");
+    const dest = await tmp("e1-reloc-dst-");
+    await initializeVault(src, "源");
+    await initializeVault(dest, "目标");
+    const user = await tmp("e1-reloc-ud-");
+    const journalDir = relocationJournalDir(user);
+    await mkdir(journalDir, { recursive: true });
+    await writeFile(
+      join(journalDir, "op-both.json"),
+      JSON.stringify({
+        version: 2,
+        operationId: "op-both",
+        vaultId: "v-both",
+        sourcePath: src,
+        destinationPath: dest,
+        strategy: "rename",
+        phase: "rename-intent",
+        sourceFingerprint: "",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }),
+    );
+    const inspected = await inspectRelocations({ journalDir });
+    expect(inspected.manual.map((i) => i.operationId)).toContain("op-both");
+    const registry = new VaultRegistry(join(user, "recent-vaults.json"));
+    await recoverRelocations({ journalDir, registry });
+    expect(await readFile(join(src, ".e1", "vault.json"), "utf8")).toContain(
+      "vaultId",
+    );
+    expect(await readFile(join(dest, ".e1", "vault.json"), "utf8")).toContain(
+      "vaultId",
+    );
+    expect(await readFile(join(journalDir, "op-both.json"), "utf8")).toContain(
+      "op-both",
+    );
   });
 });

@@ -61,6 +61,10 @@ import {
   recoverRelocations,
   relocationJournalDir,
 } from "../vaultTransfer/VaultRelocationEngine.js";
+import {
+  recoverTransfers,
+  transferJournalDir,
+} from "../vaultTransfer/VaultTransferEngine.js";
 import { registerRevisionHandlers } from "./revisions.js";
 import { VaultRegistry } from "../vaultRegistry.js";
 import { DesktopVaultStateStore } from "../state/DesktopVaultStateStore.js";
@@ -220,6 +224,13 @@ export function registerIpcHandlers(
     },
   }).catch((error: unknown) => {
     console.warn("[vaultTransfer] 启动恢复失败", error);
+  });
+  void recoverTransfers({
+    journalDir: transferJournalDir(app.getPath("userData")),
+    roots: { registry, transients },
+    completeManualMoves: false,
+  }).catch((error: unknown) => {
+    console.warn("[vaultTransfer] 跨库 journal 启动恢复失败", error);
   });
   // R012 Stage 2：revision 组（.e1/revisions/ 版本历史；Stage 4 起
   // restore 落地，自写登记抑制 watcher 回声）。

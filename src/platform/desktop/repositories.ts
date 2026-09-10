@@ -115,6 +115,8 @@ function mapFileOpError(err: unknown): never {
       case "VAULT_TRANSFER_BLOCKED_DIRTY":
       case "VAULT_TRANSFER_PARTIAL_FAILURE":
       case "VAULT_TRANSFER_DUPLICATE_IDENTITY":
+      case "VAULT_TRANSFER_IDENTITY_COLLISION":
+      case "VAULT_TRANSFER_REVISION_COLLISION":
       case "VAULT_ID_MISMATCH":
         throw new DomainError(
           err.code === "FILE_OPERATION_STALE_PLAN" ||

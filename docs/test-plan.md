@@ -22,12 +22,17 @@
 - 为每个稳定状态保存中文截图基线；比较布局区域、颜色与像素差，并对动态光标、时间和随机 ID 做屏蔽。
 - 在 1024px、768px 和 375px 额外运行可用性冒烟测试，检查侧栏、编辑区和浮层不溢出。
 
-## Vault 可移植性（R014）
+## Vault 可移植性（R014 / R014.1）
 
-- 语义冻结与引擎单测：`shared/vaultTransfer/`、`electron/main/vaultTransfer/`（Missing Relocate、同卷 rename、EXDEV copy-verify-delete、跨库 Copy/Move、边界 blocker、stale plan、100 篇预检）。
+- 语义冻结与引擎单测：`shared/vaultTransfer/`、`electron/main/vaultTransfer/`（Missing Relocate、同卷 rename-intent、EXDEV copy-verify-delete、跨库 Copy/Move、边界/身份/revision blocker、Destination Snapshot stale、100 篇预检）。
 - 引用式链接：`scanMarkdownLinkDestinations` / `rewriteMarkdownLinkDestinations` / `extractMarkdownLinks`。
-- 桌面 Golden：`e2e/desktop.vaultTransfer.spec.ts` G57–G71（描述前缀「桌面冒烟」）。
-- 安装包：`e2e/package/desktop.package.vaultTransfer.spec.ts` P27–P30（无产物 skip）。
+- 桌面 Golden：`e2e/desktop.vaultTransfer.spec.ts` G57–G71 与 G69b–d / G71b–g（描述前缀「桌面冒烟」）。
+- 安装包：`e2e/package/desktop.package.vaultTransfer.spec.ts` P27–P30 与 P30b–d（无产物 skip；真实跑过安装包才算 R014 DoD）。
+
+## 知识图谱（R015）
+
+- 投影单测：`src/application/graph/GraphProjectionService.test.ts`（stable id 节点、broken 不虚构节点、orphan、截断）。
+- UI：文档页 Local Graph（`services.graph` 门控）；知识库首页「知识图谱」有界 Workspace Graph。
 
 ## macOS 分发信任（R013）
 

@@ -64,6 +64,7 @@ import { DesktopRevisionRestoreService } from "./DesktopRevisionRestoreService";
 import { RevisionRestoreCoordinator } from "../../application/services/RevisionRestoreCoordinator";
 import { DesktopFileOperationService } from "./DesktopFileOperationService";
 import { DesktopVaultTransferService } from "./DesktopVaultTransferService";
+import { createDesktopGraphQuery } from "./DesktopGraphQuery";
 import { DesktopExternalVaultChangeService } from "./DesktopExternalVaultChangeService";
 import { createInMemoryDocumentVersionChannel } from "../../application/services/DocumentVersionChannel";
 import { DesktopAssetRegistry } from "./DesktopAssetRegistry";
@@ -392,6 +393,7 @@ export function createDesktopRuntime(
     // R011：路径变更文件操作（plan/execute + recovery）。
     fileOperations,
     vaultTransfer,
+    graph: createDesktopGraphQuery(linkIndex, scans),
     // R012 Stage 4：Safe Restore 协调器（revision.restore IPC 链路）。
     revisionRestore,
     // 机密存储运行状态（R008 Stage 1，R8-02）：secure-persistent 才持久，

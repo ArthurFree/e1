@@ -1,7 +1,7 @@
 # R014：Vault Portability & Cross-Vault Operations
 
 > 版本：1.0  
-> 状态：实现中（Stage 0–6 已落地；Stage 7 单测/typecheck/lint/deps:check/build:desktop 与 G57–G71 本地全绿；P27–P30 无安装包产物时 skip；远端 CI 待推送）  
+> 状态：实现中（Stage 0–6 产品能力已落地；R014.1 完整性收口已接线。packaged 真实产物与远端 Desktop Golden 全绿之前不得标「已完成」）  
 > 更新时间：2026-09-10  
 > 目标平台：macOS Desktop  
 > 前置需求：R010、R011、R011.1、R012、R013（Stage 0–6）  

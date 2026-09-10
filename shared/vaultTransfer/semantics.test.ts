@@ -57,7 +57,7 @@ describe("R014 Stage 0 语义冻结", () => {
     ).toEqual({ internal: 2, inboundBoundary: 1, outboundBoundary: 1 });
   });
 
-  it("relocation journal v1 形状稳定", () => {
+  it("relocation journal v2 形状稳定", () => {
     const journal: VaultRelocationJournal = {
       version: VAULT_RELOCATION_JOURNAL_VERSION,
       operationId: "op_1",
@@ -66,9 +66,12 @@ describe("R014 Stage 0 语义冻结", () => {
       destinationPath: "/b",
       strategy: "rename",
       phase: "prepared",
+      sourceFingerprint: "abc",
       createdAt: "2026-09-10T00:00:00.000Z",
+      updatedAt: "2026-09-10T00:00:00.000Z",
     };
-    expect(journal.version).toBe(1);
+    expect(journal.version).toBe(2);
     expect(journal.strategy).toBe("rename");
+    expect(journal.phase).toBe("prepared");
   });
 });

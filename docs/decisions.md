@@ -91,6 +91,8 @@
 | Vault 根搬迁 ≠ Workspace Rename（R014 PORT-01） | `workspace.rename` 只改 `.e1/vault.json` name；物理根改名/搬家走 `vaultTransfer`（Missing Relocate / Physical Relocate + `userData/vault-relocations/` journal）；同卷 rename，跨卷 copy-verify-delete，源在目标校验完成前不删除 | R011 已冻结 rename 语义；根目录搬家会弄丢 Registry/Watcher，必须单独事务且 journal 不能放在即将消失的 Vault 内 |
 | 跨库 Copy/Move 身份（R014 PORT-02～05） | Copy 新 stable id 且不复制 revision；Move 保持 stable id 并迁移 `.e1/revisions/` series，源进回收站（meta `crossVaultMovedToVaultId`，恢复拒双 identity）；Move 入/出边界链接为 blocker，Copy 仅为 warning | 复制是新知识对象；移动是同一对象换库。边界链接静默断裂会留下坏图；双 stable id 会破坏 LinkIndex/Adoption |
 | Canonical 链接保持相对路径（R014 PORT-06 / Stage 5） | 不引入 `e1://`；引用式 `[text][id]` / `[id]: dest` 纳入提取与 source-preserving 改写；Wiki `[[…]]` 仍 warning、不按 title 解析 | Vault 必须继续能被 VS Code/Typora 打开；私有协议会锁进 E1；按标题解析会与磁盘路径身份分叉 |
+| Vault Transfer 完整性（R014.1 PORT-CLOSE） | Relocation journal v2（rename-intent/applied）；inspect 与 recover 分离；Destination Snapshot 含 note/asset/revision/identity；写入 exclusive create；Move 遇相同 Stable ID / revision series 阻断；跨库 Move 独立 journal，源只在目标验证后进回收站；ambiguous → manual-required | R014 可用但存在 rename crash window 与静默覆盖窗口，不能在 packaged/远端未绿时关闭需求 |
+| 知识图谱是 LinkIndex 投影（R015 GRAPH-01～09） | Graph 可丢弃重建；nodeId=stable page id；broken 为边状态；查询 bounded；UI 只依赖 `GraphQueryPort`；失败不阻断保存 | 链接身份已稳定，下一步是导航而非再造一份图数据库 |
 
 重大架构决策另有 ADR 详述（背景/替代方案），见 [adr/](./adr/)。
 

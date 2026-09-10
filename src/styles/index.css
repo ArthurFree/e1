@@ -14,3 +14,4 @@
 @import "./components/broken-links.css" layer(components);
 @import "./components/file-operation-preflight.css" layer(components);
 @import "./components/revision-diff.css" layer(components);
+@import "./components/graph.css" layer(components);

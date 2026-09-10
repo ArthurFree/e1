@@ -243,6 +243,102 @@ describe("Cross-Vault Move", () => {
     );
   });
 
+  it("目标已有相同 Stable ID 阻断 Move", async () => {
+    const ctx = await twoVaults();
+    await writeFile(join(ctx.src, "a.md"), note("id-shared", "源", "源"));
+    await writeFile(join(ctx.dst, "other.md"), note("id-shared", "目标", "目标"));
+    const plan = await planCrossVaultTransfer({
+      kind: "move-document",
+      sourceVaultId: ctx.srcMeta.vaultId,
+      destinationVaultId: ctx.dstMeta.vaultId,
+      sourceRelativePath: "a.md",
+      destinationRelativePath: "",
+      roots: ctx.roots,
+    });
+    expect(plan.blockers.some((b) => b.code === CODES.identityCollision)).toBe(
+      true,
+    );
+    expect(plan.blockers[0]?.message).toContain("id-shared");
+    expect(plan.blockers[0]?.message).toContain("a.md");
+    expect(plan.blockers[0]?.message).toContain("other.md");
+  });
+
+  it("目标已有相同 revision series 阻断 Move", async () => {
+    const ctx = await twoVaults();
+    await writeFile(join(ctx.src, "h.md"), note("idHist02", "史", "第一版"));
+    await writeFile(join(ctx.dst, "keep.md"), note("id-keep", "留", "留"));
+    const srcStore = new DesktopRevisionStore(ctx.src);
+    await srcStore.capture({
+      seriesId: "sn_idHist02",
+      relativePath: "h.md",
+      reason: "interval",
+      sourceVersionToken: "sha256:test",
+    });
+    const destStore = new DesktopRevisionStore(ctx.dst);
+    await destStore.capture({
+      seriesId: "sn_idHist02",
+      relativePath: "keep.md",
+      reason: "interval",
+      sourceVersionToken: "sha256:dest",
+    });
+    const plan = await planCrossVaultTransfer({
+      kind: "move-document",
+      sourceVaultId: ctx.srcMeta.vaultId,
+      destinationVaultId: ctx.dstMeta.vaultId,
+      sourceRelativePath: "h.md",
+      destinationRelativePath: "",
+      roots: ctx.roots,
+    });
+    expect(plan.blockers.some((b) => b.code === CODES.revisionCollision)).toBe(
+      true,
+    );
+  });
+
+  it("预检后目标出现附件 → STALE，目标字节不变", async () => {
+    const ctx = await twoVaults();
+    await mkdir(join(ctx.src, "assets"), { recursive: true });
+    await writeFile(join(ctx.src, "assets", "pic.bin"), "source-bytes");
+    await writeFile(
+      join(ctx.src, "a.md"),
+      note("id-a", "A", "![图](assets/pic.bin)"),
+    );
+    const plan = await planCrossVaultTransfer({
+      kind: "copy-document",
+      sourceVaultId: ctx.srcMeta.vaultId,
+      destinationVaultId: ctx.dstMeta.vaultId,
+      sourceRelativePath: "a.md",
+      destinationRelativePath: "",
+      roots: ctx.roots,
+    });
+    expect(plan.blockers).toEqual([]);
+    expect(plan.assets.length).toBeGreaterThan(0);
+    await mkdir(join(ctx.dst, "assets"), { recursive: true });
+    const destAsset = join(ctx.dst, plan.assets[0]!.destinationPath);
+    await writeFile(destAsset, "planted-after-preflight");
+    await expect(
+      executeCrossVaultTransfer({ plan, roots: ctx.roots }),
+    ).rejects.toMatchObject({ code: "VAULT_TRANSFER_STALE_PLAN" });
+    expect(await readFile(destAsset, "utf8")).toBe("planted-after-preflight");
+  });
+
+  it("预检后目标出现相同 Stable ID → STALE", async () => {
+    const ctx = await twoVaults();
+    await writeFile(join(ctx.src, "a.md"), note("id-race", "源", "源"));
+    const plan = await planCrossVaultTransfer({
+      kind: "move-document",
+      sourceVaultId: ctx.srcMeta.vaultId,
+      destinationVaultId: ctx.dstMeta.vaultId,
+      sourceRelativePath: "a.md",
+      destinationRelativePath: "",
+      roots: ctx.roots,
+    });
+    expect(plan.blockers).toEqual([]);
+    await writeFile(join(ctx.dst, "sneak.md"), note("id-race", "偷", "偷"));
+    await expect(
+      executeCrossVaultTransfer({ plan, roots: ctx.roots }),
+    ).rejects.toMatchObject({ code: "VAULT_TRANSFER_STALE_PLAN" });
+  });
+
   it("100 篇文档预检 < 1s", async () => {
     const ctx = await twoVaults();
     await mkdir(join(ctx.src, "批"));

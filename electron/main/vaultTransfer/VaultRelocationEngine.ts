@@ -3,11 +3,12 @@
  * journal 落 userData/vault-relocations/；绝对路径不出 IPC。
  */
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { basename, isAbsolute, join, resolve, sep } from "node:path";
 import { IpcFailure } from "../../../shared/errors.js";
 import {
   VAULT_RELOCATION_JOURNAL_VERSION,
+  type RelocationJournalRead,
   type VaultRelocationJournal,
   type VaultRelocationPhase,
 } from "../../../shared/vaultTransfer/journal.js";
@@ -57,23 +58,52 @@ async function writeJournal(
   await rename(tmp, file);
 }
 
-async function readJournalFile(
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export async function readRelocationJournalFile(
   file: string,
-): Promise<VaultRelocationJournal | null> {
+): Promise<RelocationJournalRead> {
+  let parsed: unknown;
   try {
-    const parsed: unknown = JSON.parse(await readFile(file, "utf8"));
-    if (
-      typeof parsed !== "object" ||
-      parsed === null ||
-      (parsed as VaultRelocationJournal).version !==
-        VAULT_RELOCATION_JOURNAL_VERSION
-    ) {
-      return null;
-    }
-    return parsed as VaultRelocationJournal;
+    parsed = JSON.parse(await readFile(file, "utf8"));
   } catch {
-    return null;
+    return { kind: "corrupt" };
   }
+  if (!isRecord(parsed)) return { kind: "corrupt" };
+  if (parsed.version !== VAULT_RELOCATION_JOURNAL_VERSION) {
+    return { kind: "unsupported-version" };
+  }
+  if (
+    typeof parsed.operationId !== "string" ||
+    typeof parsed.vaultId !== "string" ||
+    typeof parsed.sourcePath !== "string" ||
+    typeof parsed.destinationPath !== "string" ||
+    typeof parsed.phase !== "string" ||
+    typeof parsed.sourceFingerprint !== "string"
+  ) {
+    return { kind: "corrupt" };
+  }
+  return { kind: "ok", journal: parsed as unknown as VaultRelocationJournal };
+}
+
+async function persistJournal(
+  journalDir: string,
+  journal: VaultRelocationJournal,
+  patch: Partial<VaultRelocationJournal>,
+): Promise<VaultRelocationJournal> {
+  const next: VaultRelocationJournal = {
+    ...journal,
+    ...patch,
+    updatedAt: nowIso(),
+  };
+  await writeJournal(journalDir, next);
+  return next;
 }
 
 async function setPhase(
@@ -81,9 +111,18 @@ async function setPhase(
   journal: VaultRelocationJournal,
   phase: VaultRelocationPhase,
 ): Promise<VaultRelocationJournal> {
-  const next = { ...journal, phase };
-  await writeJournal(journalDir, next);
-  return next;
+  return persistJournal(journalDir, journal, { phase });
+}
+
+async function destMatchesMovedVault(
+  journal: VaultRelocationJournal,
+): Promise<boolean> {
+  const read = await readVault(journal.destinationPath);
+  if (read.status !== "initialized") return false;
+  if (read.meta.vaultId !== journal.vaultId) return false;
+  if (!journal.sourceFingerprint) return true;
+  const files = await walkHashedFiles(journal.destinationPath);
+  return fingerprintFiles(files) === journal.sourceFingerprint;
 }
 
 export function emptyTransferPlan(
@@ -304,6 +343,7 @@ export async function executeRelocateVault(input: {
   }
 
   const fs = input.fs ?? defaultFs;
+  const createdAt = nowIso();
   let journal: VaultRelocationJournal = {
     version: VAULT_RELOCATION_JOURNAL_VERSION,
     operationId: input.plan.operationId,
@@ -312,25 +352,32 @@ export async function executeRelocateVault(input: {
     destinationPath: dest,
     strategy: "rename",
     phase: "prepared",
-    createdAt: new Date().toISOString(),
+    sourceFingerprint: input.plan.sourceFingerprint,
+    createdAt,
+    updatedAt: createdAt,
   };
   await writeJournal(input.journalDir, journal);
 
   let strategy: VaultRelocationStrategy = "rename";
+  journal = await persistJournal(input.journalDir, journal, {
+    phase: "rename-intent",
+  });
   try {
     if (await pathExists(dest) && (await isEmptyDirectory(dest))) {
       await removePath(dest);
     }
     await fs.rename(record.absolutePath, dest);
+    journal = await persistJournal(input.journalDir, journal, {
+      phase: "rename-applied",
+      strategy: "rename",
+    });
   } catch (error) {
     if (!isExdev(error)) throw error;
     strategy = "copy-verify-delete";
-    journal = {
-      ...journal,
+    journal = await persistJournal(input.journalDir, journal, {
       strategy,
       phase: "copying",
-    };
-    await writeJournal(input.journalDir, journal);
+    });
     const staging = `${dest}.e1-relocating`;
     await removePath(staging);
     await copyDirectoryContents(record.absolutePath, staging);
@@ -346,22 +393,26 @@ export async function executeRelocateVault(input: {
         `跨卷复制校验失败：${mismatches[0]}`,
       );
     }
-    if (await pathExists(dest)) await removePath(dest);
+    if (await pathExists(dest) && (await isEmptyDirectory(dest))) {
+      await removePath(dest);
+    }
     await fs.rename(staging, dest);
-    journal = await setPhase(input.journalDir, journal, "destination-ready");
+    journal = await persistJournal(input.journalDir, journal, {
+      phase: "destination-ready",
+      destinationFingerprint: fingerprintFiles(dstFiles),
+    });
   }
 
-  journal = {
-    ...journal,
+  journal = await persistJournal(input.journalDir, journal, {
     strategy,
-    phase: "registry-updated",
-  };
-  await writeJournal(input.journalDir, journal);
+    phase: "registry-updating",
+  });
   await input.registry.updateAbsolutePath(
     input.plan.sourceVaultId,
     dest,
     basename(dest),
   );
+  journal = await setPhase(input.journalDir, journal, "registry-updated");
   await input.onRootChanged?.(input.plan.sourceVaultId, dest);
 
   if (strategy === "copy-verify-delete") {
@@ -385,78 +436,191 @@ export async function executeRelocateVault(input: {
   };
 }
 
+export type RelocationInspectItem = {
+  operationId: string;
+  fileName: string;
+  classification: "recoverable" | "manual-required";
+  action?: RelocationRecoverAction;
+  reason?: string;
+};
+
+export type RelocationRecoverAction =
+  | "abort-prepared"
+  | "abort-rename"
+  | "complete-rename"
+  | "abort-copy"
+  | "finish-registry"
+  | "commit-cleanup";
+
+export async function inspectRelocations(input: {
+  journalDir: string;
+}): Promise<{
+  recoverable: RelocationInspectItem[];
+  manual: RelocationInspectItem[];
+}> {
+  const recoverable: RelocationInspectItem[] = [];
+  const manual: RelocationInspectItem[] = [];
+  let names: string[];
+  try {
+    names = await readdir(input.journalDir);
+  } catch {
+    return { recoverable, manual };
+  }
+  for (const name of names) {
+    if (!name.endsWith(".json") || name.endsWith(".tmp")) continue;
+    const read = await readRelocationJournalFile(join(input.journalDir, name));
+    if (read.kind !== "ok") {
+      manual.push({
+        operationId: name.replace(/\.json$/, ""),
+        fileName: name,
+        classification: "manual-required",
+        reason:
+          read.kind === "unsupported-version"
+            ? "不支持的搬迁 journal 版本，未自动迁移。"
+            : "搬迁 journal 损坏，无法判定。",
+      });
+      continue;
+    }
+    const item = await classifyRelocation(read.journal, name);
+    if (item.classification === "recoverable") recoverable.push(item);
+    else manual.push(item);
+  }
+  return { recoverable, manual };
+}
+
+async function classifyRelocation(
+  journal: VaultRelocationJournal,
+  fileName: string,
+): Promise<RelocationInspectItem> {
+  const sourceExists = await pathExists(journal.sourcePath);
+  const destExists = await pathExists(journal.destinationPath);
+  const destValid = destExists ? await destMatchesMovedVault(journal) : false;
+  const base = { operationId: journal.operationId, fileName };
+
+  const manual = (reason: string): RelocationInspectItem => ({
+    ...base,
+    classification: "manual-required",
+    reason,
+  });
+  const recoverable = (action: RelocationRecoverAction): RelocationInspectItem => ({
+    ...base,
+    classification: "recoverable",
+    action,
+  });
+
+  switch (journal.phase) {
+    case "prepared":
+      if (sourceExists && !destExists) return recoverable("abort-prepared");
+      return manual("prepared 阶段文件系统状态与 journal 不一致。");
+    case "rename-intent":
+      if (sourceExists && !destExists) return recoverable("abort-rename");
+      if (!sourceExists && destExists && destValid) {
+        return recoverable("complete-rename");
+      }
+      return manual("rename-intent 阶段源与目标同时存在或同时缺失。");
+    case "rename-applied":
+      if (!sourceExists && destExists && destValid) {
+        return recoverable("complete-rename");
+      }
+      return manual("rename-applied 阶段无法证明目标是本次搬迁结果。");
+    case "copying":
+    case "verifying":
+      if (sourceExists) return recoverable("abort-copy");
+      return manual("复制中断且源目录已不存在，需要人工确认。");
+    case "destination-ready":
+    case "registry-updating":
+      if (destExists && destValid && !sourceExists) {
+        return recoverable("finish-registry");
+      }
+      if (
+        destExists &&
+        destValid &&
+        sourceExists &&
+        journal.strategy === "copy-verify-delete"
+      ) {
+        return recoverable("finish-registry");
+      }
+      return manual("目标已就绪但无法安全判定下一步。");
+    case "registry-updated":
+      if (journal.strategy === "copy-verify-delete" && sourceExists) {
+        return manual("Registry 已更新但源目录仍在，未自动删除源。");
+      }
+      return recoverable("commit-cleanup");
+    case "source-removing":
+      if (sourceExists) {
+        return manual("正在删除源目录时中断，未自动删除。");
+      }
+      return recoverable("commit-cleanup");
+    case "committed":
+      return recoverable("commit-cleanup");
+    case "recovery-required":
+      return manual("journal 标记为需要人工恢复。");
+    default:
+      return manual(`未知 phase：${String(journal.phase)}`);
+  }
+}
+
 export async function recoverRelocations(input: {
   journalDir: string;
   registry: VaultRegistry;
   onRootChanged?: (vaultId: string, absolutePath: string) => Promise<void>;
 }): Promise<{ recovered: string[]; manual: string[] }> {
+  const inspected = await inspectRelocations({ journalDir: input.journalDir });
   const recovered: string[] = [];
-  const manual: string[] = [];
-  let names: string[];
-  try {
-    const { readdir } = await import("node:fs/promises");
-    names = await readdir(input.journalDir);
-  } catch {
-    return { recovered, manual };
-  }
-  for (const name of names) {
-    if (!name.endsWith(".json") || name.endsWith(".tmp")) continue;
-    const journal = await readJournalFile(join(input.journalDir, name));
-    if (!journal) {
-      manual.push(name);
+  const manual = inspected.manual.map((item) => item.operationId);
+
+  for (const item of inspected.recoverable) {
+    const file = join(input.journalDir, item.fileName);
+    const read = await readRelocationJournalFile(file);
+    if (read.kind !== "ok") {
+      manual.push(item.operationId);
       continue;
     }
+    const journal = read.journal;
     const staging = `${journal.destinationPath}.e1-relocating`;
-    if (
-      journal.phase === "prepared" ||
-      journal.phase === "copying" ||
-      journal.phase === "verifying"
-    ) {
-      await removePath(staging);
-      await rm(join(input.journalDir, name), { force: true });
-      recovered.push(journal.operationId);
-      continue;
-    }
-    if (
-      journal.phase === "destination-ready" ||
-      journal.phase === "registry-updated"
-    ) {
-      if (await pathExists(journal.destinationPath)) {
-        await input.registry.updateAbsolutePath(
-          journal.vaultId,
-          journal.destinationPath,
-          basename(journal.destinationPath),
-        );
-        await input.onRootChanged?.(journal.vaultId, journal.destinationPath);
+    try {
+      switch (item.action) {
+        case "abort-prepared":
+        case "abort-rename":
+          await rm(file, { force: true });
+          recovered.push(journal.operationId);
+          break;
+        case "abort-copy":
+          await removePath(staging);
+          await rm(file, { force: true });
+          recovered.push(journal.operationId);
+          break;
+        case "complete-rename":
+        case "finish-registry":
+          await input.registry.updateAbsolutePath(
+            journal.vaultId,
+            journal.destinationPath,
+            basename(journal.destinationPath),
+          );
+          await input.onRootChanged?.(journal.vaultId, journal.destinationPath);
+          if (
+            journal.strategy === "copy-verify-delete" &&
+            (await pathExists(journal.sourcePath))
+          ) {
+            await persistJournal(input.journalDir, journal, {
+              phase: "registry-updated",
+            });
+            manual.push(journal.operationId);
+            break;
+          }
+          await rm(file, { force: true });
+          recovered.push(journal.operationId);
+          break;
+        case "commit-cleanup":
+          await rm(file, { force: true });
+          recovered.push(journal.operationId);
+          break;
+        default:
+          manual.push(journal.operationId);
       }
-      if (
-        journal.strategy === "copy-verify-delete" &&
-        journal.phase === "registry-updated" &&
-        (await pathExists(journal.sourcePath))
-      ) {
-        // 源仍在：不猜测删除。
-        manual.push(journal.operationId);
-        continue;
-      }
-      await rm(join(input.journalDir, name), { force: true });
-      recovered.push(journal.operationId);
-      continue;
+    } catch {
+      manual.push(journal.operationId);
     }
-    if (journal.phase === "source-removing") {
-      if (await pathExists(journal.sourcePath)) {
-        manual.push(journal.operationId);
-        continue;
-      }
-      await rm(join(input.journalDir, name), { force: true });
-      recovered.push(journal.operationId);
-      continue;
-    }
-    if (journal.phase === "committed") {
-      await rm(join(input.journalDir, name), { force: true });
-      recovered.push(journal.operationId);
-      continue;
-    }
-    manual.push(journal.operationId);
   }
   return { recovered, manual };
 }

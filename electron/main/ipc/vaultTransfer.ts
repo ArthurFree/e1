@@ -21,6 +21,7 @@ import type { VaultWatcherService } from "../watcher/VaultWatcher.js";
 import {
   executeRelocateMissing,
   executeRelocateVault,
+  inspectRelocations,
   planRelocateMissing,
   planRelocateVault,
   recoverRelocations,
@@ -28,7 +29,10 @@ import {
 } from "../vaultTransfer/VaultRelocationEngine.js";
 import {
   executeCrossVaultTransfer,
+  inspectTransfers,
   planCrossVaultTransfer,
+  recoverTransfers,
+  transferJournalDir,
 } from "../vaultTransfer/VaultTransferEngine.js";
 
 const KINDS: VaultTransferKind[] = [
@@ -112,6 +116,7 @@ export function registerVaultTransferHandlers(
 ): void {
   const pending = new Map<string, PendingDest>();
   const journalDir = relocationJournalDir(deps.userDataDir);
+  const transferDir = transferJournalDir(deps.userDataDir);
 
   bus.handle(
     IPC_CHANNELS.vaultTransferPlan,
@@ -207,23 +212,42 @@ export function registerVaultTransferHandlers(
         pending.delete(plan.operationId);
         return result;
       }
-      return executeCrossVaultTransfer({ plan, roots: deps });
+      return executeCrossVaultTransfer({
+        plan,
+        roots: deps,
+        journalDir: transferDir,
+      });
     }),
   );
 
   bus.handle(
     IPC_CHANNELS.vaultTransferRecoveryStatus,
     handleRequest(parseNoInput, async (): Promise<VaultTransferRecoveryStatus> => {
-      const { recovered, manual } = await recoverRelocations({
-        journalDir,
-        registry: deps.registry,
-      });
-      void recovered;
+      const reloc = await inspectRelocations({ journalDir });
+      const xfer = await inspectTransfers({ journalDir: transferDir });
+      const manual = [
+        ...reloc.manual.map((i) => i.operationId),
+        ...xfer.manual.map((i) => i.operationId),
+      ];
+      const recoverable = [
+        ...reloc.recoverable.map((i) => i.operationId),
+        ...xfer.recoverable.map((i) => i.operationId),
+      ];
       if (manual.length > 0) {
         return {
           phase: "manual-required",
           pendingOperationIds: manual,
-          message: "存在未完成的知识库搬迁，需要人工确认。",
+          message:
+            reloc.manual[0]?.reason ??
+            xfer.manual[0]?.reason ??
+            "存在未完成的知识库搬迁，需要人工确认。",
+        };
+      }
+      if (recoverable.length > 0) {
+        return {
+          phase: "recoverable",
+          pendingOperationIds: recoverable,
+          message: "存在可自动恢复的搬迁记录。",
         };
       }
       return { phase: "clean", pendingOperationIds: [] };
@@ -233,19 +257,26 @@ export function registerVaultTransferHandlers(
   bus.handle(
     IPC_CHANNELS.vaultTransferRecover,
     handleRequest(parseNoInput, async (): Promise<VaultTransferRecoveryResult> => {
-      const { recovered, manual } = await recoverRelocations({
+      const reloc = await recoverRelocations({
         journalDir,
         registry: deps.registry,
         onRootChanged: async (vaultId, absolutePath) => {
           await deps.watchers?.restartWatching(vaultId, absolutePath);
         },
       });
+      const xfer = await recoverTransfers({
+        journalDir: transferDir,
+        roots: deps,
+        completeManualMoves: true,
+      });
+      const recoveredIds = [...reloc.recovered, ...xfer.recovered];
+      const manual = [...reloc.manual, ...xfer.manual];
       return {
         recovered: manual.length === 0,
-        rolledBackOperationIds: recovered,
+        rolledBackOperationIds: recoveredIds,
         message:
           manual.length > 0
-            ? "部分搬迁处于目标已就绪但源未删除，未自动删除源目录。"
+            ? "部分搬迁处于无法自动判定的状态，源目录未被自动删除。"
             : undefined,
       };
     }),

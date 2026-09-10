@@ -27,6 +27,7 @@ import {
   PageIcon,
 } from "./ui/icons";
 import { BrokenLinksPanel } from "./BrokenLinksPanel";
+import { WorkspaceGraphPanel } from "./graph/WorkspaceGraphPanel";
 import { VaultTransferPreflightDialog } from "./VaultTransferPreflightDialog";
 import type { VaultTransferPlan } from "../application/vaultTransfer/VaultTransferService";
 import { VAULT_TRANSFER_LABELS } from "../../shared/vaultTransfer/types";
@@ -46,6 +47,7 @@ export function WorkspaceHome() {
   const [rescanning, setRescanning] = useState(false);
   // 「失效链接」面板开关（R010 Stage 6 §14，仅装配了 linkIndex 的运行时渲染）。
   const [showBrokenLinks, setShowBrokenLinks] = useState(false);
+  const [showGraph, setShowGraph] = useState(false);
   const [transferPlan, setTransferPlan] = useState<VaultTransferPlan | null>(
     null,
   );
@@ -58,6 +60,7 @@ export function WorkspaceHome() {
     services.vaultMaintenance !== undefined;
   // R010 Stage 6（DUAL-01）：linkIndex 存在性即门控，Web 缺省 undefined。
   const canShowBrokenLinks = services.linkIndex !== undefined;
+  const canShowGraph = services.graph !== undefined;
   const vaultTransfer = services.vaultTransfer;
   const canRelocateRoot =
     services.operations.workspace.relocate && vaultTransfer !== undefined;
@@ -278,6 +281,15 @@ export function WorkspaceHome() {
               失效链接
             </button>
           )}
+          {canShowGraph && (
+            <button
+              type="button"
+              className="button"
+              onClick={() => setShowGraph(true)}
+            >
+              知识图谱
+            </button>
+          )}
           <button
             type="button"
             className="button button--primary"
@@ -309,6 +321,12 @@ export function WorkspaceHome() {
         <BrokenLinksPanel
           vaultId={workspace.id}
           onClose={() => setShowBrokenLinks(false)}
+        />
+      )}
+      {showGraph && (
+        <WorkspaceGraphPanel
+          vaultId={workspace.id}
+          onClose={() => setShowGraph(false)}
         />
       )}
       <VaultTransferPreflightDialog

@@ -3,6 +3,7 @@
  * Source 在 Destination 完整验证之前永不删除。
  */
 import { createHash } from "node:crypto";
+import { constants } from "node:fs";
 import { copyFile, mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 
@@ -55,6 +56,13 @@ export function fingerprintFiles(files: HashedFile[]): string {
   return hash.digest("hex");
 }
 
+export async function copyFileExclusive(
+  source: string,
+  dest: string,
+): Promise<void> {
+  await copyFile(source, dest, constants.COPYFILE_EXCL);
+}
+
 export async function copyDirectoryContents(
   sourceRoot: string,
   destRoot: string,
@@ -69,6 +77,28 @@ export async function copyDirectoryContents(
       await copyDirectoryContents(from, to);
     } else if (dirent.isFile()) {
       await copyFile(from, to);
+    }
+  }
+}
+
+/** 把目录拷到全新目标（目标已存在则拒绝），文件一律 exclusive create。 */
+export async function copyDirectoryExclusive(
+  sourceRoot: string,
+  destRoot: string,
+): Promise<void> {
+  if (await pathExists(destRoot)) {
+    throw new Error(`copyDirectoryExclusive: 目标已存在 ${destRoot}`);
+  }
+  await mkdir(destRoot, { recursive: true });
+  const dirents = await readdir(sourceRoot, { withFileTypes: true });
+  for (const dirent of dirents) {
+    const from = join(sourceRoot, dirent.name);
+    const to = join(destRoot, dirent.name);
+    if (dirent.isSymbolicLink()) continue;
+    if (dirent.isDirectory()) {
+      await copyDirectoryExclusive(from, to);
+    } else if (dirent.isFile()) {
+      await copyFileExclusive(from, to);
     }
   }
 }

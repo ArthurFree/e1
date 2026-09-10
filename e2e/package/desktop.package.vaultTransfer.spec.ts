@@ -7,6 +7,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  rename,
   rm,
   writeFile,
 } from "node:fs/promises";
@@ -107,6 +108,7 @@ interface TransferPlan {
     destinationStableId: string;
     sourceStableId: string | null;
   }>;
+  assets: Array<{ destinationPath: string }>;
   revisions: unknown[];
 }
 
@@ -305,14 +307,16 @@ test.describe("安装包冒烟：R014 Vault 可移植（P27–P30）", () => {
     await writeFile(
       path.join(journalDir, "op-crash.json"),
       JSON.stringify({
-        version: 1,
+        version: 2,
         operationId: "op-crash",
         vaultId: SRC_ID,
         sourcePath: fixture.srcDir,
         destinationPath: path.join(fixture.dstDir, "unused"),
         strategy: "copy-verify-delete",
         phase: "copying",
+        sourceFingerprint: "",
         createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       }),
     );
     const app = await launchPackaged(fixture.userDataDir);
@@ -324,6 +328,101 @@ test.describe("安装包冒烟：R014 Vault 可移植（P27–P30）", () => {
         await e1?.vaultTransfer?.recover();
       });
       expect(await exists(path.join(fixture.srcDir, "a.md"))).toBe(true);
+    } finally {
+      await app.close();
+      await fixture.cleanup();
+    }
+  });
+
+  test("P30b：打包产物 same-fs rename crash 恢复 registry", async () => {
+    const fixture = await createDualPackageVaults([
+      ["a.md", note("id-a", "A", "a")],
+    ]);
+    const dest = `${fixture.srcDir}-relocated`;
+    await rename(fixture.srcDir, dest);
+    const journalDir = path.join(fixture.userDataDir, "vault-relocations");
+    await mkdir(journalDir, { recursive: true });
+    await writeFile(
+      path.join(journalDir, "op-p30b.json"),
+      JSON.stringify({
+        version: 2,
+        operationId: "op-p30b",
+        vaultId: SRC_ID,
+        sourcePath: fixture.srcDir,
+        destinationPath: dest,
+        strategy: "rename",
+        phase: "rename-intent",
+        sourceFingerprint: "",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }),
+    );
+    const app = await launchPackaged(fixture.userDataDir);
+    try {
+      const window = await app.firstWindow();
+      await waitPackagedReady(window);
+      await window.evaluate(async () => {
+        const e1 = (window as unknown as { e1?: PackageTransferBridge }).e1;
+        await e1?.vaultTransfer?.recover();
+      });
+      const recent = JSON.parse(
+        await readFile(path.join(fixture.userDataDir, "recent-vaults.json"), "utf8"),
+      ) as Array<{ vaultId: string; absolutePath: string }>;
+      expect(recent.find((v) => v.vaultId === SRC_ID)?.absolutePath).toBe(dest);
+    } finally {
+      await app.close();
+      await rm(dest, { recursive: true, force: true });
+      await fixture.cleanup();
+    }
+  });
+
+  test("P30c：打包产物预检后目标附件不覆盖", async () => {
+    const fixture = await createDualPackageVaults([
+      ["a.md", note("id-a", "A", "![图](assets/pic.bin)")],
+      ["assets/pic.bin", "source-bytes"],
+    ]);
+    const app = await launchPackaged(fixture.userDataDir);
+    try {
+      const window = await app.firstWindow();
+      await waitPackagedReady(window);
+      const plan = await transferOf(window).plan({
+        kind: "copy-document",
+        sourceVaultId: SRC_ID,
+        destinationVaultId: DST_ID,
+        sourceRelativePath: "a.md",
+        destinationRelativePath: "",
+      });
+      const destAsset = path.join(
+        fixture.dstDir,
+        plan.assets[0]?.destinationPath ?? "assets/pic.bin",
+      );
+      await mkdir(path.dirname(destAsset), { recursive: true });
+      await writeFile(destAsset, "planted-after-preflight");
+      await expect(transferOf(window).execute(plan)).rejects.toThrow();
+      expect(await readFile(destAsset, "utf8")).toBe("planted-after-preflight");
+    } finally {
+      await app.close();
+      await fixture.cleanup();
+    }
+  });
+
+  test("P30d：打包产物 Stable ID 碰撞阻断 Move", async () => {
+    const fixture = await createDualPackageVaults(
+      [["a.md", note("id-shared", "源", "源")]],
+      [["other.md", note("id-shared", "目标", "目标")]],
+    );
+    const app = await launchPackaged(fixture.userDataDir);
+    try {
+      const window = await app.firstWindow();
+      await waitPackagedReady(window);
+      const plan = await transferOf(window).plan({
+        kind: "move-document",
+        sourceVaultId: SRC_ID,
+        destinationVaultId: DST_ID,
+        sourceRelativePath: "a.md",
+        destinationRelativePath: "",
+      });
+      expect(plan.blockers.some((b) => b.code.includes("IDENTITY"))).toBe(true);
     } finally {
       await app.close();
       await fixture.cleanup();

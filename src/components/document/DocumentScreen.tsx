@@ -29,6 +29,7 @@ import { Button } from "../ui/Button";
 import { DocumentEditor } from "../editor/DocumentEditor";
 import { ContentErrorBlock } from "./ContentErrorBlock";
 import { DocumentLinksPanel } from "./DocumentLinksPanel";
+import { LocalGraphPanel } from "../graph/LocalGraphPanel";
 import { EditorShell } from "./EditorShell";
 import { exportMarkdownFile } from "./exportMarkdown";
 import { useDocumentSession } from "./hooks/useDocumentSession";
@@ -224,6 +225,11 @@ export function DocumentScreen() {
           {/* R010 Stage 5（§13）：正文下方的反向/出站链接面板——仅 Desktop
               装配 linkIndex 时渲染；保存成功（savedAt 变化）触发刷新。 */}
           <DocumentLinksPanel
+            pageId={page.id}
+            vaultId={page.workspaceId}
+            savedAt={conflict.saveState.savedAt}
+          />
+          <LocalGraphPanel
             pageId={page.id}
             vaultId={page.workspaceId}
             savedAt={conflict.saveState.savedAt}
