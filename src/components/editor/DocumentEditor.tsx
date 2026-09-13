@@ -13,12 +13,14 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
+import type { JSONContent } from "@tiptap/core";
 import type { ContentVersionToken, Page } from "../../domain/types";
 import { INITIAL_CONTENT_VERSION_TOKEN } from "../../domain/types";
 import { useAppServices } from "../../state/AppServicesProvider";
 import { useWorkspaceData } from "../../state/WorkspaceSessionContext";
 import { useDebouncedCallback } from "../../hooks/useDebouncedCallback";
 import { buildEditorExtensions } from "../../editor/extensions";
+import { markdownToJson } from "../../editor/markdown";
 import type {
   DocumentSaveCoordinator,
   SaveCoordinatorState,
@@ -31,6 +33,7 @@ import { BubbleToolbar } from "./BubbleToolbar";
 import { BlockHandle } from "./BlockHandle";
 import { TableToolbar } from "./TableToolbar";
 import { AIAssistantPanel } from "./AIAssistantPanel";
+import { MarkdownPasteConfirmDialog } from "./MarkdownPasteConfirmDialog";
 
 /** 保存状态机（R001 §8.1）：saved → dirty → saving → saved / error。 */
 export type SaveState = SaveCoordinatorState;
@@ -223,6 +226,11 @@ export function DocumentEditor({
     }
   }, [pageId, flush, saveEnabled]);
 
+  // 粘贴 Markdown 确认：命中启发式的纯文本在此暂存，弹框期间不产生任何编辑。
+  const [pendingMarkdownPaste, setPendingMarkdownPaste] = useState<
+    string | null
+  >(null);
+
   // @ 提及候选只含文档页：知识库节点不可被提及链接。
   // 经 ref 供扩展动态读取（R003 阶段 6）：编辑器实例不随 pages 重建，
   // 但新建/重命名页面后候选立即更新。
@@ -260,6 +268,11 @@ export function DocumentEditor({
         storage.internalLinkServices = {
           onOpenPage: (targetPageId: string) =>
             onOpenPageRef.current?.(targetPageId),
+        };
+        // 粘贴 Markdown 检测（markdownPaste 扩展）：命中启发式时暂存文本并弹
+        // 确认框，由用户决定转换或保持纯文本；setState 引用恒定，无需 ref。
+        storage.markdownPasteServices = {
+          onMarkdownPaste: (text: string) => setPendingMarkdownPaste(text),
         };
       },
       onUpdate: ({ editor: e }) => {
@@ -430,6 +443,41 @@ export function DocumentEditor({
     };
   }, [flush]);
 
+  // 粘贴确认「按 Markdown 转换」：经白名单解析为文档 JSON 插入当前选区
+  // （即粘贴点）；解析失败降级为纯文本插入，不丢内容。
+  const convertPendingMarkdownPaste = () => {
+    if (!editor || pendingMarkdownPaste === null) return;
+    const text = pendingMarkdownPaste;
+    setPendingMarkdownPaste(null);
+    try {
+      const parsed = markdownToJson(text) as JSONContent;
+      editor
+        .chain()
+        .focus()
+        .insertContent(parsed.content ?? [])
+        .run();
+    } catch {
+      editor.commands.focus();
+      editor.view.pasteText(text, {
+        clipboardData: null,
+      } as unknown as ClipboardEvent);
+    }
+  };
+
+  // 「保持纯文本」：pasteText 复刻默认纯文本粘贴（按换行分段落插入）。
+  // 传 clipboardData 为 null 的合成事件：pasteText 会把事件再次交给
+  // handlePaste，各插件（含本功能的 markdownPaste）对缺失 clipboardData
+  // 均放行，避免重入再次弹窗；同时绕开 jsdom 无 ClipboardEvent 构造器。
+  const keepPendingMarkdownPastePlain = () => {
+    if (!editor || pendingMarkdownPaste === null) return;
+    const text = pendingMarkdownPaste;
+    setPendingMarkdownPaste(null);
+    editor.commands.focus();
+    editor.view.pasteText(text, {
+      clipboardData: null,
+    } as unknown as ClipboardEvent);
+  };
+
   if (!editor) return null;
 
   return (
@@ -443,6 +491,12 @@ export function DocumentEditor({
         </>
       )}
       <EditorContent editor={editor} className="editor__content" />
+      {pendingMarkdownPaste !== null && (
+        <MarkdownPasteConfirmDialog
+          onConvert={convertPendingMarkdownPaste}
+          onKeepPlainText={keepPendingMarkdownPastePlain}
+        />
+      )}
     </div>
   );
 }

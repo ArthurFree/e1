@@ -26,6 +26,7 @@ import { CodeBlockWithLanguage } from "./codeBlock";
 import { Indent } from "./indent";
 import { InternalLink } from "./internalLink";
 import { LocalImage } from "./localImage";
+import { MarkdownPaste } from "./markdownPaste";
 import { createMentionSuggestion } from "./mentionSuggestion";
 import { createSlashSuggestion } from "./slashSuggestion";
 
@@ -99,5 +100,8 @@ export function buildEditorExtensions(
       ),
     }),
     createSlashSuggestion(),
+    // 纯文本粘贴命中 Markdown 启发式时弹确认框（宿主经 storage 注入回调）；
+    // 仅交互态需要，不进 buildDocumentExtensions（headless 转换器无粘贴）。
+    MarkdownPaste,
   ];
 }
