@@ -5,10 +5,7 @@ import { describe, expect, it } from "vitest";
 import { buildExtractedLink } from "../../../shared/links/extractDocumentLinks";
 import type { LinkIndexDocument } from "../links/LinkIndex";
 import { InMemoryLinkIndex } from "../../infrastructure/memory/linkIndex";
-import {
-  GraphProjectionService,
-  nodeFromPath,
-} from "./GraphProjectionService";
+import { GraphProjectionService, nodeFromPath } from "./GraphProjectionService";
 
 function doc(
   id: string,
@@ -36,9 +33,11 @@ describe("GraphProjectionService", () => {
     const b = doc("id-b", "b.md", "乙", []);
     const c = doc("id-c", "c.md", "丙", []);
     await index.rebuild("v1", [a, b, c]);
-    const catalog = [a, b, c].map((d) =>
-      nodeFromPath(d.noteKey, d.title, d.relativePath),
-    );
+    const catalog = [
+      nodeFromPath("id-a", "甲", "notes/a.md", ["前端"]),
+      nodeFromPath("id-b", "乙", "notes/b.md", ["前端"]),
+      nodeFromPath("id-c", "丙", "c.md"),
+    ];
     const graph = new GraphProjectionService(index, {
       async getNode(_vaultId, pageId) {
         return catalog.find((n) => n.id === pageId) ?? null;
@@ -88,15 +87,31 @@ describe("GraphProjectionService", () => {
     expect(orphans.map((n) => n.id)).toEqual(["id-c"]);
   });
 
-  it("workspace graph 尊重 query 过滤", async () => {
+  it("workspace graph 尊重 query / tag / groupPath 过滤", async () => {
     const { graph } = await setup();
-    const result = await graph.getWorkspaceGraph({
+    const byQuery = await graph.getWorkspaceGraph({
       vaultId: "v1",
       nodeLimit: 50,
       edgeLimit: 50,
       filters: { query: "乙" },
     });
-    expect(result.nodes.some((n) => n.id === "id-b")).toBe(true);
-    expect(result.nodes.some((n) => n.id === "id-c")).toBe(false);
+    expect(byQuery.nodes.some((n) => n.id === "id-b")).toBe(true);
+    expect(byQuery.nodes.some((n) => n.id === "id-c")).toBe(false);
+
+    const byTag = await graph.getWorkspaceGraph({
+      vaultId: "v1",
+      nodeLimit: 50,
+      edgeLimit: 50,
+      filters: { tag: "前端" },
+    });
+    expect(byTag.nodes.every((n) => n.tags.includes("前端"))).toBe(true);
+
+    const byGroup = await graph.getWorkspaceGraph({
+      vaultId: "v1",
+      nodeLimit: 50,
+      edgeLimit: 50,
+      filters: { groupPath: "notes" },
+    });
+    expect(byGroup.nodes.every((n) => n.groupPath === "notes")).toBe(true);
   });
 });

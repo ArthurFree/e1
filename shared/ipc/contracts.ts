@@ -46,6 +46,11 @@
  * 做乐观锁，出参返回写入后的新令牌；不一致即 DOCUMENT_CONFLICT。
  */
 import type { IpcErrorPayload } from "../errors.js";
+import type {
+  GraphFilters,
+  GraphNode,
+  GraphProjection,
+} from "../graph/types.js";
 import type { Backlink, DocumentLink } from "../links/types.js";
 import type { DesktopRevisionReason } from "../revisions/types.js";
 import type {
@@ -109,6 +114,10 @@ export const IPC_CHANNELS = {
   linkRelocate: "link:relocate",
   linkStatus: "link:status",
   linkAnalyzeRelocation: "link:analyzeRelocation",
+  /** R015.1：Main 侧 Graph 投影（一次 IPC，不 N+1）。 */
+  graphNeighborhood: "graph:neighborhood",
+  graphWorkspace: "graph:workspace",
+  graphOrphans: "graph:orphans",
   /** R012 Stage 2：Desktop 版本历史（revision）组。 */
   revisionList: "revision:list",
   revisionGet: "revision:get",
@@ -853,6 +862,37 @@ export interface LinkRelocationImpactDto {
   sourceVersion: string;
 }
 
+/* ---------------------------------- graph ---------------------------------- */
+
+/** R015.1：Local Graph 邻域查询（一次 IPC）。 */
+export interface GraphNeighborhoodInput {
+  vaultId: string;
+  noteKey: string;
+  depth: 1 | 2;
+  nodeLimit: number;
+  edgeLimit: number;
+  includeBroken: boolean;
+}
+
+/** R015.1：Workspace Graph 有界查询。 */
+export interface GraphWorkspaceInput {
+  vaultId: string;
+  nodeLimit: number;
+  edgeLimit: number;
+  filters?: GraphFilters;
+}
+
+export interface GraphOrphansInput {
+  vaultId: string;
+  limit?: number;
+}
+
+export type {
+  GraphFilters,
+  GraphNode,
+  GraphProjection,
+} from "../graph/types.js";
+
 /* --------------------------------- revision --------------------------------- */
 
 /**
@@ -1315,6 +1355,15 @@ export interface E1DesktopAPI {
       input: LinkAnalyzeRelocationInput,
     ): Promise<LinkRelocationImpactDto[]>;
     status(input: LinkVaultInput): Promise<SearchIndexStatus>;
+  };
+  /**
+   * R015.1：知识图谱投影——Main SQLite 一次取出 docs/links 后投影。
+   * noteKey 为 Main 稳定键；tags 由 Renderer 扫描缓存合并。
+   */
+  graph: {
+    neighborhood(input: GraphNeighborhoodInput): Promise<GraphProjection>;
+    workspace(input: GraphWorkspaceInput): Promise<GraphProjection>;
+    orphans(input: GraphOrphansInput): Promise<GraphNode[]>;
   };
   /**
    * R012 Stage 2（§21）：Desktop 版本历史——`.e1/revisions/` 不可变快照的

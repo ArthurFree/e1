@@ -24,12 +24,16 @@ import type {
   LinkIndexDocument,
   LinkRelocationImpact,
 } from "../../../shared/links/LinkIndex.js";
+import type { Backlink, DocumentLink } from "../../../shared/links/types.js";
 import type { ExtractedLink } from "../../../shared/links/extractDocumentLinks.js";
 import { buildExtractedLink } from "../../../shared/links/extractDocumentLinks.js";
 import { resolveExtractedLinks } from "../../../shared/links/resolveLinks.js";
 import type { LinkIndexLookup } from "../../../shared/links/resolveLinks.js";
 import { computeRelocationImpacts } from "../../../shared/links/analyzeRelocation.js";
-import type { Backlink, DocumentLink } from "../../../shared/links/types.js";
+import type {
+  GraphDocRow,
+  GraphLinkRow,
+} from "../../../shared/graph/project.js";
 import { VaultIndexConnection } from "../index/VaultIndexConnection.js";
 
 /** links 表组 schema / 索引格式版本（不兼容即整库重建，§13.2 同口径）。 */
@@ -572,6 +576,52 @@ export class DesktopLinkDatabase {
       });
     }
     return computeRelocationImpacts(documents, input.pathMoves);
+  }
+
+  /** R015.1：一次取出 Vault 内全部文档快照（Graph 投影用）。 */
+  async listGraphDocs(vaultId: string): Promise<GraphDocRow[]> {
+    const db = await this.open();
+    const rows = db
+      .prepare(
+        "SELECT note_key, title, relative_path FROM link_docs WHERE vault_id = ? ORDER BY relative_path",
+      )
+      .all(vaultId) as Array<{
+      note_key: string;
+      title: string;
+      relative_path: string;
+    }>;
+    return rows.map((row) => ({
+      noteKey: row.note_key,
+      title: row.title,
+      relativePath: row.relative_path,
+    }));
+  }
+
+  /** R015.1：一次取出全部 internal 边（含 broken）。 */
+  async listGraphInternalLinks(vaultId: string): Promise<GraphLinkRow[]> {
+    const db = await this.open();
+    const rows = db
+      .prepare(
+        `SELECT l.source_note_key, l.target_note_key, l.href, l.label, l.broken
+         FROM links l
+         JOIN link_docs d ON d.note_key = l.source_note_key
+         WHERE d.vault_id = ? AND l.link_kind = 'internal'
+         ORDER BY l.source_note_key, l.rowid`,
+      )
+      .all(vaultId) as Array<{
+      source_note_key: string;
+      target_note_key: string | null;
+      href: string;
+      label: string;
+      broken: number;
+    }>;
+    return rows.map((row) => ({
+      sourceNoteKey: row.source_note_key,
+      targetNoteKey: row.target_note_key,
+      href: row.href,
+      label: row.label,
+      broken: row.broken === 1,
+    }));
   }
 
   private refreshReadyCount(db: DatabaseSync): void {

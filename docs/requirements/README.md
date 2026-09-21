@@ -2,6 +2,8 @@
 
 本目录用于记录基于产品对比、用户反馈和实现复盘产生的增量需求。根目录的 [`../requirements.md`](../requirements.md) 描述产品长期基线；本目录中的文档描述可独立设计、实现和验收的具体迭代。
 
+下一阶段执行建议见 [2026-09-21 规划：R014/R015 验收收口 → R016 知识库问答](./next-stage-plan-2026-09-21.md)（草案；不改变各需求验收状态）。
+
 ## 编号与更新规则
 
 - 文件名使用 `Rxxx-主题.md`，编号一经分配不复用。
@@ -14,26 +16,27 @@
 
 ## 需求清单
 
-| 编号             | 需求                                                                                        | 当前版本 | 状态   | 最后更新   |
-| ---------------- | ------------------------------------------------------------------------------------------- | -------- | ------ | ---------- |
-| R001             | [语雀式知识库结构与编辑区增强](./R001-yuque-knowledgebase-editor-alignment.md)              | 1.1      | 待验收 | 2026-07-22 |
-| R002             | [语雀式 UI 设计系统与核心页面视觉重构](./R002-yuque-ui-design-system.md)                    | 1.0      | 待验收 | 2026-07-22 |
-| R003             | [架构整改实施规划](./R003.md)                                                               | —        | 已完成 | 2026-07-28 |
-| R004             | [架构与数据一致性整改方案](./r004.md)                                                       | —        | 已完成 | 2026-07-28 |
-| R005             | [Web 优先与 Electron 双端准备方案](./r005.md)（[执行版](./r005-web-first-dual-runtime.md)） | —        | 已完成 | 2026-08-08 |
-| R006             | [Electron Desktop 本地 Vault 技术验证版](./r006.md)                                         | —        | 已完成 | 2026-08-29 |
-| R007             | [Desktop Local Vault 产品化基础闭环](./R007-desktop-local-vault-productization.md)          | 0.1      | 已完成 | 2026-08-29 |
-| R008             | [Desktop 产品化收尾与搜索规模化](./R008-desktop-productization-search-scale.md)             | 0.2      | 已完成 | 2026-08-29 |
-| R009             | [Desktop 发布就绪与跨平台分发](./R009-desktop-release-readiness-distribution.md)            | 0.3      | 已完成 | 2026-08-30 |
-| R009 收口 / R010 | [R009 收口与 R010 规划：macOS 单平台路线](./R009-closeout-R010-macos-only-plan.md)          | 0.1      | 已采纳 | 2026-08-30 |
-| R010             | [内部链接、反向链接与链接完整性](./R010-internal-links-backlinks-link-integrity.md)         | 1.0      | 已完成 | 2026-08-31 |
-| R011             | [Desktop 文件操作 v2](./R011-desktop-file-operations-v2.md)                                  | 1.0      | 已完成 | 2026-09-03 |
-| R011.1           | [R011.1 收口修正](./R011.1-closeout-and-R012-desktop-revision-history.md)（Part A；Part B 为 R012 规划历史快照） | 0.3 | 已完成 | 2026-09-08 |
-| R012             | [Desktop Revision History](./R012-desktop-revision-history.md)                     | 1.0      | 已完成 | 2026-09-08 |
-| R013             | [macOS Signing & Trust](./R013-macos-signing-trust.md)                             | 0.1      | 实现中 | 2026-09-10 |
-| R013 收口 / R014 | [R013 收口与 R014 规划](./R013-closeout-and-R014-vault-portability-cross-vault-operations.md)（Part A 仍待 Stage 7 真证书；Part B 为 R014 规划历史） | 0.1 | 已采纳 | 2026-09-10 |
-| R014             | [Vault Portability & Cross-Vault Operations](./R014-vault-portability-cross-vault-operations.md) | 1.0 | 实现中 | 2026-09-10 |
-| R014.1 / R015    | [R014.1 完整性收口与 R015 知识图谱](./R014.1-closeout-and-R015-knowledge-graph-plan.md) | 0.2 | 实现中 | 2026-09-10 |
+| 编号                        | 需求                                                                                                                                                 | 当前版本 | 状态   | 最后更新   |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------ | ---------- |
+| R001                        | [语雀式知识库结构与编辑区增强](./R001-yuque-knowledgebase-editor-alignment.md)                                                                       | 1.1      | 待验收 | 2026-07-22 |
+| R002                        | [语雀式 UI 设计系统与核心页面视觉重构](./R002-yuque-ui-design-system.md)                                                                             | 1.0      | 待验收 | 2026-07-22 |
+| R003                        | [架构整改实施规划](./R003.md)                                                                                                                        | —        | 已完成 | 2026-07-28 |
+| R004                        | [架构与数据一致性整改方案](./r004.md)                                                                                                                | —        | 已完成 | 2026-07-28 |
+| R005                        | [Web 优先与 Electron 双端准备方案](./r005.md)（[执行版](./r005-web-first-dual-runtime.md)）                                                          | —        | 已完成 | 2026-08-08 |
+| R006                        | [Electron Desktop 本地 Vault 技术验证版](./r006.md)                                                                                                  | —        | 已完成 | 2026-08-29 |
+| R007                        | [Desktop Local Vault 产品化基础闭环](./R007-desktop-local-vault-productization.md)                                                                   | 0.1      | 已完成 | 2026-08-29 |
+| R008                        | [Desktop 产品化收尾与搜索规模化](./R008-desktop-productization-search-scale.md)                                                                      | 0.2      | 已完成 | 2026-08-29 |
+| R009                        | [Desktop 发布就绪与跨平台分发](./R009-desktop-release-readiness-distribution.md)                                                                     | 0.3      | 已完成 | 2026-08-30 |
+| R009 收口 / R010            | [R009 收口与 R010 规划：macOS 单平台路线](./R009-closeout-R010-macos-only-plan.md)                                                                   | 0.1      | 已采纳 | 2026-08-30 |
+| R010                        | [内部链接、反向链接与链接完整性](./R010-internal-links-backlinks-link-integrity.md)                                                                  | 1.0      | 已完成 | 2026-08-31 |
+| R011                        | [Desktop 文件操作 v2](./R011-desktop-file-operations-v2.md)                                                                                          | 1.0      | 已完成 | 2026-09-03 |
+| R011.1                      | [R011.1 收口修正](./R011.1-closeout-and-R012-desktop-revision-history.md)（Part A；Part B 为 R012 规划历史快照）                                     | 0.3      | 已完成 | 2026-09-08 |
+| R012                        | [Desktop Revision History](./R012-desktop-revision-history.md)                                                                                       | 1.0      | 已完成 | 2026-09-08 |
+| R013                        | [macOS Signing & Trust](./R013-macos-signing-trust.md)                                                                                               | 0.1      | 实现中 | 2026-09-10 |
+| R013 收口 / R014            | [R013 收口与 R014 规划](./R013-closeout-and-R014-vault-portability-cross-vault-operations.md)（Part A 仍待 Stage 7 真证书；Part B 为 R014 规划历史） | 0.1      | 已采纳 | 2026-09-10 |
+| R014                        | [Vault Portability & Cross-Vault Operations](./R014-vault-portability-cross-vault-operations.md)                                                     | 1.0      | 实现中 | 2026-09-10 |
+| R014.1 / R015               | [R014.1 完整性收口与 R015 知识图谱](./R014.1-closeout-and-R015-knowledge-graph-plan.md)                                                              | 0.2      | 实现中 | 2026-09-10 |
+| R014.1 验收 / R015.1 / R016 | [验收与 R015.1 / R016 规划](./R014.1-R015-review-R015.1-R016-plan.md)                                                                                | 0.1      | 实现中 | 2026-09-10 |
 
 > R011.1（journal v2 逐跳持久化、source-preserving 链接改写、CI/packaged 验收收口）与 R012（Desktop Revision History：`.e1/revisions/` 快照存储、revision IPC 七通道、Safe Restore、VersionPanel+Diff、生命周期集成、operation matrix 翻 true）均已于 2026-09-08 收口完成：G44–G56 / P17–P20 / 性能 / 远端 CI（run 34201541622）全绿。
 >
@@ -41,7 +44,7 @@
 >
 > R014（Vault Portability & Cross-Vault Operations）Stage 0–6 产品能力已落地。R014.1 已补 journal v2 / Destination Snapshot / no-clobber / identity·revision collision / 跨库 Move journal / inspect≠recover；G57–G71 与 G69b–d、G71b–g 已接线。P27–P30/P30b–d 无安装包产物时 skip。**在真实 packaged 与远端 Desktop Golden 全绿前不得把 R014 标成已完成。** R013 Stage 7 仍独立。
 >
-> R015（Knowledge Graph）Local Graph + 有界 Workspace Graph 已按 LinkIndex 投影落地（`services.graph` 存在性门控）；10k SQL 邻域与 G72+/P31–P34 未作为关闭条件。
+> R015（Knowledge Graph）Local Graph + 有界 Workspace Graph 已按 LinkIndex 投影落地；R015.1 已接线 Batch IPC、Canvas、Invalidation、G72–G83 / P31–P34。**在远端 Golden 全绿、真实 packaged 与 10k 性能达标前不得把 R015 标成已完成。** R016 尚未开始。
 
 ## 单份需求的完成定义
 

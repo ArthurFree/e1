@@ -40,6 +40,11 @@ import {
   type FileOperationRecoveryStatusDto,
   type FileOperationResultDto,
   type FileOperationVaultInput,
+  type GraphNeighborhoodInput,
+  type GraphWorkspaceInput,
+  type GraphOrphansInput,
+  type GraphNode,
+  type GraphProjection,
   type IpcResult,
   type ImportAssetInput,
   type ImportedAsset,
@@ -264,6 +269,14 @@ const api: E1DesktopAPI = {
       ),
     status: (input: LinkVaultInput) =>
       invoke<SearchIndexStatus>(IPC_CHANNELS.linkStatus, input),
+  },
+  graph: {
+    neighborhood: (input: GraphNeighborhoodInput) =>
+      invoke<GraphProjection>(IPC_CHANNELS.graphNeighborhood, input),
+    workspace: (input: GraphWorkspaceInput) =>
+      invoke<GraphProjection>(IPC_CHANNELS.graphWorkspace, input),
+    orphans: (input: GraphOrphansInput) =>
+      invoke<GraphNode[]>(IPC_CHANNELS.graphOrphans, input),
   },
   revisions: {
     list: (input: RevisionListInput) =>

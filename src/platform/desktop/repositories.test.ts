@@ -610,6 +610,74 @@ describe("DesktopPageRepository", () => {
     expect(api.revisions.relocate).not.toHaveBeenCalled();
   });
 
+  it("remove：注入回收站钩子后显式从链接索引移除并通知（G74b）", async () => {
+    const trash = vi.fn(async () => ({ operationId: "op-9" }));
+    const api = mockApi({ trash, scan: vi.fn(async () => SCAN) });
+    const { repo } = pageRepo(api);
+    const linkRemove = vi.fn(async () => undefined);
+    const onIndexChanged = vi.fn();
+    repo.setTrashHooks({
+      linkIndex: { remove: linkRemove, upsert: vi.fn() },
+      onIndexChanged,
+    });
+    await repo.listByWorkspace("v1"); // 预热缓存
+    await repo.remove("01JABC");
+    expect(linkRemove).toHaveBeenCalledWith({
+      vaultId: "v1",
+      noteKey: "01JABC",
+      relativePath: "学习/React.md",
+    });
+    expect(onIndexChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it("remove：链接索引钩子失败不阻断回收站主操作", async () => {
+    const trash = vi.fn(async () => ({ operationId: "op-9" }));
+    const api = mockApi({ trash, scan: vi.fn(async () => SCAN) });
+    const { repo } = pageRepo(api);
+    repo.setTrashHooks({
+      linkIndex: {
+        remove: vi.fn(async () => {
+          throw new Error("index down");
+        }),
+        upsert: vi.fn(),
+      },
+    });
+    await repo.listByWorkspace("v1");
+    await expect(repo.remove("01JABC")).resolves.toBeUndefined();
+    expect(trash).toHaveBeenCalledTimes(1);
+  });
+
+  it("restore：按 Main 返回的实际路径 upsert 链接索引并通知（G74b）", async () => {
+    const restore = vi.fn(async () => ({
+      relativePath: "学习/React-2.md",
+    }));
+    const listTrash = vi.fn(async () => ({
+      entries: [
+        {
+          operationId: "op-9",
+          originalRelativePath: "学习/React.md",
+          deletedAt: "2026-09-21T00:00:00.000Z",
+          stableNoteId: "01JABC",
+        },
+      ],
+    }));
+    const api = mockApi({ restore, scan: vi.fn(async () => SCAN) });
+    api.vault.listTrash = listTrash;
+    const { repo } = pageRepo(api);
+    const linkUpsert = vi.fn(async () => ({ indexed: true }));
+    const onIndexChanged = vi.fn();
+    repo.setTrashHooks({
+      linkIndex: { remove: vi.fn(), upsert: linkUpsert },
+      onIndexChanged,
+    });
+    await repo.restore("trash:v1/op-9");
+    expect(linkUpsert).toHaveBeenCalledWith({
+      vaultId: "v1",
+      relativePath: "学习/React-2.md",
+    });
+    expect(onIndexChanged).toHaveBeenCalledTimes(1);
+  });
+
   it("remove/transient：仅预览 Vault 拒写（VAULT_READ_ONLY），不调 IPC", async () => {
     const trash = vi.fn(async () => ({ operationId: "op-1" }));
     const api = mockApi({ trash });

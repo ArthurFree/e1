@@ -27,6 +27,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { requireDesktopArtifacts } from "./desktopArtifacts";
+import { waitDocumentReady } from "./desktopReady";
 
 const PDF = Buffer.from("%PDF-1.1\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n");
 
@@ -157,7 +158,10 @@ test.describe("桌面冒烟：Reveal in File Manager（R008 Stage 2）", () => {
     const app = await launch(fixture.userDataDir);
     try {
       const window = await app.firstWindow();
-      await window.getByRole("treeitem", { name: /笔记/ }).click();
+      await waitDocumentReady(window, {
+        pageName: "笔记",
+        expectedText: "正文。",
+      });
       await expect(window.locator(".editor__content")).toContainText("正文。");
       // capability/UI：revealInFileManager=true → 顶栏入口可见。
       const reveal = window.getByRole("button", {
@@ -199,7 +203,10 @@ test.describe("桌面冒烟：Reveal in File Manager（R008 Stage 2）", () => {
     const app = await launch(fixture.userDataDir);
     try {
       const window = await app.firstWindow();
-      await window.getByRole("treeitem", { name: /可插图/ }).click();
+      await waitDocumentReady(window, {
+        pageName: "可插图",
+        expectedText: "正文。",
+      });
       await stubFileDialog(app, source);
       await insertFromToolbar(window, "附件");
       const block = window.locator(".attachment-block");

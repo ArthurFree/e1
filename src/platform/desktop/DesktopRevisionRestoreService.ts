@@ -70,6 +70,7 @@ export class DesktopRevisionRestoreService implements RevisionRestorePort {
       /** 派生索引（可选）：显式 reconcile，不依赖 watcher。 */
       linkIndex?: LinkIndex;
       fullTextSearch?: FullTextSearchIndex;
+      onGraphInvalidated?: () => void;
     },
   ) {}
 
@@ -174,5 +175,6 @@ export class DesktopRevisionRestoreService implements RevisionRestorePort {
     } catch {
       // 同上：degraded，不回滚。
     }
+    this.deps.onGraphInvalidated?.();
   }
 }

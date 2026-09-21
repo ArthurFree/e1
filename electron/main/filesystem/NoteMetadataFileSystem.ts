@@ -72,6 +72,16 @@ export async function patchNoteMetadataFile(
 
   const title = patch.title !== undefined ? patch.title : metadata.title;
   const tags = patch.tags !== undefined ? patch.tags : metadata.tags;
+  const tagsUnchanged =
+    tags.length === metadata.tags.length &&
+    tags.every((tag, index) => tag === metadata.tags[index]);
+  if (title === metadata.title && tagsUnchanged) {
+    return {
+      versionToken: current.versionToken,
+      updatedAt: current.modifiedAt,
+      stableNoteId: metadata.id ?? null,
+    };
+  }
   const frontmatter = generateFrontmatter({
     id: metadata.id,
     title,
@@ -83,7 +93,9 @@ export async function patchNoteMetadataFile(
     extra: metadata.extra,
   });
   const next =
-    split.body.length > 0 ? `${frontmatter}\n\n${split.body}` : `${frontmatter}\n\n`;
+    split.body.length > 0
+      ? `${frontmatter}\n\n${split.body}`
+      : `${frontmatter}\n\n`;
   const output = crlf ? next.replace(/\n/g, "\r\n") : next;
 
   // 写入目标复查（与 note.save 同口径）：PathGuard + 真实路径 .md 复查；

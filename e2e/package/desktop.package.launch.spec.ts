@@ -9,6 +9,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { requirePackagedArtifact } from "../desktopArtifacts";
+import { clickTreeItem } from "../tree";
 import {
   createPackageVaultFixture,
   launchPackaged,
@@ -67,7 +68,7 @@ test.describe("安装包冒烟：启动与打开 Vault（P01/P02）", () => {
         window.getByRole("treeitem", { name: /React 进阶/ }),
       ).toBeVisible();
       // 文档可打开（Markdown 扫描 + 读取全链路在 packaged 下走通）。
-      await window.getByRole("treeitem", { name: /根笔记/ }).click();
+      await clickTreeItem(window, /根笔记/);
       await expect(
         window.locator(".editor__content .ProseMirror"),
       ).toContainText("根正文。", { timeout: 15_000 });

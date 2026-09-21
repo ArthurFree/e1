@@ -29,10 +29,15 @@
 - 桌面 Golden：`e2e/desktop.vaultTransfer.spec.ts` G57–G71 与 G69b–d / G71b–g（描述前缀「桌面冒烟」）。
 - 安装包：`e2e/package/desktop.package.vaultTransfer.spec.ts` P27–P30 与 P30b–d（无产物 skip；真实跑过安装包才算 R014 DoD）。
 
-## 知识图谱（R015）
+## 知识图谱（R015 / R015.1）
 
-- 投影单测：`src/application/graph/GraphProjectionService.test.ts`（stable id 节点、broken 不虚构节点、orphan、截断）。
-- UI：文档页 Local Graph（`services.graph` 门控）；知识库首页「知识图谱」有界 Workspace Graph。
+- 投影单测：`shared/graph/project.ts`、`GraphProjectionService`（stable id、broken、orphan、depth=2、tag/group、截断）。
+- Batch IPC：`electron/main/ipc/graph.ts` + `listGraphDocs` / `listGraphInternalLinks`。
+- Invalidation：`GraphInvalidationChannel`（save/watcher/rename/restore 后 UI 重查）。
+- UI：Local Graph Canvas（depth 1|2）与 Workspace Graph Canvas（搜索/Group/Tag/孤立/失效边），`services.graph` 门控。
+- 桌面 Golden：`e2e/desktop.graph.spec.ts` G72–G83（10k 规模见 wall-clock，不塞进 Playwright）。
+- 安装包：`e2e/package/desktop.package.graph.spec.ts` P31–P34（无产物 skip；真实跑过才算 R015 DoD）。
+- 10k：`electron/main/links/DesktopGraphProjection.perf-wallclock.test.ts`（`npm run test:perf`）。
 
 ## macOS 分发信任（R013）
 

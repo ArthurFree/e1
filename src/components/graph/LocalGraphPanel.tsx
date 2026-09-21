@@ -1,10 +1,13 @@
 /**
- * R015：当前文档 Local Graph。门控 services.graph；失败静默，不影响保存。
+ * R015.1：当前文档 Local Graph（空间关系 + depth 1|2）。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GraphProjection } from "../../application/graph/GraphQueryPort";
 import { useAppServices } from "../../state/AppServicesProvider";
 import { useNavigationCommands } from "../../state/NavigationContext";
+import { PagePicker } from "../PagePicker";
+import { GraphCanvas } from "./GraphCanvas";
+import { layoutLocalGraph } from "./layout";
 
 interface LocalGraphPanelProps {
   pageId: string;
@@ -21,9 +24,15 @@ export function LocalGraphPanel({
 }: LocalGraphPanelProps) {
   const services = useAppServices();
   const graph = services.graph;
+  const invalidation = services.graphInvalidation;
   const { openDocument } = useNavigationCommands();
   const [depth, setDepth] = useState<1 | 2>(1);
   const [projection, setProjection] = useState<GraphProjection | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(pageId);
+  const [brokenHref, setBrokenHref] = useState<{
+    href: string;
+    sourceId: string;
+  } | null>(null);
   const requestIdRef = useRef(0);
 
   const refresh = useCallback(async () => {
@@ -55,16 +64,19 @@ export function LocalGraphPanel({
     return () => window.clearTimeout(timer);
   }, [savedAt, refresh]);
 
-  if (!graph) return null;
+  useEffect(() => {
+    if (!invalidation) return;
+    return invalidation.subscribe(() => {
+      void refresh();
+    });
+  }, [invalidation, refresh]);
 
-  const outgoing = (projection?.edges ?? []).filter(
-    (e) => e.sourceId === pageId,
+  const layout = useMemo(
+    () => (projection ? layoutLocalGraph(projection) : null),
+    [projection],
   );
-  const incoming = (projection?.edges ?? []).filter(
-    (e) => e.targetId === pageId,
-  );
-  const titleOf = (id: string | null) =>
-    projection?.nodes.find((n) => n.id === id)?.title ?? id ?? "未知";
+
+  if (!graph) return null;
 
   return (
     <section className="local-graph" aria-label="当前文档关系">
@@ -75,9 +87,7 @@ export function LocalGraphPanel({
           <select
             aria-label="关系深度"
             value={depth}
-            onChange={(event) =>
-              setDepth(event.target.value === "2" ? 2 : 1)
-            }
+            onChange={(event) => setDepth(event.target.value === "2" ? 2 : 1)}
           >
             <option value="1">1</option>
             <option value="2">2</option>
@@ -87,57 +97,37 @@ export function LocalGraphPanel({
       {projection?.truncated ? (
         <p className="local-graph__hint">关系较多，已截断显示。</p>
       ) : null}
-      <div className="local-graph__center">{titleOf(pageId)}</div>
-      <div className="local-graph__columns">
-        <div>
-          <h3 className="local-graph__heading">引用此页面</h3>
-          {incoming.length === 0 ? (
-            <p className="local-graph__empty">暂无反向链接</p>
-          ) : (
-            <ul className="local-graph__list">
-              {incoming.map((edge) => (
-                <li key={edge.id}>
-                  <button
-                    type="button"
-                    className="local-graph__node"
-                    onClick={() => void openDocument(edge.sourceId)}
-                  >
-                    {titleOf(edge.sourceId)}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-        <div>
-          <h3 className="local-graph__heading">此页面引用</h3>
-          {outgoing.length === 0 ? (
-            <p className="local-graph__empty">暂无出站链接</p>
-          ) : (
-            <ul className="local-graph__list">
-              {outgoing.map((edge) =>
-                edge.state === "broken" || !edge.targetId ? (
-                  <li key={edge.id}>
-                    <span className="local-graph__broken">
-                      失效：{edge.href}
-                    </span>
-                  </li>
-                ) : (
-                  <li key={edge.id}>
-                    <button
-                      type="button"
-                      className="local-graph__node"
-                      onClick={() => void openDocument(edge.targetId!)}
-                    >
-                      {titleOf(edge.targetId)}
-                    </button>
-                  </li>
-                ),
-              )}
-            </ul>
-          )}
-        </div>
-      </div>
+      {layout && projection ? (
+        <GraphCanvas
+          projection={projection}
+          layout={layout}
+          selectedId={selectedId ?? pageId}
+          ariaLabel="当前文档关系图"
+          onSelect={setSelectedId}
+          onOpen={(id) => void openDocument(id)}
+          onBroken={(href, sourceId) => setBrokenHref({ href, sourceId })}
+        />
+      ) : (
+        <p className="local-graph__empty">暂无关系</p>
+      )}
+      {brokenHref ? (
+        <PagePicker
+          excludePageId={brokenHref.sourceId}
+          onClose={() => setBrokenHref(null)}
+          onSelect={(targetId) => {
+            const pending = brokenHref;
+            setBrokenHref(null);
+            void services.commands.document
+              .relocateBrokenLink({
+                sourcePageId: pending.sourceId,
+                oldHref: pending.href,
+                newTargetPageId: targetId,
+              })
+              .then(() => refresh())
+              .catch(() => undefined);
+          }}
+        />
+      ) : null}
     </section>
   );
 }

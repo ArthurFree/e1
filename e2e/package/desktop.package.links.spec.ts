@@ -9,6 +9,7 @@ import type { Page } from "@playwright/test";
 import { appendFile } from "node:fs/promises";
 import path from "node:path";
 import { requirePackagedArtifact } from "../desktopArtifacts";
+import { clickTreeItem } from "../tree";
 import {
   createPackageVaultFixture,
   launchPackaged,
@@ -62,7 +63,7 @@ test.describe("安装包冒烟：内部链接与反向链接（P10/P11/P12）", 
       const window = await app.firstWindow();
       // 隔离 userData → 链接索引从零 rebuild（packaged 下 node:sqlite）。
       await waitLinkIndexReady(window);
-      await window.getByRole("treeitem", { name: /源页/ }).click();
+      await clickTreeItem(window, /源页/);
       const editor = window.locator(".editor__content .ProseMirror");
       await expect(editor).toContainText("指向", { timeout: 15_000 });
 
@@ -99,7 +100,7 @@ test.describe("安装包冒烟：内部链接与反向链接（P10/P11/P12）", 
     try {
       const window = await app.firstWindow();
       await waitLinkIndexReady(window);
-      await window.getByRole("treeitem", { name: /目标页/ }).click();
+      await clickTreeItem(window, /目标页/);
       await expect(
         window.locator(".editor__content .ProseMirror"),
       ).toContainText("目标正文。", { timeout: 15_000 });

@@ -255,6 +255,18 @@ const PageTreeBody = memo(function PageTreeBody({
   const renderRow = (page: Page, children: Page[]) => {
     const isCollapsed = collapsed.has(page.id);
     const isGroup = page.kind === "group";
+    // 行内动作按钮数：hover 时标题按实际叠层宽度右收，
+    // 避免窄行（嵌套/Desktop 多按钮）下按钮截获标题点击。
+    const actionCount =
+      (pageOps.document.create ? 1 : 0) +
+      (canRenamePage(page) ? 1 : 0) +
+      (canRenameFile(page) && onRenameFile ? 1 : 0) +
+      (canCopyToVault(page) && onCopyToVault ? 1 : 0) +
+      (canMoveToVault(page) && onMoveToVault ? 1 : 0) +
+      (canTrashPage(page) ? 1 : 0);
+    const rowStyle = {
+      "--tree-actions-w": `${actionCount * 24 + 6}px`,
+    } as React.CSSProperties;
     return (
       <div
         className={`tree-row${page.id === selectedPageId ? " tree-row--selected" : ""}${dropClass(page)}`}
@@ -263,6 +275,7 @@ const PageTreeBody = memo(function PageTreeBody({
         aria-expanded={children.length > 0 ? !isCollapsed : undefined}
         data-page-id={page.id}
         tabIndex={0}
+        style={rowStyle}
         draggable={canMovePage(page)}
         onDragStart={(event) => {
           dragIdRef.current = page.id;
@@ -532,7 +545,10 @@ export function PageTreeSidebar() {
         page.id.startsWith("path:") && page.id.endsWith(".md")
           ? page.id.slice("path:".length).split("/").pop()!
           : `${page.title || "无标题"}.md`;
-      const entered = window.prompt(FILE_OPERATION_LABELS.renameFile, suggested);
+      const entered = window.prompt(
+        FILE_OPERATION_LABELS.renameFile,
+        suggested,
+      );
       if (!entered) return;
       const newName = entered.trim().endsWith(".md")
         ? entered.trim()

@@ -93,7 +93,7 @@ describe("patchNoteMetadataFile", () => {
       expectedVersionToken: seed.versionToken,
       patch: { tags: ["前端", "后端"] },
     });
-    expect(await readNote()).toContain('tags: [前端, 后端]');
+    expect(await readNote()).toContain("tags: [前端, 后端]");
 
     await patchNoteMetadataFile({
       vaultRoot: root,
@@ -105,6 +105,20 @@ describe("patchNoteMetadataFile", () => {
     expect(written).not.toContain("tags:");
     // 只清标签，标题不动。
     expect(written).toContain("title: 旧标题");
+  });
+
+  it("title/tags 均未变化则不写盘、不刷新 updated", async () => {
+    const seed = await seedNote(BASE_MD);
+    const before = await readNote();
+    const result = await patchNoteMetadataFile({
+      vaultRoot: root,
+      relativePath: seed.relativePath,
+      expectedVersionToken: seed.versionToken,
+      patch: { title: "旧标题", tags: ["前端"] },
+    });
+    expect(result.versionToken).toBe(seed.versionToken);
+    expect(await readNote()).toBe(before);
+    expect(await readNote()).not.toMatch(/updated:/);
   });
 
   it("无 Frontmatter 的文件：patch title 新建 Frontmatter 块，正文保留", async () => {

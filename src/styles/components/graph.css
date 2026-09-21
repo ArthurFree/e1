@@ -1,4 +1,4 @@
-/* R015：Local Graph / Workspace Graph */
+/* R015.1：Local Graph / Workspace Graph Canvas */
 
 .local-graph {
   margin-top: 32px;
@@ -28,55 +28,11 @@
   color: var(--color-text-secondary);
 }
 
-.local-graph__center {
-  padding: 8px;
-  margin-bottom: 12px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-hover);
-  font-weight: 600;
-}
-
-.local-graph__columns {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-
-.local-graph__heading {
-  margin: 0 0 6px;
-  font-size: 12px;
-  color: var(--color-text-tertiary);
-}
-
-.local-graph__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.local-graph__node,
-.workspace-graph__node {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  padding: 6px 8px;
-  border-radius: var(--radius-sm);
-  text-align: left;
-}
-
-.local-graph__node:hover,
-.workspace-graph__node:hover {
-  background: var(--color-surface-hover);
-}
-
-.local-graph__broken,
 .local-graph__empty,
 .local-graph__hint,
 .workspace-graph__hint,
-.workspace-graph__meta {
+.workspace-graph__meta,
+.graph-canvas__hint {
   color: var(--color-text-secondary);
   font-size: 12px;
 }
@@ -85,8 +41,8 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  min-width: min(560px, 90vw);
-  max-height: min(70vh, 640px);
+  min-width: min(720px, 90vw);
+  max-height: min(80vh, 720px);
 }
 
 .workspace-graph__title {
@@ -106,9 +62,103 @@
   min-width: 180px;
 }
 
-.workspace-graph__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  overflow: auto;
+.workspace-graph__toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.graph-canvas {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 280px;
+}
+
+.graph-canvas__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.graph-canvas__svg {
+  width: 100%;
+  height: 320px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  outline: none;
+}
+
+.graph-canvas__svg:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-brand);
+}
+
+.graph-edge {
+  stroke: var(--color-border-subtle);
+  stroke-width: 1.5;
+  fill: none;
+}
+
+.graph-edge--broken {
+  stroke: var(--color-danger);
+  stroke-dasharray: 5 4;
+}
+
+.graph-edge__broken-hit {
+  fill: var(--color-danger);
+  fill-opacity: 0.85;
+  cursor: pointer;
+}
+
+.graph-node circle {
+  fill: var(--color-surface-hover);
+  stroke: var(--color-border-subtle);
+  stroke-width: 1.5;
+}
+
+.graph-node--center circle {
+  fill: var(--color-brand);
+  stroke: var(--color-brand);
+}
+
+.graph-node--incoming circle {
+  fill: #3d8bfd;
+}
+
+.graph-node--outgoing circle {
+  fill: var(--color-brand);
+}
+
+.graph-node--hop2 circle {
+  fill: var(--color-text-tertiary, #8b8b8b);
+}
+
+.graph-node--selected circle {
+  stroke: var(--color-text-primary);
+  stroke-width: 2.5;
+}
+
+.graph-node--hit text {
+  font-weight: 700;
+}
+
+.graph-node text {
+  fill: var(--color-text-primary);
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.workspace-graph .graph-canvas__svg {
+  height: 420px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .graph-canvas__svg,
+  .graph-node,
+  .graph-edge {
+    transition: none;
+  }
 }

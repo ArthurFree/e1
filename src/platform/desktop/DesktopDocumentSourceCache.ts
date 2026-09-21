@@ -33,6 +33,11 @@ export interface DesktopDocumentSourceContext {
   };
   /** 当前打开会话的写入授权（FR-04，不永久记忆）。 */
   writeSession: DocumentWriteSessionState;
+  /**
+   * 打开时的磁盘 Markdown。正文自动保存若仅多了 `updated:` 时间戳则不写盘
+   *（favorite / lastOpenedAt 等设备状态不得改 Markdown）。
+   */
+  sourceMarkdown?: string;
 }
 
 /**
@@ -114,8 +119,7 @@ export class DesktopDocumentSourceCache {
       } else if (ctx.relativePath.startsWith(prefix)) {
         this.byPageId.set(pageId, {
           ...ctx,
-          relativePath:
-            toPrefix + ctx.relativePath.slice(fromPrefix.length),
+          relativePath: toPrefix + ctx.relativePath.slice(fromPrefix.length),
         });
       }
     }

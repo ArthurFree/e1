@@ -16,6 +16,7 @@ import {
   requireSignedPackagedArtifact,
   resolvePackagedAppBundle,
 } from "../desktopArtifacts";
+import { clickTreeItem } from "../tree";
 import {
   createPackageVaultFixture,
   launchPackaged,
@@ -264,7 +265,7 @@ test.describe("安装包冒烟：signed auto update（P25/P26）", () => {
     const app1 = await launchPackaged(fixture.userDataDir);
     try {
       const window = await app1.firstWindow();
-      await window.getByRole("treeitem", { name: /笔记/ }).click();
+      await clickTreeItem(window, /笔记/);
       await expect(
         window.locator(".editor__content .ProseMirror"),
       ).toContainText("升级前正文。", { timeout: 15_000 });
@@ -286,7 +287,7 @@ test.describe("安装包冒烟：signed auto update（P25/P26）", () => {
       await expect(window.getByRole("treeitem", { name: /笔记/ })).toBeVisible({
         timeout: 15_000,
       });
-      await window.getByRole("treeitem", { name: /笔记/ }).click();
+      await clickTreeItem(window, /笔记/);
       await expect(
         window.locator(".editor__content .ProseMirror"),
       ).toContainText("升级前正文。", { timeout: 15_000 });

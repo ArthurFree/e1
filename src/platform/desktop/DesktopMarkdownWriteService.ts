@@ -6,6 +6,7 @@
  * 解析、note.save、versionToken 更新只存在一份。
  */
 import { relativeVaultPath } from "../../../shared/markdown/relativePath";
+import { omitUpdatedFrontmatterLines } from "../../../shared/markdown/frontmatter";
 import { DomainError } from "../../domain/errors";
 import type { ContentVersionToken } from "../../domain/types";
 import { createMarkdownCodec } from "../../editor/markdown/codec";
@@ -103,6 +104,19 @@ export class DesktopMarkdownWriteService {
       );
     }
 
+    if (
+      input.mode === "autosave" &&
+      ctx.sourceMarkdown !== undefined &&
+      comparableMarkdown(serialized.markdown) ===
+        comparableMarkdown(ctx.sourceMarkdown)
+    ) {
+      return {
+        versionToken: ctx.versionToken,
+        updatedAt: Date.parse(ctx.metadata.updatedAt ?? "") || Date.now(),
+        serializedMarkdown: ctx.sourceMarkdown,
+      };
+    }
+
     let saved;
     try {
       saved = await this.api.note.save({
@@ -122,6 +136,7 @@ export class DesktopMarkdownWriteService {
         ...latest,
         metadata: { ...latest.metadata, updatedAt: metadata.updatedAt },
         versionToken: saved.versionToken,
+        sourceMarkdown: serialized.markdown,
       });
     }
     return {
@@ -155,6 +170,16 @@ export class DesktopMarkdownWriteService {
     const file = name.split("/").pop() || "file";
     return relativeVaultPath(fromRelativePath, `${dir}/${file}`);
   }
+}
+
+/**
+ * 「除 updated 时间戳外是否变化」的比较口径：
+ * 剥离 Frontmatter `updated:` 行后，再各去掉至多一个尾部换行——
+ * codec 序列化输出不带结尾换行，而磁盘源文件通常以换行结尾，
+ * 该差异不是用户内容。多个尾部换行属于真实空行，不参与归一。
+ */
+function comparableMarkdown(markdown: string): string {
+  return omitUpdatedFrontmatterLines(markdown).replace(/\r?\n$/, "");
 }
 
 /** note.save 的 IPC 错误 → DomainError（R006-C4 FR-10/11/15）。 */

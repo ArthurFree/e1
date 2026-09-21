@@ -65,6 +65,7 @@ import { RevisionRestoreCoordinator } from "../../application/services/RevisionR
 import { DesktopFileOperationService } from "./DesktopFileOperationService";
 import { DesktopVaultTransferService } from "./DesktopVaultTransferService";
 import { createDesktopGraphQuery } from "./DesktopGraphQuery";
+import { GraphInvalidationChannel } from "../../application/graph/GraphInvalidationChannel";
 import { DesktopExternalVaultChangeService } from "./DesktopExternalVaultChangeService";
 import { createInMemoryDocumentVersionChannel } from "../../application/services/DocumentVersionChannel";
 import { DesktopAssetRegistry } from "./DesktopAssetRegistry";
@@ -178,12 +179,18 @@ export function createDesktopRuntime(
     fullText: fullTextSearch,
   });
   // R010 Stage 4：链接索引 reconciler（外部事件 → 链接索引动作；自写钩子）。
+  const graphInvalidation = new GraphInvalidationChannel();
+  const notifyGraph = () => graphInvalidation.publish();
   const linkReconciler = new DesktopLinkIndexReconciler({
     api,
     scans,
     aliases,
     linkIndex,
+    onIndexChanged: notifyGraph,
   });
+  // R015.1（G74b）：回收站 trash/restore/purge 走自写抑制、watcher 无事件，
+  // 链接索引由页面仓储经钩子显式 reconcile（外科式 remove/upsert）。
+  pageRepository.setTrashHooks({ linkIndex, onIndexChanged: notifyGraph });
   // R012 Stage 4：Safe Restore——revision.restore IPC（Main raw body 合并
   // 落盘）+ SourceCache/版本通道推进 + 双索引显式 reconcile。
   const revisionRestore = new RevisionRestoreCoordinator({
@@ -194,6 +201,7 @@ export function createDesktopRuntime(
       versionChannel: documentVersionChannel,
       linkIndex,
       fullTextSearch,
+      onGraphInvalidated: notifyGraph,
     }),
   });
   // R011：dirty / pending-save 页面集合——plan 时解析为 relativePath
@@ -202,8 +210,7 @@ export function createDesktopRuntime(
   const resolveDirtyRelativePaths = (): ReadonlySet<string> => {
     const paths = new Set<string>();
     for (const id of dirtyPageIds) {
-      const rel =
-        sources.get(id)?.relativePath ?? scans.lookupRelativePath(id);
+      const rel = sources.get(id)?.relativePath ?? scans.lookupRelativePath(id);
       if (rel) paths.add(rel);
     }
     return paths;
@@ -216,6 +223,7 @@ export function createDesktopRuntime(
     linkIndex,
     fullTextSearch,
     getDirtyRelativePaths: resolveDirtyRelativePaths,
+    onGraphInvalidated: notifyGraph,
   });
   pageRepository.setFileOperations(fileOperations);
   const vaultTransfer = new DesktopVaultTransferService({
@@ -224,6 +232,7 @@ export function createDesktopRuntime(
     linkIndex,
     fullTextSearch,
     getDirtyRelativePaths: resolveDirtyRelativePaths,
+    onGraphInvalidated: notifyGraph,
   });
   // 搜索索引：标题搜索（fallback 路径）；onCommitted 钩子——正文提交
   // 成功后通知 reconciler（自写 upsert，§12.4）。
@@ -393,7 +402,8 @@ export function createDesktopRuntime(
     // R011：路径变更文件操作（plan/execute + recovery）。
     fileOperations,
     vaultTransfer,
-    graph: createDesktopGraphQuery(linkIndex, scans),
+    graph: createDesktopGraphQuery(api, linkIndex, scans),
+    graphInvalidation,
     // R012 Stage 4：Safe Restore 协调器（revision.restore IPC 链路）。
     revisionRestore,
     // 机密存储运行状态（R008 Stage 1，R8-02）：secure-persistent 才持久，

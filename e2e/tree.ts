@@ -19,8 +19,8 @@ export function treeItem(window: Page, name: string | RegExp) {
 }
 
 /**
- * 点击页面树条目选中页面：点标题文本而非行几何中心，
- * 避开 hover 浮现的行内动作按钮。
+ * 点击页面树条目选中页面：点标题文本左侧，避开行右侧叠入的动作按钮。
+ * 动作按钮绝对定位，默认不可点；禁止 force: true。
  */
 export async function clickTreeItem(
   window: Page,
@@ -28,5 +28,7 @@ export async function clickTreeItem(
 ): Promise<void> {
   const item = treeItem(window, name);
   await expect(item).toBeVisible({ timeout: 10_000 });
-  await item.locator(".tree-row__title").click();
+  // 嵌套行 + 多枚动作按钮时，hover 后右侧 SVG 会盖住标题中心甚至左侧。
+  // 点行首的展开占位（文档行为空 span），冒泡到 treeitem onClick 选中页面。
+  await item.locator(".tree-row__toggle").click();
 }

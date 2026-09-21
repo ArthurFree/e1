@@ -24,6 +24,8 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { requireDesktopArtifacts } from "./desktopArtifacts";
+import { waitDesktopWorkspaceReady } from "./desktopReady";
+import { clickTreeItem } from "./tree";
 
 const VAULT_ID = "v-e2e-links";
 
@@ -169,14 +171,9 @@ async function openDocumentAndWaitReady(
   options: { pageName: string; expectedText: string },
 ) {
   const { pageName, expectedText } = options;
-  const item = window.getByRole("treeitem", {
-    name: new RegExp(escapeRegExp(pageName)),
-  });
-  await expect(item).toBeVisible({ timeout: LINK_TIMEOUT });
-  // 行内动作按钮在 hover 后浮现并可能覆盖行的几何中心（R007 阶段 5 偏差 3
-  // 已记录同型问题），直接点 treeitem 中心会误触「新建子文档」等动作；
-  // 改点标题文本（无 stopPropagation，冒泡到行 onClick 选中页面）。
-  await item.locator(".tree-row__title").click();
+  // 行内动作按钮（R014 起 6 枚）hover 后覆盖标题文本与行中心，
+  // 统一点行首 toggle（clickTreeItem，与 e2e/tree.ts 约定同口径）。
+  await clickTreeItem(window, new RegExp(escapeRegExp(pageName)));
   await expect(window.getByRole("textbox", { name: "文档标题" })).toHaveValue(
     pageName,
     { timeout: LINK_TIMEOUT },
@@ -268,6 +265,7 @@ test.describe("桌面冒烟：内部链接与失效链接（R010 Stage 7 §16）
   });
 
   test("@golden G22/G30：中文嵌套路径——保存 → 重启 → 链接仍可点击打开目标", async () => {
+    test.setTimeout(60_000);
     const fixture = await createFixture([
       [
         "学习/深入/源文档.md",
@@ -301,6 +299,7 @@ test.describe("桌面冒烟：内部链接与失效链接（R010 Stage 7 §16）
     const app2 = await launch(fixture.userDataDir);
     try {
       const window = await app2.firstWindow();
+      await waitDesktopWorkspaceReady(window);
       await waitLinkIndexReady(window);
       const editor = await openDocumentAndWaitReady(window, {
         pageName: "中文源",

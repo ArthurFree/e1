@@ -33,7 +33,11 @@ export function TitleEditor({
 }: TitleEditorProps) {
   const [value, setValue] = useState(title);
   const { debounced, flush } = useDebouncedCallback(
-    (id: string, next: string) => onSave(id, next),
+    (id: string, next: string) => {
+      // 标题未变不落盘：失焦/卸载 flush 不得把 favorite 等无关操作写成 Markdown。
+      if (next === title) return;
+      onSave(id, next);
+    },
     500,
   );
 

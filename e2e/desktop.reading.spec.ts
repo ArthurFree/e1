@@ -189,17 +189,16 @@ test.describe("桌面冒烟：Markdown 安全阅读（R006-C3 §43）", () => {
       const window = await app.firstWindow();
       // 逐篇打开（含来回切换）：每篇都走 note.read 真实读取。
       for (let i = 1; i <= 10; i += 1) {
-        const doc = window.getByRole("treeitem", {
-          name: new RegExp(`笔记${String(i).padStart(2, "0")}`),
-        });
-        await expect(doc).toBeVisible();
-        await doc.click();
+        await clickTreeItem(
+          window,
+          new RegExp(`笔记${String(i).padStart(2, "0")}`),
+        );
         await expect(window.locator(".editor__content")).toContainText(
           `第 ${i} 篇的正文内容。`,
         );
       }
       // 来回切换一次，覆盖「切换文档」路径。
-      await window.getByRole("treeitem", { name: /笔记01/ }).click();
+      await clickTreeItem(window, /笔记01/);
       await expect(window.locator(".editor__content")).toContainText(
         "第 1 篇的正文内容。",
       );

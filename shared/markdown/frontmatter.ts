@@ -347,6 +347,28 @@ export function generateFrontmatter(metadata: PortableNoteMetadata): string {
 }
 
 /**
+ * 去掉 Frontmatter 的 `updated:` 行，用于判断「除时间戳外内容是否变化」。
+ * favorite / lastOpenedAt 等设备状态不得因此改写 Markdown。
+ * 只处理文件首部 Frontmatter 块内的顶层 `updated:` 键行（与 splitFrontmatter
+ * 的边界判定一致），正文/代码块中行首的 `updated: …` 行原样保留。
+ */
+export function omitUpdatedFrontmatterLines(markdown: string): string {
+  const lines = markdown.split("\n");
+  if (lines[0]?.trim() !== "---") return markdown;
+  let closeIndex = -1;
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i].trim() === "---") {
+      closeIndex = i;
+      break;
+    }
+  }
+  if (closeIndex === -1) return markdown;
+  return lines
+    .filter((line, i) => !(i > 0 && i < closeIndex && /^updated:/.test(line)))
+    .join("\n");
+}
+
+/**
  * R006-C4.1-D（FR-22/23/24）：保证 Markdown 含 Frontmatter `id`。
  *
  * - 已有 id → 沿用，不改写正文；

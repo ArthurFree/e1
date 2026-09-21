@@ -9,6 +9,7 @@
 export {
   ensureFrontmatterId,
   generateFrontmatter,
+  omitUpdatedFrontmatterLines,
   splitFrontmatter,
 } from "../../../shared/markdown/frontmatter";
 export type { FrontmatterSplit } from "../../../shared/markdown/frontmatter";

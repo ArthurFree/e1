@@ -156,4 +156,25 @@ describe("DesktopMarkdownWriteService", () => {
     expect(save).toHaveBeenNthCalledWith(1, expect.objectContaining(payload));
     expect(save).toHaveBeenNthCalledWith(2, expect.objectContaining(payload));
   });
+
+  it("仅 updated 时间戳变化则不调用 note.save", async () => {
+    const sourceMarkdown = [
+      "---",
+      "id: 01JABC",
+      "title: React",
+      "---",
+      "",
+      "hi",
+      "",
+    ].join("\n");
+    const { writer, sources, save } = makeWriter();
+    sources.set("01JABC", sample({ sourceMarkdown }));
+    await writer.save({
+      pageId: "01JABC",
+      contentJson: DOC,
+      expectedVersionToken: `sha256:${"a".repeat(64)}`,
+      mode: "autosave",
+    });
+    expect(save).not.toHaveBeenCalled();
+  });
 });

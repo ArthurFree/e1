@@ -366,7 +366,10 @@ test.describe("安装包冒烟：R014 Vault 可移植（P27–P30）", () => {
         await e1?.vaultTransfer?.recover();
       });
       const recent = JSON.parse(
-        await readFile(path.join(fixture.userDataDir, "recent-vaults.json"), "utf8"),
+        await readFile(
+          path.join(fixture.userDataDir, "recent-vaults.json"),
+          "utf8",
+        ),
       ) as Array<{ vaultId: string; absolutePath: string }>;
       expect(recent.find((v) => v.vaultId === SRC_ID)?.absolutePath).toBe(dest);
     } finally {

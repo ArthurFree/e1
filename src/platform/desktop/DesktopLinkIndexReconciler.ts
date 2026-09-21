@@ -38,6 +38,8 @@ export class DesktopLinkIndexReconciler {
       linkIndex: DesktopLinkIndex;
       /** 测试可注入的延迟调度（缺省 setTimeout）。 */
       schedule?: (fn: () => void, delayMs: number) => void;
+      /** R015.1：索引变更后通知 Graph UI 重新查询。 */
+      onIndexChanged?: () => void;
     },
   ) {}
 
@@ -52,6 +54,7 @@ export class DesktopLinkIndexReconciler {
         this.degrade(change.vaultId, error);
       }
     }
+    this.deps.onIndexChanged?.();
   }
 
   /** 自写提交（DocumentCommitService 成功保存/创建/覆盖后）。 */
@@ -68,6 +71,7 @@ export class DesktopLinkIndexReconciler {
     } catch (error) {
       this.degrade(vaultId, error);
     }
+    this.deps.onIndexChanged?.();
   }
 
   private async applyChange(change: ExternalDocumentChange): Promise<void> {

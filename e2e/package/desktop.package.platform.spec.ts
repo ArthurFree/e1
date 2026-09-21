@@ -15,6 +15,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { requirePackagedArtifact } from "../desktopArtifacts";
+import { clickTreeItem } from "../tree";
 import {
   createPackageVaultFixture,
   launchPackaged,
@@ -133,7 +134,7 @@ test.describe("安装包冒烟：Secrets 与 Reveal（P07/P08）", () => {
     const app = await launchPackaged(fixture.userDataDir);
     try {
       const window = await app.firstWindow();
-      await window.getByRole("treeitem", { name: /笔记/ }).click();
+      await clickTreeItem(window, /笔记/);
       await expect(window.locator(".editor__content")).toContainText("正文。", {
         timeout: 15_000,
       });

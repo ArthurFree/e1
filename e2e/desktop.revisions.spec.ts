@@ -947,6 +947,11 @@ test.describe("桌面冒烟：R012 版本历史（G44–G56）", () => {
       if ((await expandButton.count()) > 0) {
         await expandButton.click();
       }
+      await expect(
+        treeItem(window, "组内子页").locator(".tree-row__title"),
+      ).toBeVisible({
+        timeout: UI_TIMEOUT,
+      });
       await openDocumentAndWaitReady(window, {
         pageName: "组内子页",
         expectedText: "组内历史正文。",

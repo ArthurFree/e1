@@ -56,6 +56,7 @@ import { registerSecretHandlers } from "./secrets.js";
 import { registerRevealHandlers, type ShellLike } from "./reveal.js";
 import { registerSearchHandlers } from "./search.js";
 import { registerLinkHandlers } from "./links.js";
+import { registerGraphHandlers } from "./graph.js";
 import { registerVaultTransferHandlers } from "./vaultTransfer.js";
 import {
   recoverRelocations,
@@ -203,6 +204,7 @@ export function registerIpcHandlers(
   registerRevealHandlers(bus, { registry, transients, shell: deps.shell });
   registerSearchHandlers(bus, { registry, transients, indexes });
   registerLinkHandlers(bus, { registry, transients, indexes });
+  registerGraphHandlers(bus, { registry, transients, indexes });
   registerFileOperationHandlers(bus, {
     registry,
     transients,

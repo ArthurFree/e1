@@ -25,6 +25,7 @@ export interface DesktopVaultTransferServiceDeps {
   linkIndex?: DesktopLinkIndex;
   fullTextSearch?: DesktopSearchIndex;
   getDirtyRelativePaths?: () => ReadonlySet<string>;
+  onGraphInvalidated?: () => void;
 }
 
 export class DesktopVaultTransferService implements VaultTransferService {
@@ -68,19 +69,13 @@ export class DesktopVaultTransferService implements VaultTransferService {
     }
 
     const dirty = this.deps.getDirtyRelativePaths?.() ?? new Set();
-    if (
-      request.kind === "relocate-vault" &&
-      dirty.size > 0
-    ) {
+    if (request.kind === "relocate-vault" && dirty.size > 0) {
       plan.blockers.push({
         code: VAULT_TRANSFER_BLOCKER_CODES.dirty,
         message: "有未保存的文档，请先保存或丢弃后再移动知识库。",
       });
     }
-    if (
-      request.kind.startsWith("copy-") ||
-      request.kind.startsWith("move-")
-    ) {
+    if (request.kind.startsWith("copy-") || request.kind.startsWith("move-")) {
       for (const note of plan.notes) {
         if (dirty.has(note.sourcePath)) {
           plan.blockers.push({
@@ -144,5 +139,6 @@ export class DesktopVaultTransferService implements VaultTransferService {
       if (linkIndex) await linkIndex.rebuild(plan.sourceVaultId);
       if (fullTextSearch) await fullTextSearch.rebuild(plan.sourceVaultId);
     }
+    this.deps.onGraphInvalidated?.();
   }
 }

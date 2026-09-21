@@ -25,6 +25,7 @@ export interface DesktopFileOperationServiceDeps {
   fullTextSearch?: DesktopSearchIndex;
   /** 返回当前 dirty / pending-save 文档的 relativePath 集合。 */
   getDirtyRelativePaths?: () => ReadonlySet<string>;
+  onGraphInvalidated?: () => void;
 }
 
 export class DesktopFileOperationService implements FileOperationService {
@@ -73,10 +74,7 @@ export class DesktopFileOperationService implements FileOperationService {
         }
       }
       for (const move of plan.pathMoves) {
-        if (
-          move.kind === "document" &&
-          dirty.has(move.fromRelativePath)
-        ) {
+        if (move.kind === "document" && dirty.has(move.fromRelativePath)) {
           plan.blockers.push({
             code: "FILE_OPERATION_BLOCKED_DIRTY",
             message: `「${move.fromRelativePath}」有未保存更改，请先保存或丢弃后再操作。`,
@@ -155,7 +153,11 @@ export class DesktopFileOperationService implements FileOperationService {
     }
 
     // 分组操作：前缀 remap 源缓存 + 全量 rebuild 索引。
-    if (isGroupOp && plan.target.fromRelativePath && plan.target.toRelativePath) {
+    if (
+      isGroupOp &&
+      plan.target.fromRelativePath &&
+      plan.target.toRelativePath
+    ) {
       sources?.remapPathPrefix(
         plan.target.fromRelativePath,
         plan.target.toRelativePath,
@@ -175,6 +177,7 @@ export class DesktopFileOperationService implements FileOperationService {
       } catch (err) {
         console.warn("revision prefix relocate 失败", err);
       }
+      this.deps.onGraphInvalidated?.();
       return;
     }
 
@@ -235,6 +238,7 @@ export class DesktopFileOperationService implements FileOperationService {
         // soft
       }
     }
+    this.deps.onGraphInvalidated?.();
   }
 
   async getRecoveryStatus(

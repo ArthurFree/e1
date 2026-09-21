@@ -53,6 +53,10 @@ import type {
   UpdateStatus,
   VaultFsEvent,
   VaultPageStatePatch,
+  GraphNeighborhoodInput,
+  GraphWorkspaceInput,
+  GraphOrphansInput,
+  GraphFilters,
 } from "./contracts.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -908,7 +912,9 @@ export function parseRevisionPurgeSeriesInput(
     input.stableNoteId == null &&
     input.relativePath === undefined
   ) {
-    invalid("revision.purgeSeries 需要 seriesId / stableNoteId / relativePath 至少其一");
+    invalid(
+      "revision.purgeSeries 需要 seriesId / stableNoteId / relativePath 至少其一",
+    );
   }
   return input;
 }
@@ -996,4 +1002,99 @@ export function parseUpdateStatus(payload: unknown): UpdateStatus {
     status.errorMessage = requireString(payload, "errorMessage");
   }
   return status;
+}
+
+function requirePositiveInt(
+  record: Record<string, unknown>,
+  field: string,
+): number {
+  const value = record[field];
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+    invalid(`字段 ${field} 必须为正整数`);
+  }
+  return value;
+}
+
+function parseGraphFilters(value: unknown): GraphFilters | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) invalid("graph.filters 必须为对象");
+  const filters: GraphFilters = {};
+  if (value.query !== undefined) {
+    filters.query = requireString(value, "query");
+  }
+  if (value.includeBroken !== undefined) {
+    if (typeof value.includeBroken !== "boolean") {
+      invalid("字段 includeBroken 必须为布尔");
+    }
+    filters.includeBroken = value.includeBroken;
+  }
+  if (value.orphansOnly !== undefined) {
+    if (typeof value.orphansOnly !== "boolean") {
+      invalid("字段 orphansOnly 必须为布尔");
+    }
+    filters.orphansOnly = value.orphansOnly;
+  }
+  if (value.groupPath !== undefined) {
+    filters.groupPath = requireString(value, "groupPath");
+  }
+  if (value.tag !== undefined) {
+    filters.tag = requireString(value, "tag");
+  }
+  if (value.noteKeys !== undefined) {
+    if (!Array.isArray(value.noteKeys) || value.noteKeys.length === 0) {
+      invalid("字段 noteKeys 必须为非空字符串数组");
+    }
+    filters.noteKeys = value.noteKeys.map((key, index) => {
+      if (typeof key !== "string" || key.trim() === "") {
+        invalid(`字段 noteKeys[${index}] 必须为非空字符串`);
+      }
+      return key;
+    });
+  }
+  return filters;
+}
+
+/** graph.neighborhood 入参。 */
+export function parseGraphNeighborhoodInput(
+  payload: unknown,
+): GraphNeighborhoodInput {
+  if (!isRecord(payload)) invalid("graph.neighborhood 入参必须为对象");
+  const depth = payload.depth;
+  if (depth !== 1 && depth !== 2) invalid("字段 depth 必须为 1 或 2");
+  if (typeof payload.includeBroken !== "boolean") {
+    invalid("字段 includeBroken 必须为布尔");
+  }
+  return {
+    vaultId: requireString(payload, "vaultId", { nonEmpty: true }),
+    noteKey: requireString(payload, "noteKey", { nonEmpty: true }),
+    depth,
+    nodeLimit: requirePositiveInt(payload, "nodeLimit"),
+    edgeLimit: requirePositiveInt(payload, "edgeLimit"),
+    includeBroken: payload.includeBroken,
+  };
+}
+
+/** graph.workspace 入参。 */
+export function parseGraphWorkspaceInput(
+  payload: unknown,
+): GraphWorkspaceInput {
+  if (!isRecord(payload)) invalid("graph.workspace 入参必须为对象");
+  return {
+    vaultId: requireString(payload, "vaultId", { nonEmpty: true }),
+    nodeLimit: requirePositiveInt(payload, "nodeLimit"),
+    edgeLimit: requirePositiveInt(payload, "edgeLimit"),
+    filters: parseGraphFilters(payload.filters),
+  };
+}
+
+/** graph.orphans 入参。 */
+export function parseGraphOrphansInput(payload: unknown): GraphOrphansInput {
+  if (!isRecord(payload)) invalid("graph.orphans 入参必须为对象");
+  const result: GraphOrphansInput = {
+    vaultId: requireString(payload, "vaultId", { nonEmpty: true }),
+  };
+  if (payload.limit !== undefined) {
+    result.limit = requirePositiveInt(payload, "limit");
+  }
+  return result;
 }

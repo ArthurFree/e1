@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   ensureFrontmatterId,
   generateFrontmatter,
+  omitUpdatedFrontmatterLines,
   splitFrontmatter,
 } from "./frontmatter";
 
@@ -191,9 +192,33 @@ describe("ensureFrontmatterId（R006-C4.1-D）", () => {
     expect(split.metadata.aliases).toEqual(["旧名"]);
     expect(split.metadata.createdAt).toBe("2026-01-01T00:00:00.000Z");
     expect(split.metadata.updatedAt).toBe("2026-01-02T00:00:00.000Z");
-    expect(split.metadata.extra.some((f) => f.rawLines.join("\n").includes("keep-me"))).toBe(
-      true,
-    );
+    expect(
+      split.metadata.extra.some((f) =>
+        f.rawLines.join("\n").includes("keep-me"),
+      ),
+    ).toBe(true);
     expect(split.body).toBe("保留正文");
+  });
+});
+
+describe("omitUpdatedFrontmatterLines", () => {
+  it("去掉 updated 行后可比较内容是否实质变化", () => {
+    const a =
+      "---\nid: 1\ntitle: 甲\nupdated: 2026-01-01T00:00:00.000Z\n---\n\n正文。\n";
+    const b = "---\nid: 1\ntitle: 甲\n---\n\n正文。\n";
+    expect(omitUpdatedFrontmatterLines(a)).toBe(b);
+  });
+
+  it("只剥离 Frontmatter 块内的 updated 行，正文行原样保留", () => {
+    const doc =
+      "---\nid: 1\nupdated: 2026-01-01T00:00:00.000Z\n---\n\nupdated: 正文里的行\n";
+    expect(omitUpdatedFrontmatterLines(doc)).toBe(
+      "---\nid: 1\n---\n\nupdated: 正文里的行\n",
+    );
+  });
+
+  it("无 Frontmatter 时原样返回", () => {
+    const doc = "updated: 不是 Frontmatter\n正文\n";
+    expect(omitUpdatedFrontmatterLines(doc)).toBe(doc);
   });
 });

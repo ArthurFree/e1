@@ -122,6 +122,11 @@ describe("preload 暴露形状", () => {
       "recover",
       "recoveryStatus",
     ]);
+    expect(Object.keys(api.graph).sort()).toEqual([
+      "neighborhood",
+      "orphans",
+      "workspace",
+    ]);
     // R009 Stage 6：应用更新组 + 更新状态订阅（Auto Update）。
     expect(Object.keys(api.update).sort()).toEqual([
       "check",

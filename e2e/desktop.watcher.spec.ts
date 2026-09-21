@@ -25,6 +25,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { requireDesktopArtifacts } from "./desktopArtifacts";
+import { clickTreeItem } from "./tree";
 
 interface VaultFixture {
   vaultDir: string;
@@ -115,7 +116,7 @@ test.describe("桌面冒烟：External Change Watcher（R007 阶段 3）", () =>
     const app = await launch(fixture.userDataDir);
     try {
       const window = await app.firstWindow();
-      await window.getByRole("treeitem", { name: /看门狗笔记/ }).click();
+      await clickTreeItem(window, /看门狗笔记/);
       const editor = window.locator(".editor__content .ProseMirror");
       await expect(editor).toContainText("修改前正文。");
       await window.waitForTimeout(WATCHER_READY_MS);
@@ -150,7 +151,7 @@ test.describe("桌面冒烟：External Change Watcher（R007 阶段 3）", () =>
     const app = await launch(fixture.userDataDir);
     try {
       const window = await app.firstWindow();
-      await window.getByRole("treeitem", { name: /冲突笔记/ }).click();
+      await clickTreeItem(window, /冲突笔记/);
       const editor = window.locator(".editor__content .ProseMirror");
       await expect(editor).toContainText("E1 内初始。");
       await window.waitForTimeout(WATCHER_READY_MS);
@@ -208,7 +209,7 @@ test.describe("桌面冒烟：External Change Watcher（R007 阶段 3）", () =>
         window.getByRole("treeitem", { name: /外部新增笔记/ }),
       ).toBeVisible({ timeout: WATCH_TIMEOUT });
       // 新条目可打开，内容与磁盘一致。
-      await window.getByRole("treeitem", { name: /外部新增笔记/ }).click();
+      await clickTreeItem(window, /外部新增笔记/);
       await expect(
         window.locator(".editor__content .ProseMirror"),
       ).toContainText("新增正文。");
@@ -227,7 +228,7 @@ test.describe("桌面冒烟：External Change Watcher（R007 阶段 3）", () =>
     const app = await launch(fixture.userDataDir);
     try {
       const window = await app.firstWindow();
-      await window.getByRole("treeitem", { name: /待删笔记/ }).click();
+      await clickTreeItem(window, /待删笔记/);
       const editor = window.locator(".editor__content .ProseMirror");
       await expect(editor).toContainText("待删正文。");
       await window.waitForTimeout(WATCHER_READY_MS);
@@ -266,7 +267,7 @@ test.describe("桌面冒烟：External Change Watcher（R007 阶段 3）", () =>
     const app = await launch(fixture.userDataDir);
     try {
       const window = await app.firstWindow();
-      await window.getByRole("treeitem", { name: /脏删笔记/ }).click();
+      await clickTreeItem(window, /脏删笔记/);
       const editor = window.locator(".editor__content .ProseMirror");
       await expect(editor).toContainText("脏删初始。");
       await window.waitForTimeout(WATCHER_READY_MS);
@@ -308,7 +309,7 @@ test.describe("桌面冒烟：External Change Watcher（R007 阶段 3）", () =>
     const app = await launch(fixture.userDataDir);
     try {
       const window = await app.firstWindow();
-      await window.getByRole("treeitem", { name: /复苏笔记/ }).click();
+      await clickTreeItem(window, /复苏笔记/);
       const editor = window.locator(".editor__content .ProseMirror");
       await expect(editor).toContainText("复苏前正文。");
       await window.waitForTimeout(WATCHER_READY_MS);
@@ -369,7 +370,7 @@ test.describe("桌面冒烟：External Change Watcher（R007 阶段 3）", () =>
       await expect(after).toHaveCount(1, { timeout: WATCH_TIMEOUT });
       await expect(before).toHaveCount(0, { timeout: WATCH_TIMEOUT });
       // 仍可按新标题打开同一文档。
-      await after.click();
+      await clickTreeItem(window, /重命名后标题/);
       await expect(
         window.locator(".editor__content .ProseMirror"),
       ).toContainText("改名正文。");
@@ -388,7 +389,7 @@ test.describe("桌面冒烟：External Change Watcher（R007 阶段 3）", () =>
     const app = await launch(fixture.userDataDir);
     try {
       const window = await app.firstWindow();
-      await window.getByRole("treeitem", { name: /自写笔记/ }).click();
+      await clickTreeItem(window, /自写笔记/);
       const editor = window.locator(".editor__content .ProseMirror");
       await expect(editor).toContainText("自写初始。");
       await window.waitForTimeout(WATCHER_READY_MS);
@@ -420,7 +421,7 @@ test.describe("桌面冒烟：External Change Watcher（R007 阶段 3）", () =>
     const app = await launch(fixture.userDataDir);
     try {
       const window = await app.firstWindow();
-      await window.getByRole("treeitem", { name: /连改笔记/ }).click();
+      await clickTreeItem(window, /连改笔记/);
       const editor = window.locator(".editor__content .ProseMirror");
       await expect(editor).toContainText("连改初始。");
       await window.waitForTimeout(WATCHER_READY_MS);

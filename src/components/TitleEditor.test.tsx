@@ -60,6 +60,13 @@ describe("TitleEditor", () => {
     expect(onExitToBody).toHaveBeenCalledTimes(1);
   });
 
+  it("失焦时标题未变不保存", () => {
+    const onSave = vi.fn();
+    render(<TitleEditor pageId="p1" title="旧标题" onSave={onSave} />);
+    fireEvent.blur(screen.getByLabelText("文档标题"));
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
   it("ArrowDown 进入正文", () => {
     const onExitToBody = vi.fn();
     render(

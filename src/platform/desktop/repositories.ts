@@ -69,6 +69,7 @@ import {
   tagIdOfName,
 } from "./vaultMapping";
 import type { FileOperationService } from "../../application/fileOperations/FileOperationService";
+import type { LinkIndex } from "../../application/links/LinkIndex";
 import { DesktopDocumentSourceCache } from "./DesktopDocumentSourceCache";
 import type { DesktopNoteMetadataService } from "./DesktopNoteMetadataService";
 import type { DesktopVaultStateClient } from "./DesktopVaultStateClient";
@@ -120,7 +121,7 @@ function mapFileOpError(err: unknown): never {
       case "VAULT_ID_MISMATCH":
         throw new DomainError(
           err.code === "FILE_OPERATION_STALE_PLAN" ||
-          err.code === "VAULT_TRANSFER_STALE_PLAN"
+            err.code === "VAULT_TRANSFER_STALE_PLAN"
             ? "DOCUMENT_CONFLICT"
             : "INVALID_INPUT",
           err.message,
@@ -273,9 +274,21 @@ export class DesktopWorkspaceRepository implements WorkspaceRepository {
   }
 }
 
+/**
+ * R015.1（G74b）：回收站操作的链接索引钩子。trash/restore/purge 与
+ * move/renameFile 一样登记了路径级自写抑制，watcher 不会产生事件流，
+ * 必须由调用方显式 reconcile——否则 LinkIndex（及图谱投影）一直陈旧。
+ * 索引是派生数据：钩子失败只告警，不阻断回收站主操作。
+ */
+export interface TrashLinkIndexHooks {
+  readonly linkIndex: Pick<LinkIndex, "remove" | "upsert">;
+  readonly onIndexChanged?: () => void;
+}
+
 /** 页面仓储：listByWorkspace/listAll 真实（扫描映射 + vault-state 合并 + 回收站合并）。 */
 export class DesktopPageRepository implements PageRepository {
   private fileOperations: FileOperationService | null = null;
+  private trashHooks: TrashLinkIndexHooks | null = null;
 
   constructor(
     private readonly api: E1DesktopAPI,
@@ -293,6 +306,24 @@ export class DesktopPageRepository implements PageRepository {
   /** R011：注入 journaled 文件操作服务（装配后回填，避免循环构造）。 */
   setFileOperations(service: FileOperationService): void {
     this.fileOperations = service;
+  }
+
+  /** R015.1（G74b）：注入回收站链接索引钩子（装配后回填）。 */
+  setTrashHooks(hooks: TrashLinkIndexHooks): void {
+    this.trashHooks = hooks;
+  }
+
+  /** 回收站操作后的链接索引 reconcile；失败只告警（派生数据可重建）。 */
+  private async reconcileTrashLinkIndex(
+    action: (linkIndex: TrashLinkIndexHooks["linkIndex"]) => Promise<unknown>,
+  ): Promise<void> {
+    if (!this.trashHooks) return;
+    try {
+      await action(this.trashHooks.linkIndex);
+      this.trashHooks.onIndexChanged?.();
+    } catch (err) {
+      console.warn("回收站操作后重建链接索引失败（可经重新扫描恢复）", err);
+    }
   }
 
   async listByWorkspace(vaultId: string): Promise<Page[]> {
@@ -472,10 +503,7 @@ export class DesktopPageRepository implements PageRepository {
           newName: title.trim(),
         });
         if (plan.blockers.length > 0) {
-          throw new DomainError(
-            "INVALID_INPUT",
-            plan.blockers[0]!.message,
-          );
+          throw new DomainError("INVALID_INPUT", plan.blockers[0]!.message);
         }
         await this.fileOperations.execute(plan);
         return;
@@ -574,10 +602,7 @@ export class DesktopPageRepository implements PageRepository {
           toRelativePath: targetDirectory,
         });
         if (plan.blockers.length > 0) {
-          throw new DomainError(
-            "INVALID_INPUT",
-            plan.blockers[0]!.message,
-          );
+          throw new DomainError("INVALID_INPUT", plan.blockers[0]!.message);
         }
         await this.fileOperations.execute(plan);
         return;
@@ -669,6 +694,15 @@ export class DesktopPageRepository implements PageRepository {
     } catch (err) {
       mapFileOpError(err);
     }
+    // G74b：trash 走自写抑制，watcher 无事件——显式从链接索引移除，
+    // 否则图谱投影一直残留被删节点/边。
+    await this.reconcileTrashLinkIndex((linkIndex) =>
+      linkIndex.remove({
+        vaultId: found.vaultId,
+        noteKey: found.entry.noteId ?? undefined,
+        relativePath: found.entry.relativePath,
+      }),
+    );
     this.scans.invalidate(found.vaultId);
   }
 
@@ -685,13 +719,22 @@ export class DesktopPageRepository implements PageRepository {
         "回收站中找不到这条记录，它可能已经被恢复或清理。",
       );
     }
+    let restoredPath: string | null = null;
     try {
-      await this.api.vault.restore({
+      const restored = await this.api.vault.restore({
         vaultId: target.vaultId,
         operationId: target.operationId,
       });
+      restoredPath = restored.relativePath;
     } catch (err) {
       mapFileOpError(err);
+    }
+    // G74b：restore 同样走自写抑制——按 Main 返回的实际路径重新索引。
+    if (restoredPath) {
+      const relativePath = restoredPath;
+      await this.reconcileTrashLinkIndex((linkIndex) =>
+        linkIndex.upsert({ vaultId: target.vaultId, relativePath }),
+      );
     }
     this.scans.invalidate(target.vaultId);
   }
@@ -718,6 +761,17 @@ export class DesktopPageRepository implements PageRepository {
       mapFileOpError(err);
     }
     await this.purgeRevisionSeries(target.vaultId, entry);
+    // 幂等收口：trash 时已显式移除，此处兜住钩子缺装/历史残留。
+    if (entry) {
+      const trashEntry = entry;
+      await this.reconcileTrashLinkIndex((linkIndex) =>
+        linkIndex.remove({
+          vaultId: target.vaultId,
+          noteKey: trashEntry.stableNoteId,
+          relativePath: trashEntry.originalRelativePath,
+        }),
+      );
+    }
     this.scans.invalidate(target.vaultId);
   }
 
@@ -739,6 +793,21 @@ export class DesktopPageRepository implements PageRepository {
     }
     for (const entry of entries) {
       await this.purgeRevisionSeries(workspaceId, entry);
+    }
+    // 与单条 purge 同口径：整站清除后逐条收口链接索引，通知合并为一次。
+    if (this.trashHooks && entries.length > 0) {
+      try {
+        for (const entry of entries) {
+          await this.trashHooks.linkIndex.remove({
+            vaultId: workspaceId,
+            noteKey: entry.stableNoteId,
+            relativePath: entry.originalRelativePath,
+          });
+        }
+        this.trashHooks.onIndexChanged?.();
+      } catch (err) {
+        console.warn("清空回收站后重建链接索引失败（可经重新扫描恢复）", err);
+      }
     }
     this.scans.invalidate(workspaceId);
   }
@@ -873,6 +942,7 @@ export class DesktopContentRepository
     lineEnding: "lf" | "crlf";
     hadUtf8Bom: boolean;
     source: { relativePath: string; modifiedAt: number; sizeBytes: number };
+    markdown: string;
   }> {
     const found = await this.scans.findDocument(pageId);
     if (!found) {
@@ -942,6 +1012,7 @@ export class DesktopContentRepository
         modifiedAt: result.source.modifiedAt,
         sizeBytes: result.source.sizeBytes,
       },
+      markdown: result.markdown,
     };
   }
 
@@ -964,6 +1035,7 @@ export class DesktopContentRepository
       lineEnding,
       hadUtf8Bom,
       source,
+      markdown,
     } = await this.readNote(pageId);
     const lossy = unsupported.length > 0;
     const writePolicy = resolveWritePolicy({
@@ -987,6 +1059,7 @@ export class DesktopContentRepository
         outputLossyApproved: false,
         identityAdoptionApproved: false,
       },
+      sourceMarkdown: markdown,
     });
     return {
       content,

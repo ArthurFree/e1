@@ -42,6 +42,7 @@ import type { UpdateService } from "./services/UpdateService";
 import type { FileOperationService } from "./fileOperations/FileOperationService";
 import type { VaultTransferService } from "./vaultTransfer/VaultTransferService";
 import type { GraphQueryPort } from "./graph/GraphQueryPort";
+import type { GraphInvalidationChannel } from "./graph/GraphInvalidationChannel";
 import type { RevisionRestoreCoordinator } from "./services/RevisionRestoreCoordinator";
 import type { RuntimeCapabilities } from "../runtime/RuntimeCapabilities";
 import type { RuntimeOperations } from "../runtime/RuntimeOperations";
@@ -223,6 +224,11 @@ export interface AppServices {
    * Web/内存不装配。UI 以 `services.graph` 存在性门控（DUAL-01）。
    */
   graph?: GraphQueryPort;
+  /**
+   * 图谱失效通道（可选，R015.1）：LinkIndex 变更后 generation++。
+   * UI 订阅后重新查询；不得直接监听文件系统。
+   */
+  graphInvalidation?: GraphInvalidationChannel;
   /**
    * 应用更新服务（可选，R009 Stage 6 Auto Update）：由具备自更新能力的
    * 运行时装配（Desktop，electron-updater + GitHub Releases feed）；

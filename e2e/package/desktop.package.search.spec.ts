@@ -8,6 +8,7 @@ import type { Page } from "@playwright/test";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { requirePackagedArtifact } from "../desktopArtifacts";
+import { clickTreeItem } from "../tree";
 import {
   createPackageVaultFixture,
   launchPackaged,
@@ -112,7 +113,7 @@ test.describe("安装包冒烟：搜索与 Watcher（P05/P06）", () => {
     const app = await launchPackaged(fixture.userDataDir);
     try {
       const window = await app.firstWindow();
-      await window.getByRole("treeitem", { name: /看门狗笔记/ }).click();
+      await clickTreeItem(window, /看门狗笔记/);
       const editor = window.locator(".editor__content .ProseMirror");
       await expect(editor).toContainText("修改前正文。", { timeout: 15_000 });
       // 树渲染 + 文档打开后稍等 watcher 就绪（chokidar 初始扫描事件会被吞）。

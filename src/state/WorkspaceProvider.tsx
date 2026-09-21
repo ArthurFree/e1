@@ -139,7 +139,8 @@ export function WorkspaceProvider({
         dispatchSession({ type: "session/load-success", requestId, data }),
       sessionLoadFailed: (requestId, error) =>
         dispatchSession({ type: "session/load-error", requestId, error }),
-      pagesLoaded: (list) => dispatchSession({ type: "pages/set", pages: list }),
+      pagesLoaded: (list) =>
+        dispatchSession({ type: "pages/set", pages: list }),
       tagsLoaded: (tagList, pageTagList) =>
         dispatchSession({
           type: "tags/set-all",
@@ -340,10 +341,11 @@ export function WorkspaceProvider({
 
   const renamePage = useCallback(
     async (id: string, title: string) => {
+      const current = sessionRef.current.pages.find((p) => p.id === id);
+      if (current && current.title === title) return;
       const now = Date.now();
       // 页面在当前镜像中时合并出最新 page，命令服务据此同步搜索索引并广播
       // （对应原 current 查找逻辑）；不在镜像中时传 null 跳过索引与广播。
-      const current = sessionRef.current.pages.find((p) => p.id === id);
       const updatedPage = current
         ? { ...current, title, updatedAt: now }
         : null;

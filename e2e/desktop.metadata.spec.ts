@@ -6,6 +6,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { requireDesktopArtifacts } from "./desktopArtifacts";
+import { waitDocumentReady } from "./desktopReady";
 
 interface VaultFixture {
   vaultDir: string;
@@ -38,7 +39,9 @@ async function createVaultFixture(
       identityMode: "frontmatter",
     }),
   );
-  const userDataDir = await mkdtemp(path.join(os.tmpdir(), "e1-userdata-meta-"));
+  const userDataDir = await mkdtemp(
+    path.join(os.tmpdir(), "e1-userdata-meta-"),
+  );
   await writeFile(
     path.join(userDataDir, "recent-vaults.json"),
     JSON.stringify([
@@ -91,9 +94,7 @@ test.describe("桌面冒烟：文档元数据写入（R007 阶段 1）", () => {
       const window = await app.firstWindow();
       // 不打开文档，直接从页面树行内重命名。
       await window.getByRole("treeitem", { name: /可改标题/ }).hover();
-      await window
-        .getByRole("button", { name: "重命名「可改标题」" })
-        .click();
+      await window.getByRole("button", { name: "重命名「可改标题」" }).click();
       const input = window.getByRole("textbox", { name: "重命名" });
       await input.fill("新标题");
       await input.press("Enter");
@@ -132,7 +133,10 @@ test.describe("桌面冒烟：文档元数据写入（R007 阶段 1）", () => {
     const app = await launch(fixture.userDataDir);
     try {
       const window = await app.firstWindow();
-      await window.getByRole("treeitem", { name: /可改标题/ }).click();
+      await waitDocumentReady(window, {
+        pageName: "可改标题",
+        expectedText: "正文。",
+      });
       await window.getByRole("button", { name: "添加标签" }).click();
       const input = window.getByRole("textbox", { name: "新建标签名称" });
       await input.fill("学习");
@@ -153,7 +157,10 @@ test.describe("桌面冒烟：文档元数据写入（R007 阶段 1）", () => {
     const app2 = await launch(fixture.userDataDir);
     try {
       const window = await app2.firstWindow();
-      await window.getByRole("treeitem", { name: /可改标题/ }).click();
+      await waitDocumentReady(window, {
+        pageName: "可改标题",
+        expectedText: "正文。",
+      });
       await expect(
         window.locator(".tag-chip", { hasText: "学习" }).first(),
       ).toBeVisible({ timeout: 10_000 });

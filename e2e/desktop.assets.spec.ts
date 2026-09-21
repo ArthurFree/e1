@@ -8,6 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { requireDesktopArtifacts } from "./desktopArtifacts";
 import { clickTreeItem } from "./tree";
+import { waitDocumentReady } from "./desktopReady";
 
 const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
@@ -131,7 +132,10 @@ test.describe("桌面冒烟：本地附件与资源闭环（R006-C5）", () => {
     const app = await launch(fixture.userDataDir);
     try {
       const window = await app.firstWindow();
-      await window.getByRole("treeitem", { name: /可插图/ }).click();
+      await waitDocumentReady(window, {
+        pageName: "可插图",
+        expectedText: "正文。",
+      });
       await stubFileDialog(app, source);
       await insertFromToolbar(window, "图片");
       await expect(window.locator(".local-image__img")).toBeVisible({
@@ -152,7 +156,10 @@ test.describe("桌面冒烟：本地附件与资源闭环（R006-C5）", () => {
     const app2 = await launch(fixture.userDataDir);
     try {
       const window = await app2.firstWindow();
-      await window.getByRole("treeitem", { name: /可插图/ }).click();
+      await waitDocumentReady(window, {
+        pageName: "可插图",
+        expectedText: "正文。",
+      });
       await expect(window.locator(".local-image__img")).toBeVisible({
         timeout: 15_000,
       });
@@ -183,7 +190,7 @@ test.describe("桌面冒烟：本地附件与资源闭环（R006-C5）", () => {
     const app = await launch(fixture.userDataDir);
     try {
       const window = await app.firstWindow();
-      await window.getByRole("treeitem", { name: /可插附件/ }).click();
+      await clickTreeItem(window, /可插附件/);
       await stubFileDialog(app, source);
       await insertFromToolbar(window, "附件");
       await expect(window.locator(".attachment-block")).toBeVisible({
@@ -203,7 +210,7 @@ test.describe("桌面冒烟：本地附件与资源闭环（R006-C5）", () => {
     const app2 = await launch(fixture.userDataDir);
     try {
       const window = await app2.firstWindow();
-      await window.getByRole("treeitem", { name: /可插附件/ }).click();
+      await clickTreeItem(window, /可插附件/);
       await expect(window.locator(".attachment-block")).toBeVisible({
         timeout: 15_000,
       });
@@ -233,7 +240,7 @@ test.describe("桌面冒烟：本地附件与资源闭环（R006-C5）", () => {
     const app = await launch(fixture.userDataDir);
     try {
       const window = await app.firstWindow();
-      await window.getByRole("treeitem", { name: /同名图/ }).click();
+      await clickTreeItem(window, /同名图/);
       await stubFileDialog(app, source);
       await insertFromToolbar(window, "图片");
       await expect(window.locator(".local-image__img")).toHaveCount(1, {
@@ -283,7 +290,7 @@ test.describe("桌面冒烟：本地附件与资源闭环（R006-C5）", () => {
       await expect(
         window.getByRole("treeitem", { name: /普通笔记/ }),
       ).toBeVisible();
-      await window.getByRole("treeitem", { name: /普通笔记/ }).click();
+      await clickTreeItem(window, /普通笔记/);
       await expect(window.locator(".editor__content .ProseMirror")).toBeVisible(
         {
           timeout: 15_000,
@@ -403,7 +410,7 @@ test.describe("桌面冒烟：本地附件与资源闭环（R006-C5）", () => {
     const app = await launch(fixture.userDataDir);
     try {
       const window = await app.firstWindow();
-      await window.getByRole("treeitem", { name: /可删图/ }).click();
+      await clickTreeItem(window, /可删图/);
       const img = window.locator(".local-image");
       await expect(img).toBeVisible({ timeout: 15_000 });
       await img.click();

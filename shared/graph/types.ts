@@ -34,6 +34,10 @@ export interface GraphFilters {
   query?: string;
   includeBroken?: boolean;
   orphansOnly?: boolean;
+  groupPath?: string;
+  tag?: string;
+  /** Renderer 扫描后注入，供 Main 在缺 tags 列时做 Tag 过滤。 */
+  noteKeys?: string[];
 }
 
 export interface GraphQueryPort {
@@ -58,3 +62,8 @@ export interface GraphQueryPort {
 
 export const GRAPH_DEFAULT_NODE_LIMIT = 200;
 export const GRAPH_DEFAULT_EDGE_LIMIT = 500;
+
+export function graphGroupPath(relativePath: string): string | null {
+  const i = relativePath.lastIndexOf("/");
+  return i <= 0 ? null : relativePath.slice(0, i);
+}

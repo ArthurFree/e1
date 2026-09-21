@@ -183,4 +183,34 @@ describe("DesktopLinkDatabase", () => {
     });
     connection.close();
   });
+
+  it("listGraphDocs / listGraphInternalLinks 一次取出投影行", async () => {
+    const db = new DesktopLinkDatabase(file);
+    await db.upsertDocument(
+      doc({
+        noteKey: "01B",
+        stableNoteId: "01B",
+        relativePath: "乙.md",
+        title: "乙",
+      }),
+    );
+    await db.upsertDocument(
+      doc({
+        noteKey: "01A",
+        stableNoteId: "01A",
+        relativePath: "甲.md",
+        title: "甲",
+        links: [buildExtractedLink("乙.md", "到乙", "甲.md")!],
+      }),
+    );
+    const docs = await db.listGraphDocs(VAULT);
+    expect(docs.map((d) => d.noteKey).sort()).toEqual(["01A", "01B"]);
+    const graphLinks = await db.listGraphInternalLinks(VAULT);
+    expect(graphLinks).toHaveLength(1);
+    expect(graphLinks[0]).toMatchObject({
+      sourceNoteKey: "01A",
+      broken: false,
+    });
+    db.close();
+  });
 });

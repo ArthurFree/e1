@@ -39,6 +39,7 @@ export type MockDesktopApiOverrides = {
   update?: Partial<E1DesktopAPI["update"]>;
   fileOperation?: Partial<E1DesktopAPI["fileOperation"]>;
   vaultTransfer?: Partial<E1DesktopAPI["vaultTransfer"]>;
+  graph?: Partial<E1DesktopAPI["graph"]>;
   versions?: E1DesktopAPI["versions"];
 };
 
@@ -315,6 +316,20 @@ export function createMockDesktopApi(
     openReleasePage: vi.fn(async () => {}),
   };
 
+  const graph: E1DesktopAPI["graph"] = {
+    neighborhood: vi.fn(async () => ({
+      nodes: [],
+      edges: [],
+      truncated: false,
+    })),
+    workspace: vi.fn(async () => ({
+      nodes: [],
+      edges: [],
+      truncated: false,
+    })),
+    orphans: vi.fn(async () => []),
+  };
+
   return {
     platform: "desktop",
     versions: overrides.versions ?? {},
@@ -330,5 +345,6 @@ export function createMockDesktopApi(
     update: mergeGroup(update, overrides.update),
     fileOperation: mergeGroup(fileOperation, overrides.fileOperation),
     vaultTransfer: mergeGroup(vaultTransfer, overrides.vaultTransfer),
+    graph: mergeGroup(graph, overrides.graph),
   };
 }

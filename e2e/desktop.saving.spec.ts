@@ -9,6 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { requireDesktopArtifacts } from "./desktopArtifacts";
 import { clickTreeItem } from "./tree";
+import { waitDesktopWorkspaceReady, waitDocumentReady } from "./desktopReady";
 
 interface VaultFixture {
   vaultDir: string;
@@ -44,7 +45,9 @@ async function createVaultFixture(
       }),
     );
   }
-  const userDataDir = await mkdtemp(path.join(os.tmpdir(), "e1-userdata-save-"));
+  const userDataDir = await mkdtemp(
+    path.join(os.tmpdir(), "e1-userdata-save-"),
+  );
   if (options.initialized !== false) {
     await writeFile(
       path.join(userDataDir, "recent-vaults.json"),
@@ -146,7 +149,7 @@ test.describe("桌面冒烟：Markdown 创建与安全保存（R006-C4）", () =
     const app = await launch(fixture.userDataDir);
     try {
       const window = await app.firstWindow();
-      await window.getByRole("treeitem", { name: /冲突笔记/ }).click();
+      await clickTreeItem(window, /冲突笔记/);
       const editor = window.locator(".editor__content .ProseMirror");
       await expect(editor).toContainText("E1 内初始。");
       await editor.click();
@@ -195,10 +198,8 @@ test.describe("桌面冒烟：Markdown 创建与安全保存（R006-C4）", () =
     const app = await launch(fixture.userDataDir);
     try {
       const window = await app.firstWindow();
-      await window.getByRole("treeitem", { name: /随笔/ }).click();
-      await expect(
-        window.getByText(/尚未建立 E1 稳定笔记身份/),
-      ).toBeVisible();
+      await clickTreeItem(window, /随笔/);
+      await expect(window.getByText(/尚未建立 E1 稳定笔记身份/)).toBeVisible();
       const editor = window.locator(".editor__content .ProseMirror");
       await expect(editor).toHaveAttribute("contenteditable", "false");
       // 阅读本身不写 id。
@@ -241,14 +242,16 @@ test.describe("桌面冒烟：Markdown 创建与安全保存（R006-C4）", () =
       await expect(treeItem).toHaveAttribute("aria-selected", "true");
       await clickTreeItem(window, /随笔/);
       await expect(editor).toHaveAttribute("contenteditable", "true");
-      await expect(window.getByRole("button", { name: "启用编辑" })).toHaveCount(
-        0,
-      );
+      await expect(
+        window.getByRole("button", { name: "启用编辑" }),
+      ).toHaveCount(0);
       await editor.click();
       await window.keyboard.type(" 扫描后继续。");
       await expect(window.getByText(/已保存/)).toBeVisible({ timeout: 5000 });
       const abs = path.join(fixture.vaultDir, rel);
-      await expect.poll(async () => readFile(abs, "utf8")).toContain("扫描后继续。");
+      await expect
+        .poll(async () => readFile(abs, "utf8"))
+        .toContain("扫描后继续。");
     } finally {
       await app.close();
       await fixture.cleanup();
@@ -264,7 +267,7 @@ test.describe("桌面冒烟：Markdown 创建与安全保存（R006-C4）", () =
     const app1 = await launch(fixture.userDataDir);
     try {
       const window = await app1.firstWindow();
-      await window.getByRole("treeitem", { name: /随笔/ }).click();
+      await waitDocumentReady(window, { pageName: "随笔" });
       await window.getByRole("button", { name: "启用编辑" }).click();
       const editor = window.locator(".editor__content .ProseMirror");
       await editor.click();
@@ -279,12 +282,13 @@ test.describe("桌面冒烟：Markdown 创建与安全保存（R006-C4）", () =
     const app2 = await launch(fixture.userDataDir);
     try {
       const window = await app2.firstWindow();
+      await waitDesktopWorkspaceReady(window);
       const items = window.getByRole("treeitem", { name: /随笔/ });
       await expect(items).toHaveCount(1);
-      await items.click();
-      await expect(window.getByRole("button", { name: "启用编辑" })).toHaveCount(
-        0,
-      );
+      await clickTreeItem(window, "随笔");
+      await expect(
+        window.getByRole("button", { name: "启用编辑" }),
+      ).toHaveCount(0);
       const editor = window.locator(".editor__content .ProseMirror");
       await expect(editor).toHaveAttribute("contenteditable", "true");
       await expect(editor).toContainText("首次保存。");
@@ -315,9 +319,11 @@ test.describe("桌面冒烟：Markdown 创建与安全保存（R006-C4）", () =
       await window
         .getByRole("button", { name: "新建文档", exact: true })
         .click();
-      await expect(window.locator(".editor__content .ProseMirror")).toBeVisible({
-        timeout: 5000,
-      });
+      await expect(window.locator(".editor__content .ProseMirror")).toBeVisible(
+        {
+          timeout: 5000,
+        },
+      );
       await expect
         .poll(async () => existsSync(path.join(fixture.vaultDir, "无标题.md")))
         .toBe(true);
@@ -351,7 +357,7 @@ test.describe("桌面冒烟：Markdown 创建与安全保存（R006-C4）", () =
     const app = await launch(fixture.userDataDir);
     try {
       const window = await app.firstWindow();
-      await window.getByRole("treeitem", { name: /CRLF/ }).click();
+      await clickTreeItem(window, /CRLF/);
       const editor = window.locator(".editor__content .ProseMirror");
       await expect(editor).toContainText("CRLF 正文。");
       await editor.click();

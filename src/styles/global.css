@@ -72,6 +72,7 @@
 }
 
 .tree-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -116,6 +117,7 @@
 
 .tree-row__title {
   flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -125,15 +127,34 @@
   color: var(--color-text-tertiary);
 }
 
+/* hover/focus 显示行内动作时，标题按实际叠层宽度右收：
+   叠层不盖住可点击的标题区域（窄行/多按钮也不会截获点击）。 */
+.tree-row:hover .tree-row__title,
+.tree-row:focus-within .tree-row__title {
+  margin-right: var(--tree-actions-w, 0px);
+}
+
 .tree-row__actions {
-  display: none;
-  flex: none;
+  /* 绝对定位叠在行右侧：不挤占标题宽度（嵌套行 + 多按钮时标题会变成 0 宽）。
+     默认不可点；hover/focus 后才接收指针，避免截获标题点击。 */
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
   gap: 2px;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  background: var(--color-sidebar-global);
+  padding-left: 4px;
+  z-index: 1;
 }
 
 .tree-row:hover .tree-row__actions,
 .tree-row:focus-within .tree-row__actions {
-  display: inline-flex;
+  visibility: visible;
+  opacity: 1;
 }
 
 .tree-row__action {
@@ -145,6 +166,12 @@
   border-radius: 4px;
   color: var(--color-text-secondary);
   font-size: 13px;
+  pointer-events: none;
+}
+
+.tree-row:hover .tree-row__action,
+.tree-row:focus-within .tree-row__action {
+  pointer-events: auto;
 }
 
 .tree-row__action:hover {

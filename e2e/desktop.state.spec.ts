@@ -7,6 +7,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { requireDesktopArtifacts } from "./desktopArtifacts";
+import { waitDesktopWorkspaceReady, waitDocumentReady } from "./desktopReady";
 
 interface VaultFixture {
   vaultDir: string;
@@ -97,7 +98,10 @@ test.describe("桌面冒烟：设备级交互状态（R007 阶段 2）", () => {
     const app = await launch(fixture.userDataDir);
     try {
       const window = await app.firstWindow();
-      await window.getByRole("treeitem", { name: /状态笔记/ }).click();
+      await waitDocumentReady(window, {
+        pageName: "状态笔记",
+        expectedText: "正文。",
+      });
       await window.getByRole("button", { name: "收藏文档" }).click();
       await expect(
         window.getByRole("button", { name: "取消收藏文档" }),
@@ -107,9 +111,9 @@ test.describe("桌面冒烟：设备级交互状态（R007 阶段 2）", () => {
       const state = JSON.parse(await readFile(stateFile, "utf8")) as {
         pages: Record<string, { favoriteAt: number | null }>;
       };
-      expect(
-        state.pages["01JE2ESTATE00000000001"]?.favoriteAt,
-      ).toBeGreaterThan(0);
+      expect(state.pages["01JE2ESTATE00000000001"]?.favoriteAt).toBeGreaterThan(
+        0,
+      );
       // Markdown 不被修改。
       expect(await readFile(path.join(fixture.vaultDir, rel), "utf8")).toBe(
         NOTE_MD,
@@ -122,11 +126,12 @@ test.describe("桌面冒烟：设备级交互状态（R007 阶段 2）", () => {
     const app2 = await launch(fixture.userDataDir);
     try {
       const window = await app2.firstWindow();
+      await waitDesktopWorkspaceReady(window);
       await window.getByRole("button", { name: "收藏", exact: true }).click();
       const section = window.locator('[aria-label="收藏的文档"]');
-      await expect(
-        section.getByText("状态笔记"),
-      ).toBeVisible({ timeout: 10_000 });
+      await expect(section.getByText("状态笔记")).toBeVisible({
+        timeout: 10_000,
+      });
     } finally {
       await app2.close();
       await fixture.cleanup();
@@ -144,7 +149,10 @@ test.describe("桌面冒烟：设备级交互状态（R007 阶段 2）", () => {
     const app = await launch(fixture.userDataDir);
     try {
       const window = await app.firstWindow();
-      await window.getByRole("treeitem", { name: /状态笔记/ }).click();
+      await waitDocumentReady(window, {
+        pageName: "状态笔记",
+        expectedText: "正文。",
+      });
       // 编辑器渲染完成即触发 markOpened（fire-and-forget）：轮询等落盘。
       await expect(
         window.getByRole("button", { name: "收藏文档" }),
@@ -172,10 +180,11 @@ test.describe("桌面冒烟：设备级交互状态（R007 阶段 2）", () => {
     const app2 = await launch(fixture.userDataDir);
     try {
       const window = await app2.firstWindow();
+      await waitDesktopWorkspaceReady(window);
       await window.getByRole("button", { name: "最近", exact: true }).click();
-      await expect(
-        window.getByText("状态笔记").first(),
-      ).toBeVisible({ timeout: 10_000 });
+      await expect(window.getByText("状态笔记").first()).toBeVisible({
+        timeout: 10_000,
+      });
     } finally {
       await app2.close();
       await fixture.cleanup();
