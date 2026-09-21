@@ -34,17 +34,17 @@
 | R012                        | [Desktop Revision History](./R012-desktop-revision-history.md)                                                                                       | 1.0      | 已完成 | 2026-09-08 |
 | R013                        | [macOS Signing & Trust](./R013-macos-signing-trust.md)                                                                                               | 0.1      | 实现中 | 2026-09-10 |
 | R013 收口 / R014            | [R013 收口与 R014 规划](./R013-closeout-and-R014-vault-portability-cross-vault-operations.md)（Part A 仍待 Stage 7 真证书；Part B 为 R014 规划历史） | 0.1      | 已采纳 | 2026-09-10 |
-| R014                        | [Vault Portability & Cross-Vault Operations](./R014-vault-portability-cross-vault-operations.md)                                                     | 1.0      | 实现中 | 2026-09-10 |
-| R014.1 / R015               | [R014.1 完整性收口与 R015 知识图谱](./R014.1-closeout-and-R015-knowledge-graph-plan.md)                                                              | 0.2      | 实现中 | 2026-09-10 |
+| R014                        | [Vault Portability & Cross-Vault Operations](./R014-vault-portability-cross-vault-operations.md)                                                     | 1.0      | 已完成 | 2026-09-21 |
+| R014.1 / R015               | [R014.1 完整性收口与 R015 知识图谱](./R014.1-closeout-and-R015-knowledge-graph-plan.md)                                                              | 0.2      | 已完成 | 2026-09-21 |
 | R014.1 验收 / R015.1 / R016 | [验收与 R015.1 / R016 规划](./R014.1-R015-review-R015.1-R016-plan.md)                                                                                | 0.1      | 实现中 | 2026-09-10 |
 
 > R011.1（journal v2 逐跳持久化、source-preserving 链接改写、CI/packaged 验收收口）与 R012（Desktop Revision History：`.e1/revisions/` 快照存储、revision IPC 七通道、Safe Restore、VersionPanel+Diff、生命周期集成、operation matrix 翻 true）均已于 2026-09-08 收口完成：G44–G56 / P17–P20 / 性能 / 远端 CI（run 34201541622）全绿。
 >
 > R013（macOS Signing & Trust）Stage 0–6 已于 2026-09-10 落地：正式 Release 强制 Developer ID + Hardened Runtime + 公证 + stapling + Gatekeeper，本地 `dist:mac` 仍允许 unsigned；darwin `canAutoInstall` 仅已签名公证包为 true。Stage 7（第一份真实 GitHub Release 与浏览器 quarantine QA）待仓库配置证书 secrets 后由维护者打 tag——**不得**因 R014 落地而把 R013 标成已完成。
 >
-> R014（Vault Portability & Cross-Vault Operations）Stage 0–6 产品能力已落地。R014.1 已补 journal v2 / Destination Snapshot / no-clobber / identity·revision collision / 跨库 Move journal / inspect≠recover；G57–G71 与 G69b–d、G71b–g 已接线。P27–P30/P30b–d 无安装包产物时 skip。**在真实 packaged 与远端 Desktop Golden 全绿前不得把 R014 标成已完成。** R013 Stage 7 仍独立。
+> R014（Vault Portability & Cross-Vault Operations）已于 2026-09-21 正式关闭：本地验收（ci 1848 / Desktop E2E 105 / packaged P27–P30·P30b–d 全绿）+ 远端 CI run 35577704492 六 job 全绿（验收提交 `165ed21`）。执行记录见 [2026-09-21 规划](./next-stage-plan-2026-09-21.md) 末节。R013 Stage 7 仍独立。
 >
-> R015（Knowledge Graph）Local Graph + 有界 Workspace Graph 已按 LinkIndex 投影落地；R015.1 已接线 Batch IPC、Canvas、Invalidation、G72–G83 / P31–P34。**在远端 Golden 全绿、真实 packaged 与 10k 性能达标前不得把 R015 标成已完成。** R016 尚未开始。
+> R015（Knowledge Graph）已于 2026-09-21 正式关闭：产品交互与刷新链路 Golden（G72–G83、G74b/G75b/G78b）、packaged P31–P34、10k 端到端性能（d1 p95 27.7ms / d2 26.7ms / ws 29.1ms）全达标，远端 CI run 35577704492 全绿。R016 尚未开始。
 
 ## 单份需求的完成定义
 

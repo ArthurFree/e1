@@ -1,8 +1,8 @@
 # R014：Vault Portability & Cross-Vault Operations
 
 > 版本：1.0  
-> 状态：实现中（Stage 0–6 产品能力已落地；R014.1 完整性收口已接线。packaged 真实产物与远端 Desktop Golden 全绿之前不得标「已完成」）  
-> 更新时间：2026-09-10  
+> 状态：已完成（2026-09-21：本地 packaged P27–P30/P30b–d 与 Desktop Golden 全绿，远端 CI run 35577704492 六 job 全绿，验收提交 `165ed21`；执行记录见 `next-stage-plan-2026-09-21.md`）  
+> 更新时间：2026-09-21  
 > 目标平台：macOS Desktop  
 > 前置需求：R010、R011、R011.1、R012、R013（Stage 0–6）  
 > 规划稿：[`R013-closeout-and-R014-vault-portability-cross-vault-operations.md`](./R013-closeout-and-R014-vault-portability-cross-vault-operations.md)（Part B 历史快照）
@@ -17,13 +17,13 @@ R013 Stage 7（真实 Developer ID + 公证 + 第一份 GitHub Release）**不�
 
 ## 2. 核心不变量（已冻结）
 
-| 编号 | 内容 |
-| ---- | ---- |
-| PORT-01 | `workspace.rename` 只改 `.e1/vault.json` 的 `name`，不等于 Vault 根目录搬迁 |
-| PORT-02 | Cross-Vault Copy 生成 **新** stable note id |
-| PORT-03 | Cross-Vault Move 保持 stable note id |
-| PORT-04 | Copy **不**复制 revision history |
-| PORT-05 | Move **必须**迁移 revision series（raw body 快照随行） |
+| 编号    | 内容                                                                                |
+| ------- | ----------------------------------------------------------------------------------- |
+| PORT-01 | `workspace.rename` 只改 `.e1/vault.json` 的 `name`，不等于 Vault 根目录搬迁         |
+| PORT-02 | Cross-Vault Copy 生成 **新** stable note id                                         |
+| PORT-03 | Cross-Vault Move 保持 stable note id                                                |
+| PORT-04 | Copy **不**复制 revision history                                                    |
+| PORT-05 | Move **必须**迁移 revision series（raw body 快照随行）                              |
 | PORT-06 | Canonical 链接仍是普通 Markdown 相对路径；不引入 `e1://`，不按 title 解析 Wiki Link |
 
 其它安全口径：
@@ -38,16 +38,16 @@ R013 Stage 7（真实 Developer ID + 公证 + 第一份 GitHub Release）**不�
 
 ## 3. 阶段清单
 
-| 阶段 | 内容 | 状态 |
-| ---- | ---- | ---- |
-| 0 | 语义冻结：`shared/vaultTransfer/`、操作矩阵字段、错误码 | 完成 |
-| 1 | Missing Vault Relocate（选目录 + vaultId 比对 + 更新 Registry） | 完成 |
-| 2 | Physical Vault Relocation + `userData/vault-relocations/` journal（rename / EXDEV copy-verify-delete） | 完成 |
-| 3 | Cross-Vault Copy（新 id、内部链接、受管附件、碰撞改名） | 完成 |
-| 4 | Cross-Vault Move（保 id、迁 revision、源进回收站、边界 blocker） | 完成 |
-| 5 | 引用式 Markdown 链接提取与 source-preserving 改写 | 完成 |
-| 6 | UX：Preflight / VaultPicker / 侧栏入口 / Recovery Bridge | 完成 |
-| 7 | G57–G71 / P27–P30 / 文档 / 门禁 | 本地 G57–G71 全绿；P27–P30 已接线（无产物 skip）；远端 CI 待验证 |
+| 阶段 | 内容                                                                                                   | 状态                                                             |
+| ---- | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| 0    | 语义冻结：`shared/vaultTransfer/`、操作矩阵字段、错误码                                                | 完成                                                             |
+| 1    | Missing Vault Relocate（选目录 + vaultId 比对 + 更新 Registry）                                        | 完成                                                             |
+| 2    | Physical Vault Relocation + `userData/vault-relocations/` journal（rename / EXDEV copy-verify-delete） | 完成                                                             |
+| 3    | Cross-Vault Copy（新 id、内部链接、受管附件、碰撞改名）                                                | 完成                                                             |
+| 4    | Cross-Vault Move（保 id、迁 revision、源进回收站、边界 blocker）                                       | 完成                                                             |
+| 5    | 引用式 Markdown 链接提取与 source-preserving 改写                                                      | 完成                                                             |
+| 6    | UX：Preflight / VaultPicker / 侧栏入口 / Recovery Bridge                                               | 完成                                                             |
+| 7    | G57–G71 / P27–P30 / 文档 / 门禁                                                                        | 本地 G57–G71 全绿；P27–P30 已接线（无产物 skip）；远端 CI 待验证 |
 
 ## 4. 实现位置
 
@@ -138,6 +138,6 @@ cloud sync、多人协作、Wiki Link 按标题解析、Obsidian 全兼容、Win
 
 ## 变更记录
 
-| 版本 | 日期 | 说明 |
-| ---- | ---- | ---- |
-| 1.0 | 2026-09-10 | 从规划稿 Part B 拆出；按 Stage 0–6 落地状态书写 |
+| 版本 | 日期       | 说明                                            |
+| ---- | ---------- | ----------------------------------------------- |
+| 1.0  | 2026-09-10 | 从规划稿 Part B 拆出；按 Stage 0–6 落地状态书写 |

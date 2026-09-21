@@ -167,6 +167,8 @@ R014 原需求全部必做项、完整 Desktop Golden 和真实 packaged 验收�
 - G43 在与子代理并发跑 Playwright 互清 `test-results/` 时失败一次；安静串行两轮通过。同类并发曾致整轮桌面套件 mkdtemp ENOENT——验收轮一律串行。
 - persistence wall-clock 基准在多套件并行负载下失败一次，单独复跑通过。
 
+远端补记（2026-09-21）：验收提交 `165ed21` 推送 main 后，远端 CI run **35577704492 六 job 全绿**（quality / build-web / build-desktop / desktop-runtime-deps / e2e-web / e2e-desktop）。R014、R015 据此正式关闭（需求索引与各需求文档状态已同步）。
+
 ### R014 / R015 状态判断
 
 - R014 原需求必做项 + 完整 Desktop Golden + 真实 packaged（P27–P30/P30b–d）本地全绿；**仅差远端验收提交全绿**，状态保持「实现中」，推送验收提交且远端 CI 绿后方可关闭。
